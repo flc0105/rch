@@ -1,4 +1,5 @@
 import { jsonRequestOptions } from './http.js'
+import { uploadHttpBody } from './transferApi.js'
 
 const artifactUrl = (artifactId, suffix = '') =>
   `/api/artifacts/${encodeURIComponent(artifactId)}${suffix}`
@@ -29,12 +30,12 @@ export function moveArtifactToFolder(artifactId, folderId) {
   return fetch(artifactUrl(artifactId, '/move'), jsonRequestOptions('POST', { folder_id: folderId }))
 }
 
-export function uploadSharedBatch(formData, headers) {
-  return fetch('/api/artifacts/shared/batch-upload', {
-    method: 'POST',
-    ...(headers === undefined ? {} : { headers }),
-    body: formData,
-  })
+export function inspectSharedUpload(payload) {
+  return fetch('/api/artifacts/shared/inspect-upload', jsonRequestOptions('POST', payload))
+}
+
+export function uploadSharedBatch(formData, headers, options = {}) {
+  return uploadHttpBody('/api/artifacts/shared/batch-upload', formData, { ...options, headers })
 }
 
 export function uploadArtifact(formData, headers) {

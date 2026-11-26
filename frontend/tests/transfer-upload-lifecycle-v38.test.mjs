@@ -6,10 +6,11 @@ import vm from 'node:vm'
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const transferSource = read('../src/api/transferApi.js')
 
-function buildUploadApi() {
+function buildUploadApi({ recoveryStatus = null, loseRegistration = false } = {}) {
   const requests = []
   const xhrs = []
   let nextId = 0
+  let registrationAttempts = 0
   class FakeXHR {
     constructor() {
       this.handlers = {}
@@ -32,12 +33,17 @@ function buildUploadApi() {
   async function fetch(url, options) {
     requests.push({ url, options })
     if (url === '/api/transfers/browser-upload') {
+      registrationAttempts++
+      if (loseRegistration && registrationAttempts === 1) throw new Error('Registration response lost')
       const id = `transfer-${++nextId}`
       return { ok: true, json: async () => ({ code: 0, data: {
         transfer_id: id,
         browser_upload_token: `token-${id}`,
         browser_upload_path: `/api/transfers/browser-upload/${id}/content`,
       } }) }
+    }
+    if (url.endsWith('/browser-upload') && !options?.method && recoveryStatus) {
+      return { ok: true, json: async () => ({ code: 0, data: recoveryStatus }) }
     }
     if (url.includes('reject-cancel') && url.endsWith('/cancel')) {
       return { ok: false, json: async () => ({ code: 1, message: 'Cannot cancel transfer' }) }
@@ -79,7 +85,7 @@ for (const componentName of ['RemoteFilesDialog', 'RemoteFilePicker']) {
     const messages = { info: [], error: [] }
     const events = []
     const { methodName, snippet } = getUploadMethod(componentName)
-    const handler = vm.runInNewContext(`({ ${snippet} }).${methodName}`, {
+    const handlers = vm.runInNewContext(`({ ${snippet} })`, {
       prepareUploadConflict: async () => 'stop',
       TERMINAL_REMOTE_UPLOAD_PREFIX: '[Remote Upload]',
       createTerminalOperation: () => ({ operation_id: 'op-1' }),
@@ -99,6 +105,8 @@ for (const componentName of ['RemoteFilesDialog', 'RemoteFilePicker']) {
       openTransferCenterFromToast: () => {},
       $emit: (...args) => events.push(args),
     }
+    Object.assign(ui, handlers)
+    const handler = handlers[methodName]
     const event = { target: { files: [{ name: 'big.bin', size: 1000 }], value: 'big.bin' } }
     const pending = handler.call(ui, event)
     assert.equal(ui.remoteUploadLoading, true)
@@ -161,14 +169,61 @@ test('cancelling one of two uploads does not abort or poison the other upload', 
   assert.equal((await b).task_id, 'task-b')
 })
 
-test('ordinary browser upload failure still reports a failed transfer via existing API', async () => {
+test('an explicit browser upload rejection still reports failure via existing API', async () => {
   const api = buildUploadApi()
   const upload = api.uploadRemoteFileToClient({ file: { name: 'f', size: 2 }, clientId: 'one', destinationPath: '/tmp' })
   const xhr = await awaitXhr(api)
-  xhr.handlers.error?.()
-  await assert.rejects(upload, /Browser upload connection failed/)
+  xhr.status = 400
+  xhr.responseText = JSON.stringify({ code: 1, message: 'Upload rejected' })
+  xhr.handlers.load?.()
+  await assert.rejects(upload, /Upload rejected/)
   await nextTurn()
   const patch = api.requests.find(item => item.options?.method === 'PATCH')
   assert.ok(patch)
   assert.equal(JSON.parse(patch.options.body).state, 'failed')
+})
+
+
+test('lost upload response recovers an accepted task without resending body or marking failed', async () => {
+  const api = buildUploadApi({ recoveryStatus: { state: 'running', accepted: true, task_id: 'accepted-task' } })
+  const pending = api.uploadRemoteFileToClient({ file: {name:'f',size:2}, clientId:'one', destinationPath:'/tmp' })
+  const xhr = await awaitXhr(api)
+  xhr.handlers.error?.()
+  assert.equal((await pending).task_id, 'accepted-task')
+  assert.equal(api.xhrs.length, 1)
+  assert.equal(api.requests.filter(req => req.options?.method === 'PATCH').length, 0)
+})
+
+test('unknown response leaves transfer state intact and requires checking Transfers', async () => {
+  const api = buildUploadApi({ recoveryStatus: { state: 'running', accepted: false } })
+  const pending = api.uploadRemoteFileToClient({ file: {name:'f',size:2}, clientId:'one', destinationPath:'/tmp' })
+  const xhr = await awaitXhr(api)
+  xhr.handlers.error?.()
+  await assert.rejects(pending, /status is uncertain/)
+  assert.equal(api.xhrs.length, 1)
+  assert.equal(api.requests.filter(req => req.options?.method === 'PATCH').length, 0)
+})
+
+test('registration retry sends the identical request and uploads bytes once', async () => {
+  const api = buildUploadApi({ loseRegistration:true })
+  const pending = api.uploadRemoteFileToClient({ file:{name:'f',size:2}, clientId:'one', destinationPath:'/tmp', batchId:'b', batchTotal:1, batchIndex:0 })
+  const xhr = await awaitXhr(api)
+  xhr.finish({task_id:'t'})
+  await pending
+  const requests = api.requests.filter(req => req.url === '/api/transfers/browser-upload')
+  assert.equal(requests.length, 2)
+  assert.equal(requests[0].options.body, requests[1].options.body)
+  assert.equal(api.xhrs.length,1)
+})
+
+
+test('malformed success response recovers status instead of leaving the XHR promise pending', async () => {
+  const api = buildUploadApi({ recoveryStatus: { state: 'running', accepted: true, task_id: 'accepted-task' } })
+  const pending = api.uploadRemoteFileToClient({ file: {name:'f',size:2}, clientId:'one', destinationPath:'/tmp' })
+  const xhr = await awaitXhr(api)
+  xhr.status = 200
+  xhr.responseText = 'null'
+  xhr.handlers.load?.()
+  assert.equal((await pending).task_id, 'accepted-task')
+  assert.equal(api.xhrs.length, 1)
 })

@@ -1,4 +1,5 @@
 import json
+from server.application.transfers.upload_plan import UploadPlan
 from core.protocol.control import ControlDomain, RemoteFilesAction
 from core.protocol.message_types import MSG_TYPE_TRANSFER_START
 
@@ -443,11 +444,14 @@ class WebRemoteFileService:
             'message': result_text,
         }
 
-    def inspect_upload(self, client_id: str, destination_dir: str, filename: str) -> dict:
-        if not destination_dir or not filename:
-            raise ValueError('destination_dir and filename are required')
+    def inspect_upload(self, client_id: str, destination_dir: str, paths, directories) -> dict:
+        if not destination_dir:
+            raise ValueError('destination_dir is required')
+        plan = UploadPlan.build(paths, directories)
+        if any(part != part.strip() for path in (*plan.files, *plan.directories) for part in path.split('/')):
+            raise ValueError('Upload paths cannot have leading or trailing spaces')
         return self._run_control(client_id, RemoteFilesAction.INSPECT_UPLOAD, {
-            'destination_dir': destination_dir, 'filename': filename,
+            'destination_dir': destination_dir, 'paths': list(plan.files), 'directories': list(plan.directories),
         }, json_result=True)
 
     def preview_file(

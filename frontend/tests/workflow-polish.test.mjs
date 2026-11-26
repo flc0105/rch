@@ -71,9 +71,10 @@ test('reconnect pending snapshot removes stale entries but retains newly arrived
   assert.deepEqual(plain(o.queue.map(x=>x.interaction_id)),['new'])
 })
 
+import { joinRemotePath } from '../src/utils/remotePaths.js'
 function folderHelper(env) {
   const s=read('../src/utils/remoteFolderCreation.js').replace(/^import .*$/gm,'').replace('export async function','async function')
-  return vm.runInNewContext(`${s}\npromptCreateRemoteFolder`,env)
+  return vm.runInNewContext(`${s}\npromptCreateRemoteFolder`,{...env,joinRemotePath})
 }
 
 test('shared mkdir handles POSIX and Windows roots and Unicode, cancellation, context changes and errors',async()=>{

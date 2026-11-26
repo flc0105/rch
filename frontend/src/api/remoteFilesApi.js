@@ -81,5 +81,9 @@ export function deleteRemoteEntries(clientId, paths) {
 }
 
 export function inspectRemoteUpload(clientId, destinationDir, filename) {
-  return fetch(remoteFilesUrl(clientId, '/inspect-upload'), webUiJson('POST', { destination_dir: destinationDir, filename }))
+  return inspectRemoteUploadPlan(clientId, destinationDir, [filename], [])
+}
+
+export function inspectRemoteUploadPlan(clientId, destinationDir, paths, directories) {
+  return fetch(remoteFilesUrl(clientId, '/inspect-upload'), webUiJson('POST', { destination_dir: destinationDir, paths, directories }))
 }

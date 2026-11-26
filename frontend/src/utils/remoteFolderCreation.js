@@ -1,5 +1,6 @@
 import { ElMessageBox } from 'element-plus'
 import { makeRemoteDirectory } from '../api/remoteFilesApi.js'
+import { joinRemotePath } from './remotePaths.js'
 
 export async function promptCreateRemoteFolder(clientId, parentPath, isActive) {
   const { value } = await ElMessageBox.prompt('Enter the new folder name', 'Create Directory', {
@@ -8,8 +9,7 @@ export async function promptCreateRemoteFolder(clientId, parentPath, isActive) {
   })
   const name = String(value || '').trim()
   if (!name || !isActive()) return false
-  const separator = !parentPath.startsWith('/') && (parentPath.includes('\\') || /^[A-Za-z]:/.test(parentPath)) ? '\\' : '/'
-  const path = `${parentPath.replace(/[\/\\]+$/, '')}${separator}${name}`
+  const path = joinRemotePath(parentPath, name)
   const response = await makeRemoteDirectory(clientId, path)
   const json = await response.json()
   if (!isActive()) return false

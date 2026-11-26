@@ -9,9 +9,9 @@ from werkzeug.utils import safe_join
 from server.config.config import (
     SESSION_COOKIE_NAME,
     WEB_AUTH_SESSION_DAYS,
-    WEB_HTTP_UPLOAD_MAX_BYTES,
     WEB_SESSION_SECRET,
 )
+from server.config.transfer_limits import WEB_HTTP_UPLOAD_MAX_BYTES
 from server.web.file_transfer_app import create_browser_upload_blueprint
 from server.web.api_response import WebApiResponder
 from server.web.auth_guard import WebAuthGuard

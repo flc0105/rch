@@ -4,6 +4,7 @@ import uuid
 
 from server.application.transfers.transfer_history_store import TransferHistoryStore
 from server.application.transfers.transfer_batch_store import TransferBatchStore
+from server.application.transfers.upload_plan import remote_upload_members
 from datetime import datetime
 from core.transfer_settings import FileTransferMode
 from core.protocol.message_types import MSG_TYPE_TRANSFER_CANCEL
@@ -32,15 +33,30 @@ class TransferService:
         self.history = TransferHistoryStore(database)
         self.batches = TransferBatchStore(database, self.history)
 
-    def start_batch(self, *, batch_id, client_id, tab_id, destination_path, total_files, folder_count):
-        if not (total_files or folder_count):
-            raise ValueError("Empty upload batch")
+    def start_batch(self, *, batch_id, client_id, tab_id, destination_path, files, directories):
+        plan, members = remote_upload_members(destination_path, files, directories)
+        total_files = len(plan.files)
         with self._changed:
             batch = self.batches.start(batch_id=batch_id, client_id=client_id,
                                        tab_id=tab_id, destination_path=destination_path,
-                                       total_files=total_files, folder_count=folder_count)
+                                       total_files=total_files, directories=plan.directories, members=members)
             self._publish_batch(batch)
         return batch
+
+    def recover_batch_submission(self, *, batch_id, client_id, tab_id, destination_path, files, directories):
+        plan, members = remote_upload_members(destination_path, files, directories)
+        with self._lock:
+            batch = self.batches.get(batch_id)
+            if not batch:
+                return None
+            if (batch['client_id'], batch['tab_id'], batch['destination_path']) != (client_id, tab_id, destination_path):
+                raise ValueError('Upload batch not found or mismatched')
+            if batch['state'] != 'running' or not self.batches.matches_plan(batch_id, members, plan.directories):
+                raise ValueError('Upload batch is closed or its plan changed; check Transfers')
+            task_id = self._batch_tasks.get(batch_id)
+            if not task_id:
+                raise ValueError('Upload batch submission is not confirmed; check Transfers')
+            return {**batch, 'task_id': task_id}
 
     def finalize_batch(self, *, batch_id, client_id, tab_id, folder_count, error):
         with self._changed:
@@ -180,7 +196,9 @@ class TransferService:
                 self.batches.validate_member(item['batch_id'], client_id=item['client_id'],
                                              tab_id=item['tab_id'],
                                              total_files=int(item['metadata']['batch_total']),
-                                             batch_index=int(item['metadata']['batch_index']))
+                                             batch_index=int(item['metadata']['batch_index']),
+                                             destination_path=item['destination_path'], filename=item['filename'],
+                                             size=item['total_bytes'], conflict_policy=item['metadata'].get('conflict_policy', 'stop'))
             self.history.record_started(item)
             self._items[transfer_id] = item
             self._changed.notify_all()
@@ -535,6 +553,19 @@ class TransferService:
                 return None
             return self._public_item(item)
 
+    def find_tab_transfer_by_metadata(self, tab_id, key, value):
+        with self._lock:
+            return next((self._public_item(item) for item in self._items.values()
+                         if item['tab_id'] == tab_id and item['metadata'].get(key) == value), None)
+
+    def get_tab_transfer(self, transfer_id: str, tab_id: str) -> dict | None:
+        """Strict tab ownership for ephemeral submission/status APIs, including cached terminal items."""
+        with self._lock:
+            item = self._items.get(transfer_id)
+            if not item or not tab_id or item['tab_id'] != tab_id:
+                return None
+            return self._public_item(item)
+
     def wait_for_terminal(self, transfer_id: str, timeout: float | None = None) -> dict | None:
         normalized_id = str(transfer_id or '').strip()
         if not normalized_id:
@@ -561,6 +592,21 @@ class TransferService:
                     continue
 
                 remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return self._public_item(item)
+                self._changed.wait(remaining)
+
+    def wait_for_terminal_or_idle(self, transfer_id: str, idle_timeout=300):
+        """Wait for a terminal state or a sustained lack of transfer updates."""
+        with self._changed:
+            while True:
+                item = self._items.get(transfer_id)
+                if not item:
+                    return self.history.get(transfer_id)
+                if item['state'] in self.TERMINAL_STATES:
+                    return self._public_item(item)
+                last_update = datetime.fromisoformat(item['updated_at'])
+                remaining = idle_timeout - (datetime.now() - last_update).total_seconds()
                 if remaining <= 0:
                     return self._public_item(item)
                 self._changed.wait(remaining)

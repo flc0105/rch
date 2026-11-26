@@ -176,6 +176,16 @@ class ArtifactRegistryService:
             self.MAX_TRANSFER_BUFFER_SIZE,
         )
 
+    def shared_file_names(self):
+        with self._lock:
+            return self.catalog.shared_file_names()
+
+    def save_shared_upload_file(self, upload, folder_id, policy):
+        with self._lock:
+            if policy == 'stop' and self.catalog.shared_file_exists(folder_id, upload.filename):
+                raise ValueError(f'Destination changed: {upload.filename}')
+            return self.save_http_uploaded_file(upload, artifact_type=self.TYPE_SHARED, folder_id=folder_id)
+
     def save_http_uploaded_file(self, file, artifact_type: str = '', category: str = '', client_id: str = '',
                                 hostname: str = '', machine_id: str = '',
                                 source_command_id=None, addr: str = '',
@@ -366,6 +376,12 @@ class ArtifactRegistryService:
                 self.catalog.delete(item['artifact_id'])
                 deleted += 1
         return deleted
+
+    def resolve_folder(self, artifact_type, folder):
+        return self.catalog.resolve_folder(artifact_type, folder)
+
+    def get_folder(self, folder_id):
+        return self.catalog.get_folder(folder_id)
 
     def list_folders(self, artifact_type: str = ''):
         return self.catalog.list_folders(artifact_type)

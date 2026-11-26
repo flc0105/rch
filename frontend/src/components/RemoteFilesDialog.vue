@@ -871,6 +871,7 @@
       :multiple="true"
       :allow-directories="true"
       :loading="dragUploadLoading"
+      :stage="dragUploadStage" :progress="dragUploadProgress"
       @upload="handleDragUpload"
   />
   <RemotePinsDialog
@@ -900,7 +901,8 @@ import { flattenUploadAttachments } from '../utils/browserFileEntries.js'
 import { promptCreateRemoteFolder } from '../utils/remoteFolderCreation.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient, startBrowserUploadBatch, finalizeBrowserUploadBatch, isBrowserUploadBatchCancelled } from '../api/transferApi.js'
-import { conflictsEnabled, preparePasteConflicts, prepareExtractConflict, prepareUploadConflict } from '../utils/remoteFileConflicts.js'
+import { joinRemotePath } from '../utils/remotePaths.js'
+import { preparePasteConflicts, prepareExtractConflict, prepareUploadConflict, prepareRemoteUploadPlan } from '../utils/remoteFileConflicts.js'
 import { sendCommand } from '../api/connectionsApi.js'
 
 
@@ -960,6 +962,8 @@ export default {
       remoteUploadLoading: false,
       dragUploadVisible: false,
       dragUploadLoading: false,
+      dragUploadStage: '',
+      dragUploadProgress: null,
       showHiddenFiles: false,
       remoteSelectedPaths: [],
       remoteZipDownloading: false,
@@ -1271,22 +1275,11 @@ export default {
       this.dragUploadVisible = true
     },
 
-    // Keep the remote directory's path style when targeting Windows clients.
-    joinUploadRemotePath(root, relativePath) {
-      const separator = root.includes('\\') ? '\\' : '/'
-      const base = root.replace(/[\\/]+$/, '')
-      return `${base}${separator}${relativePath.split('/').join(separator)}`
-    },
-
-    async ensureUploadRemoteDirectory(clientId, path) {
-      const response = await makeRemoteDirectory(clientId, path)
+    async ensureUploadRemoteDirectory(clientId, path, reuse) {
+      const response = reuse ? await listRemoteDirectory(clientId, { path, page: 1, pageSize: 1 }) : await makeRemoteDirectory(clientId, path)
       const result = await response.json()
-      if (response.ok && result.code === 0) return
-      // An existing destination folder can be reused; verify that it is browsable.
-      const existing = await listRemoteDirectory(clientId, { path, page: 1, pageSize: 1 })
-      const info = await existing.json()
-      if (!existing.ok || info.code !== 0 || !info.data?.current_path) {
-        throw new Error(result.message || `Cannot create directory: ${path}`)
+      if (!response.ok || result.code !== 0 || (reuse && !result.data?.current_path)) {
+        throw new Error(result.message || `Cannot prepare directory: ${path}`)
       }
     },
 
@@ -1302,7 +1295,7 @@ export default {
 
       // A lone file uses the original Upload workflow, not a Batch parent.
       if (plan.directories.length === 0 && plan.files.length === 1) {
-        const uploaded = await this.handleUploadChange({ target: { files: [plan.files[0].file] } })
+        const uploaded = await this.uploadSelectedFile(plan.files[0].file)
         if (uploaded) {
           this.dragUploadVisible = false
           await this.refreshRemoteDirectory()
@@ -1325,27 +1318,18 @@ export default {
       let readyFolders = 0
       let queue = []
       this.dragUploadLoading = true
+      this.dragUploadStage = 'Checking conflicts…'
+      this.dragUploadProgress = null
       try {
         if (plan.files.length > 1000 || plan.directories.length > 10000) throw new Error('Invalid upload batch size')
         // Inspect existing destinations before creating folders or starting transfers.
-        const askOnConflict = await conflictsEnabled()
-        const existingDirectories = new Map()
-        const conflictScope = {}
-        for (const entry of plan.files) {
-          if (!stillActive()) throw new Error('Remote upload context changed')
+        const prepared = await prepareRemoteUploadPlan(context.clientId, root, plan, stillActive)
+        if (prepared === false) { ElMessage.info?.('Upload cancelled'); return }
+        queue = prepared.files.map(entry => {
           const parent = entry.relativePath.split('/').slice(0, -1).join('/')
-          const destinationDir = parent ? this.joinUploadRemotePath(root, parent) : root
-          if (parent && askOnConflict && !existingDirectories.has(destinationDir)) {
-            const response = await listRemoteDirectory(context.clientId, { path: destinationDir, page: 1, pageSize: 1 })
-            const result = await response.json()
-            existingDirectories.set(destinationDir, response.ok && result.code === 0)
-          }
-          const policy = parent && askOnConflict && !existingDirectories.get(destinationDir) ? 'stop'
-            : await prepareUploadConflict(context.clientId, destinationDir, entry.file.name, { allowSkip: true, promptEnabled: askOnConflict, conflictScope })
-          if (policy === false) throw new Error(`Upload stopped: ${entry.relativePath}`)
-          if (policy !== 'skip') queue.push({ file: entry.file, destinationDir, policy })
-        }
-        if (!queue.length && !plan.directories.length) {
+          return { ...entry, destinationDir: parent ? joinRemotePath(root, parent) : root }
+        })
+        if (!queue.length && !prepared.directories.length) {
           if (stillActive()) {
             this.dragUploadVisible = false
             ElMessage.info(`Skipped ${plan.files.length} file(s)`)
@@ -1353,18 +1337,22 @@ export default {
           return
         }
         await startBrowserUploadBatch({ clientId: context.clientId, batchId, destinationPath: root,
-          totalFiles: queue.length, folderCount: plan.directories.length }, headers)
+          files: queue.map(({ file, relativePath, policy }) => ({ relative_path: relativePath, size: file.size, conflict_policy: policy })),
+          directories: prepared.directories }, headers)
         batchStarted = true
         this.$emit('append-output', context.clientId,
           `> ${TERMINAL_REMOTE_UPLOAD_PREFIX} ${queue.length} file(s) -> ${root}`, 'command', { operation })
-        for (const dir of plan.directories) {
-          if (!stillActive() || isBrowserUploadBatchCancelled(batchId)) throw new Error('Remote upload stopped')
-          await this.ensureUploadRemoteDirectory(context.clientId, this.joinUploadRemotePath(root, dir))
+        this.dragUploadStage = 'Preparing folders…'
+        for (const dir of prepared.directories) {
+          if (isBrowserUploadBatchCancelled(batchId)) throw new Error('Remote upload stopped')
+          await this.ensureUploadRemoteDirectory(context.clientId, joinRemotePath(root, dir), prepared.reused.has(dir))
           readyFolders++
+          this.dragUploadProgress = Math.round(100 * readyFolders / prepared.directories.length)
         }
+        this.dragUploadStage = 'Submitting files…'
+        this.dragUploadProgress = queue.length ? 0 : null
         for (const [index, { file, destinationDir, policy }] of queue.entries()) {
           if (isBrowserUploadBatchCancelled(batchId)) throw new Error('Browser upload was cancelled')
-          if (!stillActive()) throw new Error('Remote upload context changed')
           await uploadRemoteFileToClient({
             file, clientId: context.clientId, destinationPath: destinationDir,
             conflictPolicy: policy, headers, batchId, batchTotal: queue.length, batchIndex: index,
@@ -1374,6 +1362,7 @@ export default {
             },
           })
           started++
+          this.dragUploadProgress = Math.round(100 * started / queue.length)
         }
         if (stillActive()) {
           this.dragUploadVisible = false
@@ -1404,13 +1393,18 @@ export default {
           }
         }
         this.dragUploadLoading = false
+        this.dragUploadStage = ''
+        this.dragUploadProgress = null
       }
     },
 
     async handleUploadChange(event) {
-      const file = event.target.files && event.target.files[0]
-      if (!file) return
+      const file = event?.target?.files?.[0]
+      if (event?.target) event.target.value = ''
+      if (file) return this.uploadSelectedFile(file)
+    },
 
+    async uploadSelectedFile(file) {
       const clientId = String(this.remoteFilesClientId || '').trim()
       if (!clientId) {
         ElMessage.warning('Please select a device')
@@ -1422,14 +1416,13 @@ export default {
         return
       }
 
-      const targetPath = event?.destinationPath || this.remoteFilesCurrentPath
-      const rootPath = event?.rootPath || targetPath
+      const targetPath = this.remoteFilesCurrentPath
       this.remoteUploadLoading = true
 
       let operation = null
       try {
         const conflictPolicy = await prepareUploadConflict(clientId, targetPath, file.name)
-        if (conflictPolicy === false || String(this.remoteFilesClientId || '') !== clientId || this.remoteFilesCurrentPath !== rootPath) return false
+        if (conflictPolicy === false || String(this.remoteFilesClientId || '') !== clientId || this.remoteFilesCurrentPath !== targetPath) return false
         operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
           invocation: { source: 'remote_files', filename: file.name, destination: targetPath }, replay: null })
         this.$emit('append-output', clientId, `> ${TERMINAL_REMOTE_UPLOAD_PREFIX} ${file.name} -> ${targetPath}`,
@@ -1438,11 +1431,7 @@ export default {
           file, clientId, destinationPath: targetPath, conflictPolicy,
           headers: operationHeaders(operation, {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'}),
           onStarted: () => {
-            if (event?.batchToast) {
-              if (!event.suppressToast) showTransferStartedToast(event.batchToast, this.openTransferCenterFromToast)
-            } else {
-              showTransferStartedToast(`Upload started: ${file.name}`, this.openTransferCenterFromToast)
-            }
+            showTransferStartedToast(`Upload started: ${file.name}`, this.openTransferCenterFromToast)
           },
         })
         const taskId = result.task_id
@@ -1482,7 +1471,6 @@ export default {
         return false
       } finally {
         this.remoteUploadLoading = false
-        if (event?.target) event.target.value = ''
       }
     },
 

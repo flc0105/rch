@@ -3,6 +3,8 @@ import os
 import mimetypes
 
 from flask import Blueprint, request, send_file
+from werkzeug.exceptions import RequestEntityTooLarge
+from server.config.transfer_limits import WEB_HTTP_UPLOAD_MAX_BYTES
 
 from server.web.api_response import WebApiResponder
 from server.web.operation_id import get_optional_operation_id
@@ -30,21 +32,37 @@ def create_artifacts_blueprint(server_instance):
             default_error_status=500,
         )
 
+    @blueprint.post('/api/artifacts/shared/inspect-upload')
+    def inspect_shared_upload():
+        payload = get_json_payload()
+        return responder.json_endpoint(lambda: artifact_api.inspect_shared_upload(
+            payload.get('paths'), payload.get('directories'), payload.get('folder_id') or ''))
+
     @blueprint.post('/api/artifacts/shared/batch-upload')
     def upload_shared_batch():
         def execute():
-            files = request.files.getlist('files')
-            try:
-                paths = json.loads(request.form.get('paths') or '[]')
-                directories = json.loads(request.form.get('directories') or '[]')
-            except (ValueError, TypeError) as exc:
-                raise ValueError('Invalid Shared upload manifest') from exc
-            if not isinstance(paths, list) or not isinstance(directories, list):
-                raise ValueError('Invalid Shared upload manifest')
-            return artifact_api.upload_shared_batch(
-                files=files, paths=paths, directories=directories,
-                parent_folder_id=request.form.get('folder_id') or '',
-            )
+            # Reserve before Werkzeug parses the multipart request and spools file bodies.
+            limit = request.max_content_length or WEB_HTTP_UPLOAD_MAX_BYTES
+            size = request.content_length
+            if size is not None and size > limit:
+                raise RequestEntityTooLarge()
+            with artifact_api.reserve_upload_intake(limit if size is None else size):
+                try:
+                    files = request.files.getlist('files')
+                    try:
+                        paths = json.loads(request.form.get('paths') or '[]')
+                        directories = json.loads(request.form.get('directories') or '[]')
+                        policies = json.loads(request.form.get('conflict_policies') or '[]')
+                    except (ValueError, TypeError) as exc:
+                        raise ValueError('Invalid Shared upload manifest') from exc
+                    if not isinstance(paths, list) or not isinstance(directories, list):
+                        raise ValueError('Invalid Shared upload manifest')
+                    return artifact_api.upload_shared_batch(
+                        files=files, paths=paths, directories=directories, conflict_policies=policies,
+                        parent_folder_id=request.form.get('folder_id') or '',
+                    )
+                finally:
+                    request.close()
         return responder.json_endpoint(execute)
 
     @blueprint.post('/api/artifacts/folders')

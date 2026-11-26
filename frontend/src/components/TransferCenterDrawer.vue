@@ -66,6 +66,9 @@
             </span>
           </div>
 
+          <div v-if="transfer.is_batch && transfer.planned_bytes != null" class="transfer-card-detail">
+            {{ formatInfoBytes(transfer.completed_bytes) }} / {{ formatInfoBytes(transfer.planned_bytes) }} completed
+          </div>
           <div v-if="transfer.speed_bytes_per_sec > 0" class="transfer-card-detail">
             {{ formatRate(transfer.speed_bytes_per_sec) }}
             <template v-if="transfer.eta_seconds != null">
@@ -197,6 +200,11 @@
       <el-descriptions-item v-if="infoTransfer.error" label="Error">{{ infoTransfer.error }}</el-descriptions-item>
       <el-descriptions-item v-if="infoTransfer.artifact_id" label="Artifact ID">{{ infoTransfer.artifact_id }}</el-descriptions-item>
       <el-descriptions-item v-if="infoTransfer.is_batch" label="Files">{{ infoTransfer.completed_files }} / {{ infoTransfer.total_files }} completed</el-descriptions-item>
+      <el-descriptions-item v-if="infoTransfer.is_batch && infoTransfer.completed_bytes != null" label="Completed data">
+        {{ formatInfoBytes(infoTransfer.completed_bytes) }}
+        <template v-if="infoTransfer.planned_bytes != null"> / {{ formatInfoBytes(infoTransfer.planned_bytes) }}</template>
+      </el-descriptions-item>
+      <el-descriptions-item v-if="infoTransfer.is_batch && infoTransfer.planned_bytes == null && infoTransfer.submitted_bytes != null" label="Submitted size">{{ formatInfoBytes(infoTransfer.submitted_bytes) }}</el-descriptions-item>
       <el-descriptions-item v-if="infoTransfer.is_batch" label="Outcome">{{ infoTransfer.failed_files }} failed · {{ infoTransfer.cancelled_files }} cancelled · {{ infoTransfer.interrupted_files }} interrupted · {{ infoTransfer.unsubmitted_files }} not submitted</el-descriptions-item>
     </el-descriptions>
     <section v-if="infoTransfer?.is_batch" class="transfer-batch-section">
@@ -204,12 +212,21 @@
         <h3>File Transfers</h3>
         <span>{{ batchMembers.length }} / {{ infoTransfer.total_files }} files</span>
       </div>
+      <div class="transfer-batch-filters">
+        <el-input v-model="batchMemberSearch" clearable placeholder="Search files or paths" aria-label="Search files or paths" />
+        <el-select v-model="batchMemberFilter" aria-label="Filter transfers">
+          <el-option label="All" value="all" /><el-option label="Active" value="running" />
+          <el-option label="Failed / Interrupted" value="failed" /><el-option label="Completed" value="completed" />
+          <el-option label="Cancelled" value="cancelled" />
+        </el-select>
+      </div>
       <div class="transfer-batch-members">
         <div v-if="batchMembersLoading && !batchMembers.length" class="transfer-batch-empty">Loading files…</div>
         <div v-else-if="!batchMembers.length" class="transfer-batch-empty">{{ batchMembersError || 'No file transfers yet' }}</div>
+        <div v-else-if="!orderedBatchMembers.length" class="transfer-batch-empty">No matching files</div>
         <div v-for="file in orderedBatchMembers" :key="file.transfer_id" class="transfer-batch-member">
           <div class="transfer-batch-member-head">
-            <span class="transfer-batch-member-name" :title="file.destination_path || file.filename">{{ file.filename }}</span>
+            <span class="transfer-batch-member-name" :title="file.destination_path || file.filename">{{ batchMemberPath(file) }}</span>
             <span class="transfer-batch-member-state" :class="`is-${file.state}`">{{ recentStateLabel(file) }}</span>
           </div>
           <div v-if="hasProgress(file)" class="transfer-batch-member-progress">
@@ -278,6 +295,8 @@ export default {
       infoVisible: false,
       infoTransfer: null,
       batchMembers: [],
+      batchMemberSearch: '',
+      batchMemberFilter: 'all',
       batchMembersLoading: false,
       batchMembersError: '',
       batchMembersRequestId: 0,
@@ -318,8 +337,12 @@ export default {
 
     orderedBatchMembers() {
       // Keep the live files visible even when the batch has hundreds of completed members.
-      return [...this.batchMembers.filter(file => file.state === 'running'),
-        ...this.batchMembers.filter(file => file.state !== 'running')]
+      const query = this.batchMemberSearch.trim().toLowerCase()
+      const filter = this.batchMemberFilter
+      const files = this.batchMembers.filter(file =>
+        (!query || this.batchMemberPath(file).toLowerCase().includes(query)) &&
+        (filter === 'all' || file.state === filter || (filter === 'failed' && file.state === 'interrupted')))
+      return [...files.filter(file => file.state === 'running'), ...files.filter(file => file.state !== 'running')]
     },
 
     remainingRecentCount() {
@@ -374,9 +397,13 @@ export default {
     },
 
     async openBatchDetails(transfer) {
+      if (this.infoTransfer?.batch_id !== transfer.batch_id) {
+        this.batchMembers = []
+        this.batchMemberSearch = ''
+        this.batchMemberFilter = 'all'
+      }
       this.infoTransfer = transfer
       this.infoVisible = true
-      this.batchMembers = []
       this.batchMembersLoading = true
       this.batchMembersError = ''
       const requestId = ++this.batchMembersRequestId
@@ -384,7 +411,7 @@ export default {
         const result = await loadBatchTransfers(transfer.batch_id, this.tabId)
         if (requestId === this.batchMembersRequestId && this.infoTransfer?.batch_id === transfer.batch_id) {
           const merged = new Map((result.items || []).map(item => [item.transfer_id, item]))
-          for (const item of this.batchMembers) merged.set(item.transfer_id, item)
+          for (const item of this.batchMembers) merged.set(item.transfer_id, this.newerBatchMember(merged.get(item.transfer_id), item))
           this.batchMembers = [...merged.values()]
         }
       } catch (error) {
@@ -400,8 +427,23 @@ export default {
     handleTransferChildUpdate(file) {
       if (!file.batch_id || this.infoTransfer?.batch_id !== file.batch_id) return
       const index = this.batchMembers.findIndex(item => item.transfer_id === file.transfer_id)
-      if (index >= 0) this.batchMembers.splice(index, 1, file)
+      if (index >= 0) this.batchMembers.splice(index, 1, this.newerBatchMember(this.batchMembers[index], file))
       else this.batchMembers.push(file)
+    },
+
+    newerBatchMember(previous, incoming) {
+      if (!previous) return incoming
+      if (previous.state && previous.state !== 'running' && incoming.state === 'running') return previous
+      if (incoming.state && incoming.state !== 'running' && previous.state === 'running') return incoming
+      if (previous.updated_at && incoming.updated_at && previous.updated_at > incoming.updated_at) return previous
+      return incoming
+    },
+
+    batchMemberPath(file) {
+      const root = String(this.infoTransfer?.destination_path || '').replace(/\\/g, '/').replace(/\/+$/, '')
+      const directory = String(file.destination_path || '').replace(/\\/g, '/').replace(/\/+$/, '')
+      const relative = root && directory.startsWith(root + '/') ? directory.slice(root.length + 1) : ''
+      return [relative, file.filename || file.transfer_id || ''].filter(Boolean).join('/')
     },
 
     formatDate(value) {
@@ -479,6 +521,7 @@ export default {
     },
 
     formatPercent(value) {
+      if (value == null) return ''
       const number = Number(value)
       if (!Number.isFinite(number)) return ''
       return `${Math.round(number)}%`
@@ -540,6 +583,8 @@ export default {
 </script>
 
 <style scoped>
+.transfer-batch-filters { display: flex; gap: 8px; margin-bottom: 10px; }
+.transfer-batch-filters :deep(.el-select) { width: 155px; flex-shrink: 0; }
 .transfer-center-header-actions {
   display: flex;
   align-items: center;

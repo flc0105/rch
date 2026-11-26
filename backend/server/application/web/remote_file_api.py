@@ -127,8 +127,8 @@ class WebRemoteFileApi:
     def extract_remote_zip(self, client_id: str, path: str, destination_dir: str, entry_name: str = '', *, origin: str = 'web_ui', inspect=False, conflict_policy=None):
         return self.remote_file_service.extract_zip(client_id, path, destination_dir, entry_name=entry_name, origin=origin, inspect=inspect, conflict_policy=conflict_policy)
 
-    def inspect_remote_upload(self, client_id: str, destination_dir: str, filename: str):
-        return self.remote_file_service.inspect_upload(client_id, destination_dir, filename)
+    def inspect_remote_upload(self, client_id: str, destination_dir: str, paths, directories):
+        return self.remote_file_service.inspect_upload(client_id, destination_dir, paths, directories)
 
     def read_remote_file(
         self,

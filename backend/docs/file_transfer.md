@@ -68,7 +68,7 @@ Remote Files 上传到设备
 | 8085 | `POST /api/transfers/browser-upload-batch/start`、`/finalize` | Drag Upload 批次父记录的创建与提交结束；不改变单文件上传接口 |
 | 8085 | `GET /api/transfers/batches/{batch_id}/items` | 按 Batch 查看子文件原生进度与错误 |
 | 8085 | `POST /api/transfers/{transfer_id}/cancel` | 请求取消 |
-| 8085 | `PATCH /api/transfers/{transfer_id}/browser-upload` | 浏览器阶段异常或进度更新 |
+| 8085 | `GET /api/transfers/{transfer_id}/browser-upload`、`PATCH /api/transfers/{transfer_id}/browser-upload` | 当前标签页查询浏览器上传状态、报告浏览器阶段异常或进度 |
 | 8085 | `DELETE /api/transfers/{transfer_id}`、`DELETE /api/transfers/recent?machine_id=...` | 删除单条历史；按可选机器筛选条件清理终态记录，省略筛选则清理全部 |
 | 8085 | `/api/connections/{client_id}/remote-files/...` | 远程文件的控制操作 |
 | 8085 | `/api/artifacts/{artifact_id}/download`、`/raw`、`/preview` | 浏览器访问已生成的 Artifact |
@@ -117,6 +117,18 @@ HTTP Streaming 上传构造 multipart 的头部、文件内容及尾部，在 `r
 
 HTTP Simple 上传与下载使用内部固定的 Requests 网络超时：连接等待 15 秒、单次网络读取等待 120 秒（接收到数据后重新计时），不暴露运行时配置。HTTP Streaming 保持原有请求行为，通过执行上下文协作取消。Server 的通用 HTTP 上传请求体上限为 10 GiB；这个服务端上限与 HTTP Simple 的 1 GiB 客户端保护相互独立。
 
+### 浏览器上传的接收配额与请求恢复
+
+Remote 浏览器原始上传、受管理的本地文件暂存和 Shared 批量 multipart 接收共用 Server 进程内的接收额度。Remote 暂存直到专属临时目录清理才释放；Shared 在解析 multipart 之前占用额度并在请求文件关闭后释放。配额限制声明的接收字节与并发暂存，不等价于文件系统总容量或所有 Artifact 的存储配额。
+
+| 环境变量 | 默认值 | 约束 |
+| --- | --- | --- |
+| `RCH_WEB_UPLOAD_STAGING_MAX_BYTES` | 20 GiB | 全局在途暂存预算（配置值为字节数） |
+| `RCH_WEB_UPLOAD_STAGING_MAX_SLOTS` | 12 | 全局暂存/接收槽位 |
+| `RCH_WEB_UPLOAD_STAGING_MAX_DEVICE_SLOTS` | 4 | 同一目标设备的 Remote 浏览器暂存槽位 |
+
+同一活动批次的相同计划、同一标签页的相同文件注册身份可在控制请求响应丢失时恢复原注册；不同计划或参数不允许覆盖原身份。一次性上传 Token 不重复消费，未使用的凭据在后续查询、注册或消费时检查五分钟期限。浏览器原始文件请求响应不明确时查询原 Transfer 状态，不自动重发字节，也不覆盖 Server 已接手的终态。上述恢复仅适用于当前 Server 进程保留的运行状态，不提供跨重启续传或持久化重试。
+
 ## 上传、下发及中转阶段
 
 ### 远程文件任务和前台命令
@@ -129,9 +141,9 @@ Web 远程文件下载、预览、压缩下载和受管理的下发任务通过 
 
 Remote Files 单文件 **Upload** 保持原有任务和传输链路，任务显示为 `[Remote Upload] filename`，不再使用貌似命令的 `upload filename`。**Drag Upload** 选中一个普通文件时使用同一单文件上传链路；多文件或包含目录时采用独立的 Web 批次编排：Server 创建 `transfer_batches` 父记录，成员仍调用原有浏览器上传 Transfer API，并在 `transfer_records.batch_id` 持久化归属。父级记录批次身份、目标位置、预期文件数、提交结束和最终状态，并对应一次 Upload Task；每个文件仍有自己的 Transfer ID、SSE 进度、失败和取消能力。**不新增 Client 上传命令或数据协议**。
 
-单文件和批次共用 Upload Task 生命周期；一次批次由一个 Task 调度，逐个执行原生 Transfer，并最多缓存一个待下发文件。Terminal 使用任务原生完成事件。全部预期成员结束时自动关闭，部分提交或纯目录批次显式结束提交；客户端断开、取消或浏览器提交超时也会关闭未完成批次。父级结束必须等待已提交文件全部进入终态，只有这个结果会触发一条 `file_transfer_batch_finished` 汇总通知。`transfer_updated` 和 `file_transfer_lifecycle` 仍按文件发出，不会因批次汇总而丢失传输进度。
+单文件和批次共用 Upload Task 生命周期；一次批次由一个 Task 调度，逐个执行原生 Transfer，并最多缓存一个待下发文件。Terminal 使用任务原生完成事件。父任务持有规范化文件计划，成员注册时校验序号、文件名、目标、字节数及策略。仅无目录且全部预期成员结束时自动关闭；包含目录的批次必须确认目录准备结果，部分提交必须显式结束或由超时收尾；客户端断开、取消或浏览器提交超时也会关闭未完成批次；未确认的目录不能计为已完成。单文件和批次成员在长时间无传输状态更新时请求取消并按实际已知结果收尾，失败后应先核对目标再重试。父级结束必须等待已提交文件全部进入终态，只有这个结果会触发一条 `file_transfer_batch_finished` 汇总通知。`transfer_updated` 和 `file_transfer_lifecycle` 仍按文件发出，不会因批次汇总而丢失传输进度。
 
-Transfer Center 的 Active / Recent 以单文件或 Batch 父级为行；Recent 的 SQL 分页按父记录计数，重启后仍能从 SQLite 还原批次。Batch 的 Details 在 File Transfers 列表中实时展示各子文件当前阶段、百分比、字节数及错误；支持批次整体取消与成员原有取消入口。当前批次总体百分比按**已完成文件数量**计算，不能把 Browser→Server 和 Server→Client 两段重置的字节进度简单相加。即使某些文件未成功提交，父级也会保留不完整状态和已经完成的成员信息。
+Transfer Center 的 Active / Recent 以单文件或 Batch 父级为行；Recent 的 SQL 分页按父记录计数，重启后仍能从 SQLite 还原批次。Batch 的 Details 在 File Transfers 列表中实时展示各子文件相对路径、当前阶段、百分比、字节数及错误，并支持搜索及状态筛选；支持批次整体取消与成员原有取消入口。当前批次总体百分比按**已完成文件数量**计算，不能把 Browser→Server 和 Server→Client 两段重置的字节进度简单相加。同时显示已完成文件字节与已知计划总字节；计划缺失时仅显示已登记字节，不把部分登记的文件误作完整批次。即使某些文件未成功提交，父级也会保留不完整状态和已经完成的成员信息。
 
 **数据库更新：**旧 `rch.db` 须在关闭 Server 后显式升级：为 `transfer_records` 新增 `batch_id` 字段，并新建 `transfer_batches` 及对应索引；Server 不在启动时自动修改既有表结构。具体 SQL 与字段以 `server/persistence/rch_database.py` 的当前规范 Schema 为准。运行在远端设备上的 `pyexec` 不能代替 Server 本地数据库迁移。
 

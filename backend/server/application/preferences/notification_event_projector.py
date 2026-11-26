@@ -388,14 +388,17 @@ class NotificationEventProjector:
     def _build_artifact_batch_uploaded(self, payload):
         files = int(payload.get('file_count') or 0)
         folders = int(payload.get('folder_count') or 0)
+        skipped = int(payload.get('skipped_files') or 0)
         error = str(payload.get('error') or '')
         message = f'{files} file(s), {folders} folder(s) uploaded'
+        if skipped:
+            message += f' · {skipped} skipped'
         if error:
             message += f' · {error}'
         return self._notification(
             'artifact_created', 'Shared Upload Incomplete' if error else 'Files Ready',
             message, 'warning' if error else 'success',
-            {'artifact_type': 'shared', 'file_count': files, 'folder_count': folders,
+            {'artifact_type': 'shared', 'file_count': files, 'folder_count': folders, 'skipped_files': skipped,
              **({'error': error, 'total_files': payload.get('total_files')} if error else {})},
             [{'id': 'open-artifacts', 'type': 'open_artifacts', 'label': 'Open Artifacts', 'url': ''}],
         )

@@ -5,6 +5,7 @@ from core.artifact_contract import (
     ArtifactType,
 )
 from server.application.artifact.artifact_events import publish_artifact_created
+from server.application.artifact.shared_upload_service import SharedUploadIncomplete
 
 
 class WebArtifactApi:
@@ -72,7 +73,7 @@ class WebArtifactApi:
         if not name or name in ('.', '..'):
             raise ValueError('Invalid file name')
         if folder_id:
-            folder = self.artifact_service.registry_service.catalog.get_folder(folder_id)
+            folder = self.artifact_service.get_folder(folder_id)
             if folder['artifact_type'] != artifact_type:
                 raise ValueError('Folder does not belong to this file space')
         artifact = self.artifact_service.save_text_artifact(
@@ -123,8 +124,11 @@ class WebArtifactApi:
     def create_upload_temp_file(self, upload):
         return self.artifact_service.create_upload_temp_file(upload)
 
-    def create_upload_temp_path(self, filename: str):
-        return self.artifact_service.create_upload_temp_path(filename)
+    def create_upload_temp_path(self, filename: str, *, expected_size: int, owner: str = ''):
+        return self.artifact_service.create_upload_temp_path(filename, expected_size=expected_size, owner=owner)
+
+    def reserve_upload_intake(self, size):
+        return self.artifact_service.reserve_upload_intake(size)
 
     def cleanup_upload_temp_file(self, temp_path: str):
         self.artifact_service.cleanup_upload_temp_file(temp_path)
@@ -147,10 +151,10 @@ class WebArtifactApi:
             if folder and folder_id:
                 raise ValueError('Specify folder or folder_id, not both')
             if folder:
-                folder_id = self.artifact_service.registry_service.catalog.resolve_folder(
+                folder_id = self.artifact_service.resolve_folder(
                     expected_type.value, folder)
             if folder_id:
-                folder_info = self.artifact_service.registry_service.catalog.get_folder(folder_id)
+                folder_info = self.artifact_service.get_folder(folder_id)
                 if folder_info['artifact_type'] != expected_type.value:
                     raise ValueError('Folder does not belong to this file space')
         resolved_hostname, resolved_machine_id, addr = self.resolve_client_context(client_id)
@@ -177,74 +181,23 @@ class WebArtifactApi:
         return artifact
 
 
-    def upload_shared_batch(self, *, files, paths, directories, parent_folder_id=''):
-        """Save a browser folder selection under one Shared root and emit one batch event."""
-        if len(files) != len(paths) or len(files) > 1000 or len(directories) > 2000:
-            raise ValueError('Invalid Shared upload batch')
-        if not files and not directories:
-            raise ValueError('Empty Shared upload batch')
+    def inspect_shared_upload(self, paths, directories, parent_folder_id=''):
+        return self.artifact_service.inspect_shared_upload(paths, directories, parent_folder_id)
 
-        def parts_of(path):
-            if not isinstance(path, str) or not path or '\\' in path or '\x00' in path:
-                raise ValueError('Invalid Shared upload path')
-            parts = path.split('/')
-            if any(not part or part in ('.', '..') or len(part) > 120 or any(ord(ch) < 32 for ch in part) for part in parts):
-                raise ValueError('Invalid Shared upload path')
-            return parts
-
-        explicit_dirs = { '/'.join(parts_of(path)) for path in directories }
-        file_paths = [ '/'.join(parts_of(path)) for path in paths ]
-        if len(file_paths) != len(set(file_paths)):
-            raise ValueError('Duplicate Shared upload path')
-        if any(upload.filename != path.rsplit('/', 1)[-1] for upload, path in zip(files, file_paths)):
-            raise ValueError('Shared upload filename mismatch')
-        for path in file_paths:
-            parts = path.split('/')
-            for i in range(1, len(parts)):
-                explicit_dirs.add('/'.join(parts[:i]))
-        if len(explicit_dirs) > 2000 or len({p.casefold() for p in explicit_dirs}) != len(explicit_dirs):
-            raise ValueError('Invalid or ambiguous Shared folder paths')
-        if {p.casefold() for p in explicit_dirs}.intersection(p.casefold() for p in file_paths):
-            raise ValueError('File and folder share the same path')
-        directory_paths = sorted(explicit_dirs, key=lambda value: (value.count('/'), value))
-        catalog = self.artifact_service.registry_service.catalog
-        if parent_folder_id:
-            if catalog.get_folder(parent_folder_id)['artifact_type'] != 'shared':
-                raise ValueError('Folder does not belong to Shared Files')
-        folders = catalog.list_folders(artifact_type='shared')
-        known = {(row.get('parent_id') or '', row['name'].casefold()): row['folder_id'] for row in folders}
-        created = 0
-        saved = 0
-        by_path = {}
+    def upload_shared_batch(self, **kwargs):
         try:
-            for path in directory_paths:
-                parent_path, _, name = path.rpartition('/')
-                parent_id = by_path[parent_path] if parent_path else parent_folder_id
-                key = (parent_id or '', name.casefold())
-                folder_id = known.get(key)
-                if not folder_id:
-                    folder_id = self.create_folder('shared', name, parent_id or '')['folder_id']
-                    known[key] = folder_id
-                    created += 1
-                by_path[path] = folder_id
-            for upload, path in zip(files, file_paths):
-                parent_path, _, filename = path.rpartition('/')
-                folder_id = by_path[parent_path] if parent_path else parent_folder_id
-                # Use the real browser filename, not the relative path, for the Artifact object.
-                self.save_http_uploaded_file(
-                    upload, artifact_type='shared', folder_id=folder_id or '', publish_event=False,
-                )
-                saved += 1
-        except Exception as exc:
+            result = self.artifact_service.upload_shared_batch(**kwargs)
+        except SharedUploadIncomplete as exc:
             self.event_bus.publish('artifact_batch_uploaded', {
-                'artifact_type': 'shared', 'file_count': saved, 'folder_count': created,
-                'error': str(exc)[:256], 'total_files': len(files),
+                'artifact_type': ArtifactType.SHARED.value, 'file_count': exc.files_uploaded,
+                'folder_count': exc.folders_created, 'error': exc.error[:256], 'total_files': exc.total_files,
             })
-            raise ValueError(f'Shared upload stopped after {saved}/{len(files)} file(s), {created} folder(s) created: {exc}') from exc
+            raise
         self.event_bus.publish('artifact_batch_uploaded', {
-            'artifact_type': 'shared', 'file_count': saved, 'folder_count': created,
+            'artifact_type': ArtifactType.SHARED.value, 'file_count': result['files_uploaded'],
+            'folder_count': result['folders_created'], 'skipped_files': result['files_skipped'],
         })
-        return {'files_uploaded': saved, 'folders_created': created}
+        return result
 
     def allocate_command_output_artifact_path(self, *, output_kind: str, machine_id: str, source_command: str) -> dict:
         return self.artifact_service.allocate_command_output_artifact_path(

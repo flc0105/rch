@@ -8,7 +8,7 @@ Remote Files 按需访问在线 Client 的文件系统。浏览器通过控制�
 
 **More → Drag Upload** 可以同时拖入文件和文件夹，保留嵌套和空文件夹。多文件或包含目录时在 Server Transfer 业务层建立一个持久的父记录（`transfer_batches`），各文件沿用原单文件 Transfer，下发仍按原有 Client 协议执行；一次批次由一个 Upload Task 统一调度，`transfer_records.batch_id` 记录成员归属。原工具栏 **Upload** 与 Drag Upload 的单个普通文件均走单文件任务，不经批次编排。
 
-Drag Upload 只产生一组 `[Remote Upload]` Terminal 开始/结束回显、一条终态汇总通知，但每个文件仍有独立 SSE 进度、取消和失败明细。Transfer Center 把父批次作为一行，以原设备 hostname 显示方向，并在失败时包含具体文件和错误原因；Details 打开子文件详情，Recent 重新打开后仍保留归组和分页。目录创建失败或部分上传失败时，已经完成的成员保留在该批次历史中。
+Drag Upload 只产生一组 `[Remote Upload]` Terminal 开始/结束回显、一条终态汇总通知，但每个文件仍有独立 SSE 进度、取消和失败明细。Transfer Center 把父批次作为一行，以原设备 hostname 显示方向，并在失败时包含具体文件和错误原因；Details 打开子文件详情，Recent 重新打开后仍保留归组和分页。目录创建失败或部分上传失败时，已经完成的成员保留在该批次历史中。提交期间界面区分检查冲突、准备目录与提交文件；批次开始后固定原始设备及目标目录，不因浏览路径变化而改写目标。Details 可按相对路径搜索、按状态筛选。
 
 ## 远程文件系统的访问通路
 
@@ -167,7 +167,7 @@ Web Remote Files 的真正远程文件修改动作会在 Client 命令成功派�
 
 ### 远端到 Server 的文件搬运
 
-Browser 的普通 **Upload** 保持单文件选择。**More → Drag Upload** 提供共享的拖放上传面板，点击拖拽区可选择多个文件，也可直接混合拖入文件与文件夹；目录层级由 Client 的既有新建目录控制请求重建，文件以有界顺序逐个交给现有 Browser Upload Transfer 通道；每个文件仍有独立的进度与取消操作。现有同名目录可复用；新文件逐项执行原上传冲突策略。拖放目录可保留空目录，浏览器原生文件夹选择器只提供其中的文件。上传由 Server 创建传输记录和临时上传凭证，浏览器通过独立文件传输端点传送二进制，随后由 Client 接收并写入指定远程路径。界面报告 **Upload started** 表示上传任务已创建；Drag Upload 启动时只显示一条提示，文件仍分别发送 Transfer 进度 SSE、保留独立的进度及取消操作，并支持取消整批；整批已提交的 Transfer 全部结束后，Notification Center 显示一条汇总结果（成功数、失败数及 Open Transfers 入口；详情区分失败、取消、中断和未提交）；该批次通知默认启用，普通单文件传输的通知偏好保持独立。查看 Transfer Center 的终态，再刷新远程目录以确认文件已保存。上传同名文件时，设置关闭一律拒绝上传并报错（Python、Go Client 一致）；开启冲突询问后可选 Stop、Skip、Replace、Keep Both；Batch 会先处理冲突，跳过的文件不进入传输总数，传输落盘时由 Client 再次校验选择的策略。Artifact Manager 的 **Send to Current Device** 使用同一个全局设置与冲突询问流程；Server 的文件上传命令不经过 Browser 询问时默认拒绝同名目标。
+Browser 的普通 **Upload** 保持单文件选择。**More → Drag Upload** 提供共享的拖放上传面板，点击拖拽区可选择多个文件，也可通过 Choose folder 选择目录，或混合拖入文件与文件夹；目录层级由 Client 的既有新建目录控制请求重建，文件以有界顺序逐个交给现有 Browser Upload Transfer 通道；每个文件仍有独立的进度与取消操作。上传前由 Client 一次预检整棵目录计划；同名目录可 Merge 或 Skip，Skip 排除该目录及其子树，目标不是目录时不允许 Merge。关闭冲突询问时现有真实目录可复用，文件冲突默认 Stop。目录读取错误不能视为目录不存在。新建目录与文件仍分别经现有控制及传输通道执行。拖放目录可保留空目录，浏览器原生文件夹选择器只提供其中的文件。上传由 Server 创建传输记录和临时上传凭证，浏览器通过独立文件传输端点传送二进制，随后由 Client 接收并写入指定远程路径。界面报告 **Upload started** 表示上传任务已创建；Drag Upload 启动时只显示一条提示，文件仍分别发送 Transfer 进度 SSE、保留独立的进度及取消操作，并支持取消整批；整批已提交的 Transfer 全部结束后，Notification Center 显示一条汇总结果（成功数、失败数及 Open Transfers 入口；详情区分失败、取消、中断和未提交）；该批次通知默认启用，普通单文件传输的通知偏好保持独立。查看 Transfer Center 的终态，再刷新远程目录以确认文件已保存。上传同名文件时，设置关闭一律拒绝上传并报错（Python、Go Client 一致）；开启冲突询问后可选 Stop、Skip、Replace、Keep Both；Batch 会先处理冲突，跳过的文件不进入传输总数，传输落盘时由 Client 再次校验选择的策略。Artifact Manager 的 **Send to Current Device** 使用同一个全局设置与冲突询问流程；Server 的文件上传命令不经过 Browser 询问时默认拒绝同名目标。
 
 下载方向相反：
 
@@ -288,7 +288,7 @@ Browser、Picker 的目录浏览共用 `/api/connections/{client_id}/remote-file
 | POST | `.../remote-files/extract-zip` | 在远端解压整个 ZIP，或使用 `entry_name` 选择文件/目录；可预检和指定冲突策略 |
 | POST | `.../remote-files/preview` | 生成文件预览 |
 | POST | `.../remote-files/save` | 保存编辑后的文本文件 |
-| POST | `.../remote-files/inspect-upload` | 检查当前目标文件夹中待上传的文件是否存在同名冲突 |
+| POST | `.../remote-files/inspect-upload` | 检查上传计划中的相对文件路径与目录树，返回文件及目录冲突 |
 | GET / PUT | `/api/server/preferences` | 读取或修改 Server 全局偏好（包括文件冲突策略、文本预览长度和 Log Viewer 显示长度） |
 
 上述 `...` 省略的是相同前缀 `/api/connections/{client_id}`。Pinned Paths、系统路径 Quick Jump、Artifact 下载和文件 Transfer 另有对应接口，不应误认为都由目录浏览 API 负责。

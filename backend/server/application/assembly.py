@@ -1,4 +1,4 @@
-from server.config.config import WEB_HTTP_UPLOAD_MAX_BYTES
+from server.config.transfer_limits import WEB_HTTP_UPLOAD_MAX_BYTES
 from server.application.agent.agent_bootstrap_script_service import AgentBootstrapScriptService
 from server.application.agent.agent_builder import AgentBuilder
 from server.application.agent.agent_output_registry import AgentOutputRegistry

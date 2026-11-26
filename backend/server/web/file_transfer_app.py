@@ -3,6 +3,7 @@ import time
 from flask import Blueprint, request
 
 from core.transfer_settings import DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
+from core.utils.logger import logger
 from server.web.api_response import WebApiResponder
 from server.web.auth_guard import allow_anonymous
 
@@ -37,13 +38,12 @@ def create_browser_upload_blueprint(server_instance):
         def _execute():
             nonlocal temp_path
             try:
-                normalized_expected_total = None
-                if expected_total not in (None, ''):
-                    try:
-                        normalized_expected_total = max(0, int(expected_total))
-                    except Exception:
-                        normalized_expected_total = None
+                if type(expected_total) is not int or expected_total < 0:
+                    raise ValueError('Invalid upload byte count')
+                normalized_expected_total = expected_total
 
+                if request.max_content_length is not None and normalized_expected_total > request.max_content_length:
+                    raise ValueError('Browser upload exceeds HTTP size limit')
                 request_content_length = request.content_length
                 if (
                     normalized_expected_total is not None
@@ -55,7 +55,8 @@ def create_browser_upload_blueprint(server_instance):
                         f'request declared {int(request_content_length)} bytes'
                     )
 
-                temp_path, safe_name = artifact_api.create_upload_temp_path(filename)
+                temp_path, _ = artifact_api.create_upload_temp_path(
+                    filename, expected_size=normalized_expected_total, owner=client_id)
                 received_bytes = 0
                 last_progress_sync = 0.0
 
@@ -71,6 +72,8 @@ def create_browser_upload_blueprint(server_instance):
                         if transfer_api.is_browser_upload_cancel_requested(transfer_id):
                             raise RuntimeError('Browser upload cancelled')
 
+                        if received_bytes + len(chunk) > normalized_expected_total:
+                            raise ValueError('Browser upload exceeds declared size')
                         output_file.write(chunk)
                         received_bytes += len(chunk)
 
@@ -106,7 +109,7 @@ def create_browser_upload_blueprint(server_instance):
                 if transfer_api.is_browser_upload_cancel_requested(transfer_id):
                     raise RuntimeError('Browser upload cancelled')
 
-                return command_execution_api.submit_web_upload(
+                result = command_execution_api.submit_web_upload(
                     client_id,
                     temp_path,
                     filename,
@@ -126,6 +129,14 @@ def create_browser_upload_blueprint(server_instance):
                 except Exception:
                     pass
                 raise
+            # The execution service already owns the staged file; a metadata
+            # write failure must not turn an accepted submission into a rejection.
+            try:
+                transfer_api.mark_browser_upload_accepted(transfer_id, tab_id=tab_id,
+                                                           task_id=result.get('task_id') or '')
+            except Exception:
+                logger.exception('Failed to record accepted browser upload %s', transfer_id)
+            return result
 
         return responder.json_endpoint(_execute, default_error_status=500)
 

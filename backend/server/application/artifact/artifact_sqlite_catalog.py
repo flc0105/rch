@@ -140,6 +140,15 @@ class ArtifactSqliteCatalog:
                 logger.warning('Skipping invalid Artifact row %s: %s', row['artifact_id'], exc)
         return items
 
+    def shared_file_names(self):
+        with self._connect() as conn:
+            rows = conn.execute("SELECT folder_id, original_name FROM artifact_entries WHERE artifact_type='shared'").fetchall()
+        return {(row['folder_id'] or '', row['original_name']) for row in rows}
+
+    def shared_file_exists(self, folder_id, name):
+        with self._connect() as conn:
+            return bool(conn.execute("SELECT 1 FROM artifact_entries WHERE artifact_type='shared' AND folder_id IS ? AND original_name=? LIMIT 1", (folder_id or None, name)).fetchone())
+
     def _verify_folder(self, conn, folder_id):
         if folder_id and not conn.execute('SELECT 1 FROM artifact_folders WHERE folder_id=?',(folder_id,)).fetchone():
             raise ValueError('Invalid Shared folder')

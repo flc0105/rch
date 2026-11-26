@@ -81,8 +81,8 @@ var remoteFileActions = map[protocol.ControlAction]remoteFileActionRegistration{
 	protocol.RemotePeekArchive:      {Spec: ControlActionSpec{Policy: Independent, Prepare: prepareRemotePaths([]string{"path"}, "path")}, Handler: peekRemoteZipPayload},
 	protocol.RemoteReadArchiveEntry: {Spec: ControlActionSpec{Policy: Independent, Prepare: prepareRemotePaths([]string{"path"}, "path")}, Handler: readRemoteZipEntryPayload},
 	protocol.RemoteExtractArchive:   {Writes: true, Spec: ControlActionSpec{Policy: Independent, Prepare: prepareRemotePaths([]string{"path", "destination_dir"}, "path", "destination_dir")}, Handler: extractRemoteZipPayload},
-	protocol.RemoteInspectUpload: {Spec: ControlActionSpec{Policy: Independent, Prepare: prepareRemotePaths([]string{"destination_dir"}, "destination_dir")}, Handler: func(_ context.Context, s *Session, p map[string]interface{}) (int, interface{}) {
-		return inspectRemoteUploadPayload(s, p)
+	protocol.RemoteInspectUpload: {Spec: ControlActionSpec{Policy: Independent, Prepare: prepareRemotePaths([]string{"destination_dir"}, "destination_dir")}, Handler: func(ctx context.Context, s *Session, p map[string]interface{}) (int, interface{}) {
+		return inspectRemoteUploadPayload(ctx, s, p)
 	}},
 	protocol.RemoteSaveFile: {Writes: true, Spec: ControlActionSpec{Policy: Independent, Prepare: prepareRemotePaths([]string{"path"}, "path")}, Handler: func(ctx context.Context, s *Session, p map[string]interface{}) (int, interface{}) {
 		return saveRemoteTextPayload(ctx, s, p)

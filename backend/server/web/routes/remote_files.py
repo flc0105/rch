@@ -110,7 +110,7 @@ def create_remote_files_blueprint(server_instance):
         def _execute():
             payload = get_json_payload()
             return remote_file_api.inspect_remote_upload(
-                client_id, str(payload.get('destination_dir') or ''), str(payload.get('filename') or ''),
+                client_id, str(payload.get('destination_dir') or ''), payload.get('paths'), payload.get('directories'),
             )
         return responder.json_endpoint(_execute)
 

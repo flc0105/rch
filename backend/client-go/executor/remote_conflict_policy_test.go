@@ -366,3 +366,24 @@ func TestZipSkipDoesNotExtractExistingTarget(t *testing.T) {
 		t.Fatalf("ZIP skip left staging output: %#v", entries)
 	}
 }
+
+func TestUploadTreePreflight(t *testing.T) {
+	root := t.TempDir()
+	writeConflictTestFile(t, filepath.Join(root, "existing", "a.txt"), "old")
+	writeConflictTestFile(t, filepath.Join(root, "blocked"), "file")
+	status, result := inspectRemoteUploadPayload(context.Background(), &Session{Cwd: root}, map[string]interface{}{
+		"destination_dir": root,
+		"paths":           []interface{}{"existing/a.txt", "missing/b.txt", "blocked/c.txt"},
+		"directories":     []interface{}{"existing", "missing", "blocked"},
+	})
+	if status != 1 {
+		t.Fatalf("preflight: %v", result)
+	}
+	data := result.(map[string]interface{})
+	if len(data["conflicts"].([]map[string]interface{})) != 1 || len(data["folder_conflicts"].([]map[string]interface{})) != 2 {
+		t.Fatalf("wrong conflicts: %v", data)
+	}
+	if _, err := os.Stat(filepath.Join(root, "missing")); !os.IsNotExist(err) {
+		t.Fatal("preflight mutated destination")
+	}
+}

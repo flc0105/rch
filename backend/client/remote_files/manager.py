@@ -269,19 +269,62 @@ class RemoteFilesManager:
 
     def inspect_upload(self, scope, payload):
         try:
-            from client.runtime.filesystem.conflict_policy import path_kind, allowed_actions
+            import stat
+            from client.runtime.filesystem.conflict_policy import allowed_actions
             if not isinstance(payload, dict):
-                return 0, 'Invalid inspect upload payload'
+                raise ValueError('Invalid inspect upload payload')
             directory = scope.path_resolver.require_existing_directory(payload.get('destination_dir', ''))
-            filename = str(payload.get('filename') or '')
-            if not filename or filename in ('.', '..') or os.path.basename(filename) != filename or '\\' in filename or '/' in filename:
-                return 0, 'Invalid upload filename'
-            target = os.path.join(directory, filename)
-            kind = path_kind(target)
-            conflicts = ([{'source': filename, 'target': target, 'source_kind': 'file',
-                           'target_kind': kind, 'allowed_actions': allowed_actions('file', kind)}]
-                         if kind else [])
-            return 1, {'conflicts': conflicts}
+            paths, folders = payload.get('paths'), payload.get('directories')
+            if not isinstance(paths, list) or not isinstance(folders, list) or len(paths) > 1000 or len(folders) > 10000:
+                raise ValueError('Invalid upload plan')
+            known = {'': 'directory'}
+            conflicts, folder_conflicts = [], []
+            seen = set()
+
+            def inspect(path, kind, index):
+                scope._checkpoint()
+                if not isinstance(path, str):
+                    raise ValueError('Invalid upload path')
+                parts = path.split('/')
+                if any(not part or part in ('.', '..') or part != part.strip() or '\\' in part or
+                       os.path.splitdrive(part)[0] or any(ord(ch) < 32 for ch in part) for part in parts):
+                    raise ValueError('Invalid upload path')
+                target = os.path.join(directory, *parts)
+                key = os.path.normcase(target)
+                if key in seen:
+                    raise ValueError(f'Duplicate destination: {path}')
+                seen.add(key)
+                parent = '/'.join(parts[:-1])
+                if parent not in known:
+                    raise ValueError('Incomplete directory plan')
+                parent_kind = known[parent]
+                if parent_kind != 'directory':
+                    # A missing or blocked parent prevents meaningful child inspection.
+                    if kind == 'directory':
+                        known[path] = parent_kind
+                    return
+                try:
+                    mode = os.lstat(target).st_mode
+                except FileNotFoundError:
+                    target_kind = ''
+                else:
+                    target_kind = 'link' if stat.S_ISLNK(mode) else 'directory' if stat.S_ISDIR(mode) else 'file'
+                if kind == 'directory':
+                    known[path] = target_kind
+                if target_kind:
+                    actions = (['stop', 'skip', 'merge'] if target_kind == 'directory' else ['stop', 'skip']) if kind == 'directory' else allowed_actions(kind, target_kind)
+                    (folder_conflicts if kind == 'directory' else conflicts).append({
+                        'index': index, 'source': path, 'target': target, 'source_kind': kind,
+                        'target_kind': target_kind, 'allowed_actions': actions,
+                    })
+
+            for index, path in enumerate(folders):
+                inspect(path, 'directory', index)
+            for index, path in enumerate(paths):
+                inspect(path, 'file', index)
+            return 1, {'conflicts': conflicts, 'folder_conflicts': folder_conflicts}
+        except (CommandCancelledError, CommandTimeoutError):
+            raise
         except Exception as exc:
             return 0, f'Failed to inspect upload: {exc}'
 

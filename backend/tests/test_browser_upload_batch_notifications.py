@@ -27,15 +27,15 @@ def fixture(tmp_path):
     return db, bus, notifications, service, WebTransferApi(service, command_execution_api=SimpleNamespace(submit_web_upload_batch=lambda batch: {'task_id': batch['batch_id']}))
 
 
-def begin(api, batch_id='batch-1', total=100, tab='tab'):
+def begin(api, batch_id='batch-1', total=100, tab='tab', folders=3):
     return api.start_browser_upload_batch(client_id='client', batch_id=batch_id, tab_id=tab,
-                                          destination_path='/remote/target', total_files=total,
-                                          folder_count=3)
+                                          destination_path='/remote/target', files=[{'relative_path': f'f-{i}.txt', 'size': 12, 'conflict_policy': 'stop'} for i in range(total)],
+                                          directories=[f'folder-{i}' for i in range(folders)])
 
 
 def member(api, i, total=100, batch_id='batch-1', tab='tab'):
     return api.create_browser_upload_transfer(client_id='client', filename=f'f-{i}.txt',
-        total_bytes=12, tab_id=tab, batch_id=batch_id, batch_total=total, batch_index=i)
+        total_bytes=12, destination_path='/remote/target', tab_id=tab, batch_id=batch_id, batch_total=total, batch_index=i)
 
 
 def test_batch_100_files_has_one_durable_parent_one_notification_and_all_child_sse(tmp_path):
@@ -208,10 +208,14 @@ def test_duplicate_index_and_auto_close_without_finalize(tmp_path):
     import pytest
     db, _, notifications, service, api = fixture(tmp_path)
     try:
-        begin(api, total=2)
+        begin(api, total=2, folders=0)
         first = member(api, 0, total=2)
-        with pytest.raises(ValueError, match='index'):
-            member(api, 0, total=2)
+        repeated = member(api, 0, total=2)
+        assert repeated['transfer_id'] == first['transfer_id']
+        assert repeated['browser_upload_token'] == first['browser_upload_token']
+        with pytest.raises(ValueError, match='original request'):
+            api.create_browser_upload_transfer(client_id='client', filename='f-0.txt', total_bytes=13,
+                destination_path='/remote/target', tab_id='tab', batch_id='batch-1', batch_total=2, batch_index=0)
         second = member(api, 1, total=2)
         service.complete_transfer(first['transfer_id'])
         service.fail_transfer(second['transfer_id'], 'Permission denied')
@@ -260,5 +264,135 @@ def test_disconnect_and_idle_close_incomplete_submissions(tmp_path):
         assert service.get_batch('idle')['state'] == 'failed'
         assert api.consume_browser_upload_grant(item['transfer_id'], item['browser_upload_token']) is None
         assert len(notifications.items) == 2
+    finally:
+        db.close_thread_connection()
+
+
+def test_batch_members_bound_to_path_name_size_and_policy(tmp_path):
+    import pytest
+    db, _, _, service, api = fixture(tmp_path)
+    try:
+        begin(api, total=1, folders=0)
+        args = dict(client_id='client', filename='f-0.txt', total_bytes=12, destination_path='/remote/target',
+                    tab_id='tab', batch_id='batch-1', batch_total=1, batch_index=0, conflict_policy='stop')
+        for field, value in [('destination_path','/other'), ('filename','other'), ('total_bytes',13), ('conflict_policy','replace')]:
+            with pytest.raises(ValueError, match='does not match'):
+                api.create_browser_upload_transfer(**{**args, field: value})
+        assert service.get_batch('batch-1')['submitted_files'] == 0
+        api.create_browser_upload_transfer(**args)
+        assert service.get_batch('batch-1')['submitted_files'] == 1
+    finally:
+        db.close_thread_connection()
+
+
+def test_folder_plan_waits_for_confirmation_and_keeps_failure(tmp_path):
+    db, _, notifications, service, api = fixture(tmp_path)
+    try:
+        begin(api, total=1, folders=3)
+        item = member(api, 0, total=1)
+        service.complete_transfer(item['transfer_id'])
+        assert service.get_batch('batch-1')['state'] == 'running'
+        assert not notifications.items
+        api.finalize_browser_upload_batch(client_id='client', tab_id='tab', batch_id='batch-1', folder_count=2, error='Folder preparation incomplete')
+        batch = service.get_batch('batch-1')
+        assert batch['state'] == 'failed' and batch['folder_count'] == 2
+        assert 'Folder preparation incomplete' in batch['error']
+        assert len(notifications.items) == 1
+    finally:
+        db.close_thread_connection()
+
+
+def test_python_client_tree_preflight_checks_nested_conflicts_without_writes(tmp_path):
+    from types import SimpleNamespace
+    from client.remote_files.manager import RemoteFilesManager
+    from client.runtime.filesystem.path_resolver import PathResolver
+    (tmp_path / 'existing').mkdir()
+    (tmp_path / 'existing' / 'a.txt').write_text('old')
+    (tmp_path / 'blocked').write_text('file')
+    scope = SimpleNamespace(path_resolver=PathResolver(), _checkpoint=lambda: None)
+    status, data = RemoteFilesManager().inspect_upload(scope, {
+        'destination_dir': str(tmp_path), 'paths': ['existing/a.txt','missing/b.txt','blocked/c.txt'],
+        'directories': ['existing','missing','blocked']})
+    assert status == 1
+    assert [item['source'] for item in data['conflicts']] == ['existing/a.txt']
+    assert [item['allowed_actions'] for item in data['folder_conflicts']] == [['stop','skip','merge'],['stop','skip']]
+    assert not (tmp_path / 'missing').exists()
+    status, _ = RemoteFilesManager().inspect_upload(scope, {'destination_dir':str(tmp_path),'paths':['../bad'],'directories':[]})
+    assert status == 0
+
+
+def test_registration_recovery_requires_identical_plan_and_owner(tmp_path):
+    import pytest
+    db, _, _, service, api = fixture(tmp_path)
+    try:
+        first = begin(api, total=2, folders=0)
+        second = begin(api, total=2, folders=0)
+        assert second['task_id'] == first['task_id']
+        with pytest.raises(ValueError, match='mismatched'):
+            begin(api, total=2, folders=0, tab='other')
+        with pytest.raises(ValueError, match='plan changed'):
+            begin(api, total=2, folders=1)
+        item = member(api, 0, total=2)
+        again = member(api, 0, total=2)
+        assert again['transfer_id'] == item['transfer_id']
+        assert service.get_batch('batch-1')['submitted_files'] == 1
+        assert api.consume_browser_upload_grant(item['transfer_id'], item['browser_upload_token'])
+        with pytest.raises(ValueError, match='already exists'):
+            member(api, 0, total=2)
+        api.mark_browser_upload_accepted(item['transfer_id'], tab_id='tab', task_id='task')
+        assert member(api, 0, total=2)['accepted'] is True
+        assert api.get_browser_upload_status(item['transfer_id'], tab_id='tab')['task_id'] == 'task'
+        with pytest.raises(FileNotFoundError):
+            api.get_browser_upload_status(item['transfer_id'], tab_id='other')
+        with pytest.raises(FileNotFoundError):
+            api.fail_browser_upload_transfer(item['transfer_id'], 'bad', tab_id='other')
+        assert api.fail_browser_upload_transfer(item['transfer_id'], 'lost response', tab_id='tab')['state'] == 'running'
+    finally:
+        db.close_thread_connection()
+
+
+def test_batch_completed_byte_counts_do_not_include_browser_intake(tmp_path):
+    db, _, _, service, api = fixture(tmp_path)
+    try:
+        begin(api, total=2, folders=0)
+        assert service.get_batch('batch-1')['planned_bytes'] == 24
+        one = member(api, 0, total=2)
+        api.update_browser_upload_progress(one['transfer_id'], transferred_bytes=12, tab_id='tab')
+        assert service.get_batch('batch-1')['completed_bytes'] == 0
+        service.complete_transfer(one['transfer_id'])
+        assert service.get_batch('batch-1')['completed_bytes'] == 12
+        api.finalize_browser_upload_batch(client_id='client', tab_id='tab', batch_id='batch-1', error='stopped')
+        parent = service.get_batch('batch-1')
+        assert parent['planned_bytes'] is None
+        assert parent['submitted_bytes'] == parent['completed_bytes'] == 12
+    finally:
+        db.close_thread_connection()
+
+
+def test_expired_unused_grant_fails_without_consuming_bytes(tmp_path, monkeypatch):
+    db, _, _, service, api = fixture(tmp_path)
+    try:
+        from server.application.web import transfer_api as module
+        monkeypatch.setattr(module.time, 'monotonic', lambda: 100)
+        item = api.create_browser_upload_transfer(client_id='client', filename='a', total_bytes=1, tab_id='tab')
+        monkeypatch.setattr(module.time, 'monotonic', lambda: 401)
+        assert api.consume_browser_upload_grant(item['transfer_id'], item['browser_upload_token']) is None
+        assert service.get_transfer(item['transfer_id'])['state'] == 'failed'
+    finally:
+        db.close_thread_connection()
+
+
+def test_oversized_file_rejected_before_registration(tmp_path):
+    import pytest
+    from server.config.transfer_limits import WEB_HTTP_UPLOAD_MAX_BYTES
+    db, _, _, service, api = fixture(tmp_path)
+    try:
+        size = WEB_HTTP_UPLOAD_MAX_BYTES + 1
+        with pytest.raises(ValueError, match='size limit'):
+            api.create_browser_upload_transfer(client_id='client', filename='big', total_bytes=size, tab_id='tab')
+        with pytest.raises(ValueError, match='size limit'):
+            api.start_browser_upload_batch(client_id='client', batch_id='big', tab_id='tab', destination_path='/remote',
+                files=[{'relative_path':'big', 'size':size, 'conflict_policy':'stop'}], directories=[])
+        assert service.list_transfers('tab')['active'] == []
     finally:
         db.close_thread_connection()

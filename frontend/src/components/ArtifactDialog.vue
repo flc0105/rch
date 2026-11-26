@@ -348,6 +348,8 @@
     :multiple="true"
     :allow-directories="true"
     :loading="sharedFileUploading"
+    :stage="sharedUploadStage" :progress="sharedUploadProgress" :can-cancel="sharedUploadCanCancel"
+    @cancel="sharedUploadAbort?.abort()"
     @upload="uploadSharedFiles"
   />
 
@@ -405,7 +407,7 @@
 </template>
 
 <script>
-import { listArtifacts, getArtifactDetail, uploadSharedBatch, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts, createArtifactFolder, renameArtifactFolder, deleteArtifactFolder, moveArtifactToFolder } from '../api/artifactsApi.js'
+import { listArtifacts, getArtifactDetail, inspectSharedUpload, uploadSharedBatch, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts, createArtifactFolder, renameArtifactFolder, deleteArtifactFolder, moveArtifactToFolder } from '../api/artifactsApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
@@ -414,6 +416,7 @@ import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import DragUploadDialog from './DragUploadDialog.vue'
 import { flattenUploadAttachments } from '../utils/browserFileEntries.js'
+import { expectData, resolveConflictPolicies } from '../utils/fileConflictDecisions.js'
 import { File, Folder, FolderOpen } from '@lucide/vue'
 import { ARTIFACT_TYPE, ARTIFACT_FOLDER_ALL } from '../data/artifactConstants.js'
 
@@ -472,6 +475,10 @@ export default {
       artifactClearing: false,
       artifactBulkDeleting: false,
       sharedFileUploading: false,
+      sharedUploadStage: '',
+      sharedUploadProgress: null,
+      sharedUploadCanCancel: false,
+      sharedUploadAbort: null,
       sharedFileUploadDialogVisible: false,
       artifactInfoDialogVisible: false,
       artifactInfoItem: null,
@@ -1007,25 +1014,53 @@ export default {
       }
       if (!plan.files.length && !plan.directories.length) return
 
-      const formData = new FormData()
-      formData.append('folder_id', this.selectedFolderId || '')
-      formData.append('directories', JSON.stringify(plan.directories))
-      formData.append('paths', JSON.stringify(plan.files.map(item => item.relativePath)))
-      for (const entry of plan.files) formData.append('files', entry.file, entry.file.name)
-
+      const folderId = this.selectedFolderId || ''
+      const paths = plan.files.map(item => item.relativePath)
       this.sharedFileUploading = true
+      const controller = new AbortController()
+      this.sharedUploadAbort = controller
+      this.sharedUploadCanCancel = true
+      this.sharedUploadStage = 'Checking conflicts…'
+      this.sharedUploadProgress = null
       try {
-        const response = await uploadSharedBatch(formData, this.buildJsonHeaders())
-        const json = await response.json()
-        if (!response.ok || json.code !== 0) throw new Error(json.message || 'Upload failed')
+        const preview = await expectData(await inspectSharedUpload({ folder_id: folderId, paths, directories: plan.directories }), 'Conflict inspection')
+        if (controller.signal.aborted) { ElMessage.info?.('Upload cancelled'); return }
+        const policies = await resolveConflictPolicies(preview.conflicts, paths.length)
+        if (policies === false || controller.signal.aborted) { ElMessage.info?.('Upload cancelled'); return }
+        const formData = new FormData()
+        formData.append('folder_id', folderId)
+        formData.append('directories', JSON.stringify(plan.directories))
+        formData.append('paths', JSON.stringify(paths))
+        formData.append('conflict_policies', JSON.stringify(policies))
+        for (const entry of plan.files) formData.append('files', entry.file, entry.file.name)
+        this.sharedUploadStage = 'Uploading to Server…'
+        const json = await uploadSharedBatch(formData, this.buildJsonHeaders(), {
+          signal: controller.signal,
+          onProgress: (loaded, total) => {
+            this.sharedUploadProgress = total ? Math.min(100, Math.round(100 * loaded / total)) : null
+            if (total !== null && loaded >= total) {
+              this.sharedUploadCanCancel = false
+              this.sharedUploadStage = 'Saving files…'
+            }
+          },
+          onBodySent: () => {
+            this.sharedUploadCanCancel = false
+            this.sharedUploadStage = 'Saving files…'
+          },
+        })
         const result = json.data || {}
-        ElMessage.success(`Uploaded ${result.files_uploaded || 0} file(s), ${result.folders_created || 0} folder(s)`)
+        ElMessage.success(`Uploaded ${result.files_uploaded || 0} file(s), ${result.folders_created || 0} folder(s)${result.files_skipped ? `, ${result.files_skipped} skipped` : ''}`)
         this.sharedFileUploadDialogVisible = false
       } catch (error) {
-        ElMessage.error(error.message || 'Upload failed')
+        if (error?.name === 'AbortError') ElMessage.info?.('Upload cancelled; check Shared Files for any saved files.')
+        else ElMessage.error(error.message || 'Upload failed')
       } finally {
-        await this.loadArtifacts()
         this.sharedFileUploading = false
+        this.sharedUploadCanCancel = false
+        this.sharedUploadAbort = null
+        this.sharedUploadProgress = null
+        this.sharedUploadStage = ''
+        await this.loadArtifacts()
       }
     },
 

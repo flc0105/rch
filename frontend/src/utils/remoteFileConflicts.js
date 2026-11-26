@@ -1,55 +1,6 @@
-import { defineComponent, h, ref } from 'vue'
-import { ElCheckbox, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import { expectData, chooseConflict, resolveConflictPolicies } from './fileConflictDecisions.js'
 import { loadServerPreferences } from '../api/serverPreferencesApi.js'
-import { pasteRemoteFiles, extractRemoteZip, inspectRemoteUpload } from '../api/remoteFilesApi.js'
-
-const labels = { stop: 'Stop', skip: 'Skip', replace: 'Replace', merge: 'Merge', keep_both: 'Keep Both' }
-
-async function expectData(response, label) {
-  const json = await response.json()
-  if (!response.ok || json.code !== 0) throw new Error(json.message || `${label} failed`)
-  return json.data || {}
-}
-
-async function chooseConflict(conflict, scope = {}) {
-  const actions = (conflict.allowed_actions || []).filter(key => labels[key])
-  if (!actions.length) throw new Error('Unsupported destination conflict')
-  // A remembered action is only valid for conflicts that actually allow it.
-  if (actions.includes(scope.action)) return scope.action
-  const choice = ref('stop')
-  const applyToAll = ref(false)
-  const content = defineComponent({
-    setup() {
-      return () => h('div', [
-        h('p', { style: 'overflow-wrap:anywhere' }, `A ${conflict.target_kind === 'directory' ? 'folder' : 'file'} already exists at ${conflict.target || 'the destination'}.`),
-        h('p', 'Choose how to handle this conflict:'),
-        h(ElSelect, {
-          modelValue: choice.value,
-          'onUpdate:modelValue': value => { choice.value = value },
-          style: 'width:100%',
-          'aria-label': 'Conflict action',
-        }, () => actions.map(value => h(ElOption, { key: value, value, label: labels[value] }))),
-        h(ElCheckbox, {
-          modelValue: applyToAll.value,
-          'onUpdate:modelValue': value => { applyToAll.value = value },
-          style: 'margin-top:12px',
-        }, () => 'Apply to all'),
-        ...(actions.includes('merge') ? [h('p', 'Merge keeps destination-only files. Replace removes them.')] : []),
-      ])
-    },
-  })
-  try {
-    await ElMessageBox({
-      title: 'File conflict', message: h(content),
-      confirmButtonText: 'Continue', cancelButtonText: 'Cancel',
-      showCancelButton: true, closeOnClickModal: false, type: 'warning',
-    })
-    if (applyToAll.value) scope.action = choice.value
-    return choice.value
-  } catch (_) {
-    return null
-  }
-}
+import { pasteRemoteFiles, extractRemoteZip, inspectRemoteUpload, inspectRemoteUploadPlan } from '../api/remoteFilesApi.js'
 
 export async function conflictsEnabled() {
   const settings = await loadServerPreferences()
@@ -60,17 +11,8 @@ export async function conflictsEnabled() {
 export async function preparePasteConflicts(clientId, request) {
   if (!await conflictsEnabled()) return { conflict_policies: (request.paths || []).map(() => 'stop') }
   const preview = await expectData(await pasteRemoteFiles(clientId, { ...request, inspect: true }), 'Conflict inspection')
-  const policies = (request.paths || []).map(() => 'stop')
-  const scope = {}
-  for (const conflict of (preview.conflicts || [])) {
-    if (!Number.isInteger(conflict.index) || conflict.index < 0 || conflict.index >= policies.length) {
-      throw new Error('Invalid conflict inspection result')
-    }
-    const answer = await chooseConflict(conflict, scope)
-    if (!answer || answer === 'stop') return false
-    policies[conflict.index] = answer
-  }
-  return { conflict_policies: policies }
+  const policies = await resolveConflictPolicies(preview.conflicts, (request.paths || []).length)
+  return policies === false ? false : { conflict_policies: policies }
 }
 
 export async function prepareExtractConflict(clientId, request) {
@@ -90,4 +32,37 @@ export async function prepareUploadConflict(clientId, destinationDir, filename, 
   if (!conflicts.length) return 'stop'
   const answer = await chooseConflict(conflicts[0], conflictScope)
   return !answer || answer === 'stop' ? false : (answer === 'skip' && !allowSkip ? false : answer)
+}
+
+// Inspect the entire tree before mutating it; a skipped folder excludes its subtree.
+export async function prepareRemoteUploadPlan(clientId, root, plan, isActive = () => true) {
+  const prompt = await conflictsEnabled()
+  const preview = await expectData(await inspectRemoteUploadPlan(clientId, root, plan.files.map(entry => entry.relativePath), plan.directories), 'Upload conflict inspection')
+  const scope = {}, skipped = new Set(), reused = new Set()
+  const excluded = path => [...skipped].some(dir => path === dir || path.startsWith(`${dir}/`))
+  const requireActive = () => { if (!isActive()) throw new Error('Remote upload context changed') }
+  const folderConflicts = [...(preview.folder_conflicts || [])].sort((a,b) => a.source.split('/').length - b.source.split('/').length)
+  for (const conflict of folderConflicts) {
+    requireActive()
+    if (!plan.directories.includes(conflict.source)) throw new Error('Invalid folder conflict inspection result')
+    if (excluded(conflict.source)) continue
+    const answer = prompt ? await chooseConflict(conflict, scope) : (conflict.allowed_actions.includes('merge') ? 'merge' : 'stop')
+    if (!answer || answer === 'stop') return false
+    if (answer === 'skip') skipped.add(conflict.source)
+    else if (answer === 'merge') reused.add(conflict.source)
+    else throw new Error('Invalid folder conflict decision')
+  }
+  const policies = new Map()
+  for (const conflict of preview.conflicts || []) {
+    requireActive()
+    if (plan.files[conflict.index]?.relativePath !== conflict.source) throw new Error('Invalid file conflict inspection result')
+    if (excluded(conflict.source)) continue
+    const answer = prompt ? await chooseConflict(conflict, scope) : 'stop'
+    if (!answer || answer === 'stop') return false
+    policies.set(conflict.source, answer)
+  }
+  requireActive()
+  return { directories: plan.directories.filter(path => !excluded(path)), reused,
+    files: plan.files.filter(entry => !excluded(entry.relativePath) && policies.get(entry.relativePath) !== 'skip')
+      .map(entry => ({ ...entry, policy: policies.get(entry.relativePath) || 'stop' })) }
 }

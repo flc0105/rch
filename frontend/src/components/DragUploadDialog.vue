@@ -36,13 +36,23 @@
       @change="handleInputChange"
     />
 
+    <div v-if="allowDirectories" class="drag-upload-picker-actions">
+      <el-button :disabled="loading || scanning" @click="openFolderPicker">Choose folder</el-button>
+      <span class="drag-upload-desc">Drag folders to include empty subfolders.</span>
+      <input ref="folderInputRef" type="file" webkitdirectory multiple class="drag-upload-input" @change="handleFolderInputChange" />
+    </div>
+    <div v-if="loading && stage" class="drag-upload-file-panel" role="status">
+      <div class="drag-upload-file-header"><span>{{ stage }}</span></div>
+      <el-progress v-if="progress !== null" :percentage="progress" />
+    </div>
+    <div v-if="scanning" role="status" class="drag-upload-desc">Scanning files…</div>
     <div
       v-if="selectedItems.length"
       class="drag-upload-file-panel"
     >
       <div class="drag-upload-file-header">
         <span>Selected items</span>
-        <span>{{ selectedItems.length }}</span>
+        <span>{{ selectedItems.length }} items · {{ selectionSummary.files.length }} files · {{ selectionSummary.directories.length }} folders · {{ formatFileSize(selectionSummary.totalBytes) }}</span>
       </div>
 
       <div class="drag-upload-file-list">
@@ -70,7 +80,7 @@
     </div>
 
     <template #footer>
-      <el-button :disabled="loading" @click="closeDialog">Cancel</el-button>
+      <el-button :disabled="loading && !canCancel" @click="loading ? $emit('cancel') : closeDialog()">Cancel</el-button>
       <el-button
         :disabled="!selectedItems.length || loading || scanning"
         @click="clearSelectedItems"
@@ -91,7 +101,7 @@
 
 <script>
 import { formatBytesHuman } from '../utils/formatters.js'
-import { collectTransferAttachments } from '../utils/browserFileEntries.js'
+import { collectTransferAttachments, collectDirectoryPickerAttachments, flattenUploadAttachments } from '../utils/browserFileEntries.js'
 import { ElMessage } from 'element-plus'
 export default {
   name: 'DragUploadDialog',
@@ -105,9 +115,12 @@ export default {
     multiple: { type: Boolean, default: false },
     allowDirectories: { type: Boolean, default: false },
     loading: { type: Boolean, default: false },
+    stage: { type: String, default: '' },
+    progress: { type: Number, default: null },
+    canCancel: { type: Boolean, default: false },
   },
 
-  emits: ['update:modelValue', 'upload'],
+  emits: ['update:modelValue', 'upload', 'cancel'],
 
   data() {
     return {
@@ -117,6 +130,13 @@ export default {
       scanSeq: 0,
       selectedItems: [],
     }
+  },
+
+  computed: {
+    selectionSummary() {
+      try { return flattenUploadAttachments(this.selectedItems) }
+      catch (_) { return { files: [], directories: [], totalBytes: 0 } }
+    },
   },
 
   watch: {
@@ -146,6 +166,20 @@ export default {
       if (!input) return
       input.value = ''
       input.click()
+    },
+
+    openFolderPicker() {
+      if (this.loading || this.scanning || !this.allowDirectories) return
+      const input = this.$refs.folderInputRef
+      if (input) { input.value = ''; input.click() }
+    },
+
+    handleFolderInputChange(event) {
+      try {
+        const attachments = collectDirectoryPickerAttachments(Array.from(event.target.files || []))
+        this.addSelectedItems(attachments)
+      } catch (error) { ElMessage.error(error.message || 'Failed to read selected folder') }
+      finally { event.target.value = '' }
     },
 
     handleDragEnter() {
@@ -202,13 +236,14 @@ export default {
       }
 
       const nextFiles = [...this.selectedItems, ...validFiles]
-      const fileMap = new Map()
-
-      nextFiles.forEach(file => {
-        fileMap.set(this.selectedItemKey(file), file)
-      })
-
-      this.selectedItems = Array.from(fileMap.values())
+      if (this.allowDirectories) {
+        try { flattenUploadAttachments(nextFiles) }
+        catch (error) { ElMessage.error(error.message); return }
+        this.selectedItems = nextFiles
+      } else {
+        // Non-folder pickers retain their existing file-selection semantics.
+        this.selectedItems = [...new Map(nextFiles.map(file => [this.selectedItemKey(file), file])).values()]
+      }
     },
 
     submitUpload() {
@@ -250,6 +285,7 @@ export default {
 </script>
 
 <style scoped>
+.drag-upload-picker-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .drag-upload-dropzone {
   min-height: 190px;
   border: 1px dashed rgba(148, 163, 184, 0.75);

@@ -1,6 +1,12 @@
 import os
 import shutil
 import uuid
+from threading import RLock
+
+from core.transfer_settings import DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
+from server.application.transfers.upload_budget import UploadBudget
+from server.config.transfer_limits import (WEB_UPLOAD_STAGING_MAX_BYTES, WEB_UPLOAD_STAGING_MAX_SLOTS,
+                                  WEB_UPLOAD_STAGING_MAX_DEVICE_SLOTS)
 
 from werkzeug.utils import secure_filename
 
@@ -14,8 +20,16 @@ class ArtifactTempFileService:
     - server 本地文件暂存后给 client 通过 HTTP 拉取
     """
 
-    def __init__(self, artifact_service):
+    def __init__(self, artifact_service, *, budget=None):
         self.artifact_service = artifact_service
+        self.budget = budget if budget is not None else UploadBudget(
+            max_bytes=WEB_UPLOAD_STAGING_MAX_BYTES, max_slots=WEB_UPLOAD_STAGING_MAX_SLOTS,
+            max_owner_slots=WEB_UPLOAD_STAGING_MAX_DEVICE_SLOTS)
+        self._lock = RLock()
+        self._reservations = {}
+
+    def reserve_intake(self, size):
+        return self.budget.reserve(size)
 
     def _build_temp_dir(self) -> str:
         temp_dir = os.path.join(self.artifact_service.upload_tmp_dir, uuid.uuid4().hex)
@@ -23,38 +37,61 @@ class ArtifactTempFileService:
         return temp_dir
 
     def create_upload_temp_file(self, upload) -> tuple[str, str]:
-        """
-        为浏览器上传文件创建临时落盘文件
-        :return: (temp_path, safe_name)
-        """
-        safe_name = secure_filename(upload.filename) or 'upload.bin'
-        temp_dir = self._build_temp_dir()
-        temp_path = os.path.join(temp_dir, safe_name)
-        upload.save(temp_path)
-        return temp_path, safe_name
+        """Stage the remaining bytes of a seekable HTTP file stream."""
+        stream = upload.stream
+        position = stream.tell()
+        try:
+            size = stream.seek(0, os.SEEK_END) - position
+        finally:
+            stream.seek(position)
+        return self._stage_stream(stream, upload.filename, size)
 
-    def create_upload_temp_path(self, filename: str) -> tuple[str, str]:
-        """
-        为原始 HTTP body 上传预分配临时落盘路径。
-        :return: (temp_path, safe_name)
-        """
+    def create_upload_temp_path(self, filename: str, *, expected_size: int, owner: str = '') -> tuple[str, str]:
+        """Reserve temporary storage before opening a raw HTTP upload body."""
         safe_name = secure_filename(filename or '') or 'upload.bin'
-        temp_dir = self._build_temp_dir()
-        return os.path.join(temp_dir, safe_name), safe_name
+        token = self.budget.acquire(expected_size, owner)
+        try:
+            with self._lock:
+                temp_dir = self._build_temp_dir()
+                self._reservations[temp_dir] = token
+            return os.path.join(temp_dir, safe_name), safe_name
+        except BaseException:
+            self.budget.release(token)
+            raise
+
+    def _stage_stream(self, stream, display_name, expected_size):
+        temp_path, safe_name = self.create_upload_temp_path(display_name, expected_size=expected_size)
+        try:
+            received = 0
+            with open(temp_path, 'wb', buffering=DEFAULT_HTTP_TRANSFER_BUFFER_SIZE) as output:
+                while True:
+                    chunk = stream.read(DEFAULT_HTTP_TRANSFER_BUFFER_SIZE)
+                    if not chunk:
+                        break
+                    received += len(chunk)
+                    if received > expected_size:
+                        raise ValueError('Upload source grew while staging')
+                    output.write(chunk)
+            if received != expected_size:
+                raise ValueError('Upload source size changed while staging')
+            return temp_path, safe_name
+        except BaseException:
+            self.cleanup_temp_file(temp_path)
+            raise
 
     def stage_local_file(self, source_path: str, display_name: str = '') -> tuple[str, str]:
-        """
-        将服务端本地文件复制到 upload_tmp 暂存区，供 client 通过 HTTP 拉取
-        :return: (temp_path, safe_name)
-        """
+        """Copy a local source into the reserved upload_tmp area for Client download."""
         abs_source_path = os.path.abspath(source_path)
         if not os.path.isfile(abs_source_path):
             raise FileNotFoundError(f'File not found: {abs_source_path}')
-
-        safe_name = secure_filename(display_name or os.path.basename(abs_source_path)) or 'upload.bin'
-        temp_dir = self._build_temp_dir()
-        temp_path = os.path.join(temp_dir, safe_name)
-        shutil.copy2(abs_source_path, temp_path)
+        with open(abs_source_path, 'rb') as source:
+            temp_path, safe_name = self._stage_stream(source, display_name or os.path.basename(abs_source_path),
+                                                       os.fstat(source.fileno()).st_size)
+        try:
+            shutil.copystat(abs_source_path, temp_path)
+        except BaseException:
+            self.cleanup_temp_file(temp_path)
+            raise
         return temp_path, safe_name
 
     def get_temp_file_path(self, temp_id: str, filename: str) -> str:
@@ -106,33 +143,17 @@ class ArtifactTempFileService:
         return os.path.dirname(os.path.dirname(target)) == base
 
     def cleanup_temp_file(self, temp_path: str):
-        """
-        清理单个临时文件及其上层临时目录
-        """
+        """Release a staging lease only after its dedicated directory is removed."""
         if not self.is_temp_file(temp_path):
             return
-
-        try:
-            if os.path.isfile(temp_path):
-                os.remove(temp_path)
-        except Exception:
-            pass
-
-        try:
-            parent_dir = os.path.dirname(temp_path)
-            base_dir = os.path.abspath(self.artifact_service.upload_tmp_dir)
-            abs_parent_dir = os.path.abspath(parent_dir)
-
-            if abs_parent_dir.startswith(base_dir + os.sep) and os.path.isdir(abs_parent_dir):
-                shutil.rmtree(abs_parent_dir, ignore_errors=True)
-        except Exception:
-            pass
-
-
-
-
-
-
-
-
-
+        parent_dir = os.path.dirname(os.path.abspath(temp_path))
+        with self._lock:
+            try:
+                shutil.rmtree(parent_dir)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                return
+            token = self._reservations.pop(parent_dir, None)
+            if token is not None:
+                self.budget.release(token)

@@ -36,8 +36,6 @@ def create_transfers_blueprint(server_instance):
                 destination_path=payload.get('destination_path') or '',
                 conflict_policy=payload.get('conflict_policy'),
                 tab_id=get_optional_tab_id(),
-                origin='web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api',
-                feature=request.headers.get('X-RCH-Feature') if request.headers.get('X-RCH-Feature') in ('remote_files', 'remote_file_picker') else 'remote_files',
             )
 
         return responder.json_endpoint(_execute, default_error_status=500)
@@ -51,8 +49,8 @@ def create_transfers_blueprint(server_instance):
                 batch_id=payload.get('batch_id') or '',
                 tab_id=get_optional_tab_id(),
                 destination_path=payload.get('destination_path') or '',
-                total_files=payload.get('total_files') or 0,
-                folder_count=payload.get('folder_count') or 0,
+                files=payload.get('files'),
+                directories=payload.get('directories'),
             )
         return responder.json_endpoint(_execute, default_error_status=500)
 
@@ -102,6 +100,11 @@ def create_transfers_blueprint(server_instance):
             ),
             default_error_status=500,
         )
+
+    @blueprint.get('/api/transfers/<transfer_id>/browser-upload')
+    def get_browser_upload_status(transfer_id):
+        return responder.json_endpoint(lambda: transfer_api.get_browser_upload_status(
+            transfer_id, tab_id=get_optional_tab_id()))
 
     @blueprint.patch('/api/transfers/<transfer_id>/browser-upload')
     def update_browser_upload_transfer(transfer_id):

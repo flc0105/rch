@@ -285,7 +285,15 @@ class UploadExecutionService:
                 self.transfer_service.mark_cancelling(active_transfer_id)
                 session.send({'type': MSG_TYPE_TRANSFER_CANCEL, 'transfer_id': active_transfer_id})
 
-            terminal = self.transfer_service.wait_for_terminal(active_transfer_id)
+            terminal = self.transfer_service.wait_for_terminal_or_idle(active_transfer_id)
+            if terminal and terminal.get('state') == 'running':
+                # Ask the Client to stop before releasing its staging file. No completion
+                # claim is made if the peer stopped reporting its actual outcome.
+                try:
+                    session.send({'type': MSG_TYPE_TRANSFER_CANCEL, 'transfer_id': active_transfer_id})
+                finally:
+                    self.transfer_service.fail_transfer(active_transfer_id, 'Transfer progress timed out; check destination before retrying')
+                terminal = self.transfer_service.get_transfer(active_transfer_id)
             if not terminal:
                 raise RuntimeError('Transfer disappeared before completion')
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -324,26 +325,96 @@ func stageRemoteTransferFile(ctx context.Context, tmp, target, policy string) (s
 	}
 }
 
-func inspectRemoteUploadPayload(s *Session, payload map[string]interface{}) (int, interface{}) {
-	name := payloadText(payload["filename"])
-	if _, err := safeTransferFilename(name); err != nil {
-		return 0, err.Error()
-	}
+func inspectRemoteUploadPayload(ctx context.Context, s *Session, payload map[string]interface{}) (int, interface{}) {
 	directory, err := remoteExisting(s, payloadText(payload["destination_dir"]), true)
 	if err != nil {
 		return 0, err.Error()
 	}
-	target := filepath.Join(directory, name)
-	kind, err := remoteKind(target)
-	if err != nil {
-		return 0, err.Error()
+	paths, ok := payload["paths"].([]interface{})
+	folders, foldersOK := payload["directories"].([]interface{})
+	if !ok || !foldersOK || len(paths) > 1000 || len(folders) > 10000 {
+		return 0, "Invalid upload plan"
 	}
+	known := map[string]string{"": "directory"}
+	seen := map[string]bool{}
 	conflicts := []map[string]interface{}{}
-	if kind != "" {
-		conflicts = append(conflicts, map[string]interface{}{
-			"source": name, "target": target, "source_kind": "file", "target_kind": kind,
-			"allowed_actions": remoteAllowed("file", kind),
-		})
+	folderConflicts := []map[string]interface{}{}
+	inspect := func(raw interface{}, kind string, index int) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		path, ok := raw.(string)
+		if !ok {
+			return errors.New("Invalid upload path")
+		}
+		parts := strings.Split(path, "/")
+		for _, part := range parts {
+			if _, err := safeTransferFilename(part); err != nil {
+				return err
+			}
+			if strings.TrimSpace(part) != part || filepath.VolumeName(part) != "" {
+				return errors.New("Invalid upload path")
+			}
+			for _, r := range part {
+				if r < 32 {
+					return errors.New("Invalid upload path")
+				}
+			}
+		}
+		target := filepath.Join(append([]string{directory}, parts...)...)
+		key := target
+		if runtime.GOOS == "windows" {
+			key = strings.ToLower(key)
+		}
+		if seen[key] {
+			return fmt.Errorf("Duplicate destination: %s", path)
+		}
+		seen[key] = true
+		parent := strings.Join(parts[:len(parts)-1], "/")
+		parentKind, ok := known[parent]
+		if !ok {
+			return errors.New("Incomplete directory plan")
+		}
+		if parentKind != "directory" {
+			if kind == "directory" {
+				known[path] = parentKind
+			}
+			return nil
+		}
+		targetKind, err := remoteKind(target)
+		if err != nil {
+			return err
+		}
+		if kind == "directory" {
+			known[path] = targetKind
+		}
+		if targetKind == "" {
+			return nil
+		}
+		actions := remoteAllowed(kind, targetKind)
+		if kind == "directory" {
+			actions = []string{"stop", "skip"}
+			if targetKind == "directory" {
+				actions = append(actions, "merge")
+			}
+		}
+		conflict := map[string]interface{}{"index": index, "source": path, "target": target, "source_kind": kind, "target_kind": targetKind, "allowed_actions": actions}
+		if kind == "directory" {
+			folderConflicts = append(folderConflicts, conflict)
+		} else {
+			conflicts = append(conflicts, conflict)
+		}
+		return nil
 	}
-	return 1, map[string]interface{}{"conflicts": conflicts}
+	for index, path := range folders {
+		if err := inspect(path, "directory", index); err != nil {
+			return 0, err.Error()
+		}
+	}
+	for index, path := range paths {
+		if err := inspect(path, "file", index); err != nil {
+			return 0, err.Error()
+		}
+	}
+	return 1, map[string]interface{}{"conflicts": conflicts, "folder_conflicts": folderConflicts}
 }

@@ -1,4 +1,5 @@
 import os
+from server.application.artifact.shared_upload_service import SharedUploadService
 from server.application.artifact.artifact_preview_service import ArtifactPreviewService
 from server.application.artifact.artifact_registry_service import ArtifactRegistryService
 from server.application.artifact.artifact_temp_file_service import ArtifactTempFileService
@@ -21,6 +22,7 @@ class WebArtifactService:
 
         self._prepare_dirs()
         self.registry_service = ArtifactRegistryService(self)
+        self.shared_upload_service = SharedUploadService(self.registry_service)
         self.preview_service = ArtifactPreviewService(self)
         self.temp_file_service = ArtifactTempFileService(self)
         self.command_output_service = CommandOutputArtifactService(self)
@@ -68,6 +70,18 @@ class WebArtifactService:
             extra=extra,
             folder_id=folder_id,
         )
+
+    def inspect_shared_upload(self, paths, directories, parent_folder_id=''):
+        return self.shared_upload_service.inspect(paths, directories, parent_folder_id)
+
+    def upload_shared_batch(self, **kwargs):
+        return self.shared_upload_service.upload(**kwargs)
+
+    def resolve_folder(self, artifact_type, folder):
+        return self.registry_service.resolve_folder(artifact_type, folder)
+
+    def get_folder(self, folder_id):
+        return self.registry_service.get_folder(folder_id)
 
     def allocate_command_output_artifact_path(self, *, output_kind: str, machine_id: str, source_command: str, now=None) -> dict:
         return self.command_output_service.allocate_output_path(
@@ -173,8 +187,11 @@ class WebArtifactService:
     def create_upload_temp_file(self, upload) -> tuple[str, str]:
         return self.temp_file_service.create_upload_temp_file(upload)
 
-    def create_upload_temp_path(self, filename: str) -> tuple[str, str]:
-        return self.temp_file_service.create_upload_temp_path(filename)
+    def create_upload_temp_path(self, filename: str, *, expected_size: int, owner: str = '') -> tuple[str, str]:
+        return self.temp_file_service.create_upload_temp_path(filename, expected_size=expected_size, owner=owner)
+
+    def reserve_upload_intake(self, size):
+        return self.temp_file_service.reserve_intake(size)
 
     def stage_local_file(self, source_path: str, display_name: str = '') -> tuple[str, str]:
         return self.temp_file_service.stage_local_file(source_path, display_name)

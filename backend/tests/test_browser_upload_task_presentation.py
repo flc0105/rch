@@ -69,9 +69,9 @@ def test_batch_member_real_transfer_lifecycle_keeps_hostname_and_failure_reason(
             original.write_bytes(b'some file contents')
             batch_id = 'batch-ok' if success else 'batch-fail'
             transfer_service.start_batch(batch_id=batch_id, client_id='c1', tab_id='tab',
-                                         destination_path='/dest', total_files=1, folder_count=0)
+                                         destination_path='/dest', files=[{'relative_path':'original.jpg','size':len(b'some file contents'),'conflict_policy':'stop'}], directories=[])
             transfer = transfer_service.create_transfer(client_id='c1', tab_id='tab',
-                filename='original.jpg', direction='server_to_client',
+                filename='original.jpg', direction='server_to_client', destination_path='/dest', total_bytes=len(b'some file contents'),
                 metadata={'batch_id': batch_id, 'batch_total': 1, 'batch_index': 0})
             def send(payload):
                 if success:
@@ -128,9 +128,9 @@ def test_batch_queue_applies_backpressure_and_dispatches_sequentially(tmp_path):
     session = SimpleNamespace(session_info=SimpleNamespace(client_id='c', hostname='device'))
     executor = UploadExecutionService(None, SimpleNamespace(get_connection=lambda _: session),
         artifact_service=SimpleNamespace(cleanup_upload_temp_file=lambda _: None), transfer_service=transfers)
-    transfers.start_batch(batch_id='b', client_id='c', tab_id='tab', destination_path='/dest', total_files=2, folder_count=0)
+    transfers.start_batch(batch_id='b', client_id='c', tab_id='tab', destination_path='/dest', files=[{'relative_path':f'f{i}','size':1,'conflict_policy':'stop'} for i in range(2)], directories=[])
     for i in range(2):
-        transfers.create_transfer(client_id='c', tab_id='tab', filename=f'f{i}', direction='server_to_client',
+        transfers.create_transfer(client_id='c', tab_id='tab', filename=f'f{i}', direction='server_to_client', destination_path='/dest', total_bytes=1,
             transfer_id=f'f{i}', metadata={'batch_id': 'b', 'batch_total': 2, 'batch_index': i})
     executor.open_browser_batch('b')
     def enqueue(i):

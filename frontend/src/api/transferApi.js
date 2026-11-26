@@ -9,7 +9,11 @@ function normalizeHeaders(headers = {}) {
 }
 
 async function parseApiResponse(res, fallbackMessage) {
-  const json = await res.json()
+  let json
+  try { json = await res.json() } catch (_) { throw Object.assign(new Error(fallbackMessage), { uncertain: true }) }
+  if (!json || typeof json !== 'object' || typeof json.code !== 'number') {
+    throw Object.assign(new Error(fallbackMessage), { uncertain: true })
+  }
   if (!res.ok || json.code !== 0) {
     throw new Error(json.message || fallbackMessage)
   }
@@ -26,28 +30,39 @@ export async function loadTransfers(tabId = '', { limit = 20, offset = 0, machin
   return parseApiResponse(res, 'Failed to load transfers')
 }
 
+async function submitUploadRegistration(url, options, fallbackMessage, canRecover) {
+  const send = async () => {
+    let res
+    try { res = await fetch(url, options) }
+    catch (error) { throw Object.assign(new Error(error.message || fallbackMessage), { uncertain: true }) }
+    return parseApiResponse(res, fallbackMessage)
+  }
+  try { return await send() }
+  catch (error) {
+    if (!canRecover || !error.uncertain) throw error
+    return send() // same identity and payload; Server returns the existing registration
+  }
+}
+
 export async function createBrowserUploadTransfer(payload = {}, headers = {}) {
-  const res = await fetch('/api/transfers/browser-upload', {
+  return submitUploadRegistration('/api/transfers/browser-upload', {
     method: 'POST',
     headers: normalizeHeaders({
       'Content-Type': 'application/json',
       ...headers,
     }),
     body: JSON.stringify(payload || {}),
-  })
-
-  return parseApiResponse(res, 'Failed to initialize upload transfer')
+  }, 'Failed to initialize upload transfer', Boolean(payload.batch_id || headers['X-RCH-Operation-ID']))
 }
 
 export async function startBrowserUploadBatch({ clientId, batchId, destinationPath,
-  totalFiles, folderCount = 0 }, headers = {}) {
-  const res = await fetch('/api/transfers/browser-upload-batch/start', {
+  files, directories }, headers = {}) {
+  const result = await submitUploadRegistration('/api/transfers/browser-upload-batch/start', {
     method: 'POST',
     headers: normalizeHeaders({ 'Content-Type': 'application/json', ...headers }),
     body: JSON.stringify({ client_id: clientId, batch_id: batchId,
-      destination_path: destinationPath, total_files: totalFiles, folder_count: folderCount }),
-  })
-  const result = await parseApiResponse(res, 'Failed to initialize upload batch')
+      destination_path: destinationPath, files, directories }),
+  }, 'Failed to initialize upload batch', true)
   submittingBatches.add(batchId)
   return result
 }
@@ -59,13 +74,13 @@ export async function loadBatchTransfers(batchId, tabId = '') {
 }
 
 export async function finalizeBrowserUploadBatch({ clientId, batchId, folderCount = 0, error = '' }, headers = {}) {
-  const res = await fetch('/api/transfers/browser-upload-batch/finalize', {
-    method: 'POST',
-    headers: normalizeHeaders({ 'Content-Type': 'application/json', ...headers }),
-    body: JSON.stringify({ client_id: clientId, batch_id: batchId, folder_count: folderCount, error }),
-  })
-  try { return await parseApiResponse(res, 'Failed to finalize upload batch') }
-  finally { cancelledBatches.delete(batchId); submittingBatches.delete(batchId) }
+  try {
+    return await submitUploadRegistration('/api/transfers/browser-upload-batch/finalize', {
+      method: 'POST',
+      headers: normalizeHeaders({ 'Content-Type': 'application/json', ...headers }),
+      body: JSON.stringify({ client_id: clientId, batch_id: batchId, folder_count: folderCount, error }),
+    }, 'Failed to finalize upload batch', true)
+  } finally { cancelledBatches.delete(batchId); submittingBatches.delete(batchId) }
 }
 
 export function buildBrowserUploadContentUrl(transfer = {}) {
@@ -76,6 +91,39 @@ export function buildBrowserUploadContentUrl(transfer = {}) {
 
   // The upload shares the Web API origin; keep Vite's /api proxy in the request path.
   return path.startsWith('/') ? path : `/${path}`
+}
+
+// Browser byte intake is common; callers own destination execution and cancellation semantics.
+export function uploadHttpBody(url, body, { headers = {}, signal, onProgress, onBodySent, onXhr, onStarted } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    const abortError = () => Object.assign(new Error('Browser upload was cancelled'), { name: 'AbortError' })
+    const abort = () => xhr.abort()
+    const settle = (fn, value) => { signal?.removeEventListener('abort', abort); fn(value) }
+    if (signal?.aborted) { reject(abortError()); return }
+    xhr.open('POST', url, true)
+    for (const [key, value] of Object.entries(headers || {})) xhr.setRequestHeader(key, value)
+    xhr.upload?.addEventListener('progress', event => onProgress?.(event.loaded, event.lengthComputable ? event.total : null))
+    xhr.upload?.addEventListener('load', () => onBodySent?.())
+    xhr.addEventListener('load', () => {
+      let json
+      try { json = JSON.parse(xhr.responseText || '{}') }
+      catch (_) { settle(reject, Object.assign(new Error('Upload returned an invalid response'), { uncertain: true })); return }
+      if (!json || typeof json !== 'object' || typeof json.code !== 'number') {
+        settle(reject, Object.assign(new Error('Upload returned an invalid response'), { uncertain: true })); return
+      }
+      if (xhr.status < 200 || xhr.status >= 300 || json.code !== 0) {
+        settle(reject, new Error(json.message || `Upload failed (${xhr.status || 'network error'})`)); return
+      }
+      settle(resolve, json)
+    })
+    xhr.addEventListener('error', () => settle(reject, Object.assign(new Error('Browser upload connection failed'), { uncertain: true })))
+    xhr.addEventListener('abort', () => settle(reject, abortError()))
+    signal?.addEventListener('abort', abort, { once: true })
+    onXhr?.(xhr)
+    try { xhr.send(body) } catch (error) { settle(reject, error); return }
+    try { onStarted?.() } catch (error) { console.warn('Upload notification failed', error) }
+  })
 }
 
 // Shared browser -> Server -> Client upload path used by both remote file dialogs.
@@ -93,45 +141,31 @@ export async function uploadRemoteFileToClient({file, clientId, destinationPath,
 
   try {
     if (!transferId) throw new Error('Failed to initialize upload transfer')
+    if (transfer.accepted) return transfer
     const token = String(transfer?.browser_upload_token || '').trim()
     if (!token) throw new Error('Browser file transfer token is unavailable')
 
     const url = buildBrowserUploadContentUrl(transfer)
-    const response = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      uploadXhr = xhr
-      activeBrowserUploads.set(transferId, { xhr, batchId })
-      xhr.open('POST', url, true)
-      xhr.setRequestHeader('Content-Type', 'application/octet-stream')
-      xhr.setRequestHeader('X-RCH-Transfer-Token', token)
-      xhr.addEventListener('load', () => {
-        let json = {}
-        try {
-          json = JSON.parse(xhr.responseText || '{}')
-        } catch (error) {
-          reject(new Error('Upload returned an invalid response'))
-          return
-        }
-        if (xhr.status < 200 || xhr.status >= 300 || json.code !== 0) {
-          reject(new Error(json.message || `Upload failed (${xhr.status || 'network error'})`))
-          return
-        }
-        resolve(json)
-      })
-      xhr.addEventListener('error', () => reject(new Error('Browser upload connection failed')))
-      xhr.addEventListener('abort', () => {
-        const error = new Error('Browser upload was cancelled')
-        error.name = 'AbortError'
-        reject(error)
-      })
-      xhr.send(file)
-      // Notify when the browser starts sending bytes, not after its upload finishes.
-      if (typeof onStarted === 'function') {
-        try { onStarted({ transferId }) } catch (error) { console.warn('Upload notification failed', error) }
-      }
+    const response = await uploadHttpBody(url, file, {
+      headers: { 'Content-Type': 'application/octet-stream', 'X-RCH-Transfer-Token': token },
+      onXhr: xhr => { uploadXhr = xhr; activeBrowserUploads.set(transferId, { xhr, batchId }) },
+      onStarted: () => onStarted?.({ transferId }),
     })
     return response.data || {}
   } catch (error) {
+    if (transferId && error?.uncertain) {
+      // A lost response can occur after the Server has already queued the file.
+      // Read status instead of resending bytes or overwriting a valid transfer.
+      let status
+      try {
+        const res = await fetch(`/api/transfers/${encodeURIComponent(transferId)}/browser-upload`, { headers })
+        status = await parseApiResponse(res, 'Failed to verify upload status')
+      } catch (_) { /* The original transfer remains authoritative. */ }
+      if (status?.state === 'completed' || (status?.state === 'running' && status?.accepted)) return status
+      if (status?.state === 'cancelled') throw Object.assign(new Error('Browser upload was cancelled'), { name: 'AbortError' })
+      if (status?.state === 'failed' || status?.state === 'interrupted') throw new Error(status.error || 'Upload failed')
+      throw new Error(`${error.message}; upload status is uncertain. Check Transfers before retrying.`)
+    }
     if (transferId && error?.name !== 'AbortError') {
       updateBrowserUploadTransfer(transferId, {
         state: 'failed',
