@@ -22,10 +22,9 @@ from core.protocol.references import log_file_reference, session_action_referenc
 
 def _parse_update_options(arg=''):
     tokens = shlex.split(str(arg or ''))
-    if (any(token not in ('--keep-old', '--observe') for token in tokens)
-            or len(set(tokens)) != len(tokens) or len(tokens) > 1):
-        raise ValueError('Usage: update [--keep-old | --observe]')
-    return {'keep_old': '--keep-old' in tokens, 'observe': '--observe' in tokens}
+    if tokens not in ([], ['--observe']):
+        raise ValueError('Usage: update [--observe]')
+    return {'observe': bool(tokens)}
 
 
 def _build_update_request_payload():
@@ -111,8 +110,6 @@ def update(self, arg=''):
             raise ValueError(f'Unsupported connection mode: {mode}')
         alias, context = _get_update_owner()
         managed = context.get('source') in ('launchagent', 'launchdaemon')
-        if options['keep_old'] and (mode != 'reverse' or managed):
-            raise ValueError('--keep-old only supports ordinary Reverse processes')
         if options['observe'] and (mode != 'reverse' or managed or alias == 'ios'):
             raise ValueError('--observe only supports ordinary desktop Reverse processes')
 
@@ -157,8 +154,6 @@ def update(self, arg=''):
                     references=[log_file_reference(observe_log, title='Client update'),
                                 session_action_reference('kill_instance')],
                 )
-            elif options['keep_old']:
-                self.emit_completed(status='success', message=f'{result}. Old Client kept alive.')
             else:
                 self.emit_completed(status='success', message=f'{result}. Old Client will exit.')
                 _schedule_exit_after_update(self.socket, self.execution_context)

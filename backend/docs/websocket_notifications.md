@@ -74,7 +74,7 @@ WebEventBus 发布时生成一份临时事件对象：
 
 ## 独立 Client 启动日志通知
 
-当命令的结构化完成结果包含 `type=log_file` 的 Client 日志引用时，Server 通过既有命令结果事件（单项或批量）投影一条 **Client Instance Started** 通知，附带 **View Log** 操作。点击后使用通知中的 Client ID 与日志路径打开现有 Log Viewer；Terminal 在同一条命令结果上显示 **[ View Log ]**。这适用于 `spawn_instance` 和 `spawn_elevated_instance`。`update --observe` 仅在原 Terminal 中展示 **Kill Instance** / **View Log**，保留旧 Reverse 会话供诊断；普通 `update` 与 `relaunch_instance` 继续执行原有生命周期。通知是否以 Toast 展示仍受现有设备事件通知偏好控制。
+命令的结构化完成结果携带 `type=log_file` 的 Client 日志引用时，Server 默认投影 **Client Instance Started** 通知并附带 **View Log** 操作。点击后使用通知中的 Client ID 与日志路径打开现有 Log Viewer；Terminal 的常规结果动作区同时提供 **[ View Log ]**。`spawn_instance`、`spawn_elevated_instance` 和 `update --observe` 均使用同一通知行为。`update --observe` 的完成结果还提供指向原 Client 的 **[ Kill Instance ]**，用于确认新版状态后结束旧实例。普通 `update` 与 `relaunch_instance` 继续执行原有生命周期。通知是否以 Toast 展示仍受现有设备事件通知偏好控制。
 
 ## Watchdog 恢复后的上线通知
 

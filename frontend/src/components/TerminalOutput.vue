@@ -50,19 +50,24 @@
         >
           <template v-if="isCommandFinishedLine(entry.line)">
             <div
-                v-for="actionItem in (!isTerminalBlockCollapsed(block) ? getTerminalTailActionItems(lines, entry.index, block) : [])"
-                :key="actionItem.key"
-                class="terminal-line"
+                v-if="!isTerminalBlockCollapsed(block) && getTerminalTailActionItems(lines, entry.index, block).length"
+                class="terminal-line terminal-result-actions"
                 :class="`line-${entry.line.kind || 'default'}`"
             >
-              <a
-                  href="#"
-                  class="table-action-link-aux terminal-text"
-                  @click.prevent.stop="handleTerminalActionClick(actionItem)"
-              >{{ actionItem.type === 'preview' ? '[ Preview ]' : actionItem.type === 'log' ? '[ View Log ]' : '[ View JSON ]' }}</a><span
-                  v-if="actionItem.type === 'preview'"
-                  class="terminal-text"
-              > {{ actionItem.fileName }}</span>
+              <span
+                  v-for="actionItem in getTerminalTailActionItems(lines, entry.index, block)"
+                  :key="actionItem.key"
+                  class="terminal-result-action"
+              >
+                <a
+                    href="#"
+                    class="table-action-link-aux terminal-text"
+                    @click.prevent.stop="handleTerminalActionClick(actionItem)"
+                >[ {{ getTerminalActionLabel(actionItem) }} ]</a><span
+                    v-if="actionItem.type === 'preview'"
+                    class="terminal-text"
+                > {{ actionItem.fileName }}</span>
+              </span>
             </div>
 
             <div
@@ -134,10 +139,9 @@
               v-else
               class="terminal-line"
               :data-terminal-seq="entry.line.__terminalSeq ?? null"
-              :class="[getObserveUpdateActions(entry.line) ? 'line-warning' : `line-${entry.line.kind || 'default'}`, {
-                'terminal-warning-with-actions': !!getObserveUpdateActions(entry.line) ||
-                  (entry.line.kind === 'warning' &&
-                    (getSuggestedCommandAction(entry.line) || getClientRevisionDetails(entry.line))),
+              :class="[`line-${entry.line.kind || 'default'}`, {
+                'terminal-warning-with-actions': entry.line.kind === 'warning' &&
+                  (getSuggestedCommandAction(entry.line) || getClientRevisionDetails(entry.line)),
               }]"
           >
             <span
@@ -166,20 +170,6 @@
 >
   <TerminalLinkedText :text="entry.line.text" />
 </span>
-
-            <a
-                v-if="getObserveUpdateActions(entry.line)"
-                href="#"
-                class="table-action-link-aux terminal-text terminal-action-link-spaced"
-                @click.prevent.stop="killObservedClient(entry.line)"
-            >[ Kill Instance ]</a>
-
-            <a
-                v-if="getObserveUpdateActions(entry.line)"
-                href="#"
-                class="table-action-link-aux terminal-text terminal-action-link-spaced"
-                @click.prevent.stop="viewObservedUpdateLog(entry.line)"
-            >[ View Log ]</a>
 
             <a
                 v-if="getSuggestedCommandAction(entry.line)"
@@ -298,6 +288,9 @@ import { copyTextFallback } from '../utils/clipboard.js'
 import { TERMINAL_HISTORY } from '../data/terminalHistoryConfig.js'
 import { canRerunTerminalSource } from '../utils/terminalRerun.js'
 import { getTerminalReplayAction } from '../utils/terminalOperation.js'
+import {
+  executeTerminalAction, getTerminalActionLabel, getTerminalReferenceActions,
+} from '../utils/terminalResultActions.js'
 
 export default {
   name: 'TerminalOutput',
@@ -369,6 +362,7 @@ export default {
   },
 
   methods: {
+    getTerminalActionLabel,
     buildTerminalBlocksFromLines(inputLines) {
       const safeLines = Array.isArray(inputLines) ? inputLines : []
       const blocks = []
@@ -650,43 +644,19 @@ export default {
         }
       })
 
-      const seenLogs = new Set()
+      const seenReferences = new Set()
       for (const item of groupLines) {
-        // Observed Update renders its log link beside the inline Kill action.
-        if (this.getObserveUpdateActions(item)) continue
-        for (const ref of item?.meta?.resultReferences || []) {
-          if (ref?.type !== 'log_file' || !String(ref.path || '').trim()) continue
-          const clientId = String(item?.meta?.resultClientId || this.selectedId || '').trim()
-          const key = `${clientId}:${ref.path}`
-          if (seenLogs.has(key)) continue
-          seenLogs.add(key)
-          result.push({
-            type: 'log', key: `log:${key}`, line: item,
-            source: { clientId, path: ref.path, title: String(ref.title || 'Client startup') },
-          })
+        for (const action of getTerminalReferenceActions(item, this.selectedId)) {
+          if (seenReferences.has(action.key)) continue
+          seenReferences.add(action.key)
+          result.push(action)
         }
       }
       return result
     },
 
-    getObserveUpdateActions(line) {
-      const references = line?.meta?.resultReferences
-      if (!Array.isArray(references) || !references.some(ref =>
-        ref?.type === 'session_action' && ref.action === 'kill_instance')) return null
-      const clientId = String(line?.meta?.resultClientId || '').trim()
-      const log = references.find(ref => ref?.type === 'log_file' && String(ref.path || '').trim())
-      if (!clientId || !log) return null
-      return { clientId, path: log.path, title: String(log.title || 'Client update') }
-    },
-
-    viewObservedUpdateLog(line) {
-      const source = this.getObserveUpdateActions(line)
-      if (source) this.$emit('open-log-viewer', source)
-    },
-
-    async killObservedClient(line) {
-      const source = this.getObserveUpdateActions(line)
-      if (!source) return
+    async confirmKillInstance(clientId) {
+      if (!clientId) return
       try {
         await ElMessageBox.confirm('Kill the original Client instance?', 'Kill Instance', {
           type: 'warning', confirmButtonText: 'Kill Instance', cancelButtonText: 'Cancel',
@@ -694,7 +664,7 @@ export default {
         })
       } catch { return }
       try {
-        await killInstance(source.clientId)
+        await killInstance(clientId)
         ElMessage.success('Kill instance request sent')
       } catch (error) {
         ElMessage.error(error.message || 'Failed to kill Client instance')
@@ -745,20 +715,7 @@ export default {
 
     handleTerminalActionClick(actionItem) {
       if (!actionItem || !actionItem.line) return
-
-      if (actionItem.type === 'preview') {
-        this.previewTerminalArtifact(actionItem.line)
-        return
-      }
-
-      if (actionItem.type === 'log') {
-        this.$emit('open-log-viewer', actionItem.source)
-        return
-      }
-
-      if (actionItem.type === 'json') {
-        this.$emit('open-json', this.buildTerminalJsonOpenPayload(actionItem))
-      }
+      return executeTerminalAction(this, actionItem)
     },
 
     buildTerminalJsonOpenPayload(actionItem) {
@@ -1521,6 +1478,24 @@ export default {
   padding: 1px 0;
 }
 
+
+.terminal-result-actions {
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 3px;
+}
+
+.terminal-result-action {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.terminal-result-action > a {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 
 .terminal-action-link-spaced {
   margin-left: 10px;

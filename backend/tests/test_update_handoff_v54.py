@@ -36,13 +36,10 @@ def test_build_request_includes_real_bind_settings(monkeypatch):
 
 
 def test_options_and_managed_restrictions(monkeypatch):
-    assert update_command._parse_update_options('') == {'keep_old': False, 'observe': False}
-    assert update_command._parse_update_options('--keep-old') == {'keep_old': True, 'observe': False}
-    assert update_command._parse_update_options('--observe') == {'keep_old': False, 'observe': True}
-    with pytest.raises(ValueError):
-        update_command._parse_update_options('--keep-old --keep-old')
+    assert update_command._parse_update_options('') == {'observe': False}
+    assert update_command._parse_update_options('--observe') == {'observe': True}
     with pytest.raises(ValueError, match='Usage'):
-        update_command._parse_update_options('--keep-old --observe')
+        update_command._parse_update_options('--keep-old')
     with pytest.raises(ValueError, match='Usage'):
         update_command._parse_update_options('--observe --observe')
     monkeypatch.setattr(update_command, 'get_local_identity', lambda: SimpleNamespace(os_alias='linux'))

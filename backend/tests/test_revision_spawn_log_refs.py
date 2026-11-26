@@ -114,6 +114,13 @@ def test_successful_log_reference_becomes_notification_action():
     }
     record = projector._build_command_result(payload)
     assert record['title'] == 'Client Instance Started'
+    with_action = dict(payload)
+    with_action['result'] = {**payload['result'], 'references': [
+        {'type': 'log_file', 'path': '/tmp/client-start-xyz.log'},
+        {'type': 'session_action', 'action': 'kill_instance'},
+    ]}
+    assert projector._build_command_result(with_action)['title'] == 'Client Instance Started'
+
     assert record['notification_key'] == 'device_event'
     assert record['actions'][0]['type'] == 'view_client_log'
     assert record['context']['log_path'] == '/tmp/client-start-xyz.log'
