@@ -98,7 +98,7 @@ Web 会在设备列表对 `outdated` 的在线设备显示更新标记，并在�
 
 ### 普通桌面进程
 
-- **Reverse（macOS、Linux、Windows）：** 旧 Client 保持在线；启动新版 Client；新版收到 Server 分发的 Session Token 后经本机认证通道报告就绪，核对新 PID、源码 Revision 并检查短暂存活时间；成功后旧 Client 才退出。新进程失败时旧进程继续运行。`update --keep-old` 在验证成功后保留旧进程。
+- **Reverse（macOS、Linux、Windows）：** 旧 Client 保持在线；启动新版 Client；新版收到 Server 分发的 Session Token 后经本机认证通道报告就绪，核对新 PID、源码 Revision 并检查短暂存活时间；成功后旧 Client 才退出。新进程失败时旧进程继续运行。`update --keep-old` 在验证成功后保留旧进程。`update --observe` 也保留旧实例，并将新进程的标准输出和错误写入独立日志；Terminal 在本次结果旁显示 **Kill Instance** 与 **View Log**，供用户确认新 Client 状态后结束旧实例。新 Client 注册失败时旧实例仍在线，可以查看启动日志。
 - **Bind（macOS、Linux、Windows）：** 旧 Client 完成安装后启动一次性本机交接进程；先发送完整的准备结果，再在命令执行结束后上报会话结束并退出。交接进程等旧进程结束、端口释放后启动新版；新版 `listen()` 成功后报告就绪并核验 PID、Revision 和短暂存活时间。旧会话已经随旧进程退出，用户在 Server 手动 Connect。候选启动失败时，交接进程保留启动输出并尝试恢复旧版；只有旧版重新通过监听就绪验收，才报告恢复成功。Bind 不支持 `--keep-old`，因为新旧实例无法同时监听同一端口。 在 macOS/Linux 等 POSIX 系统中，Bind Listener 允许重用处于 TCP `TIME_WAIT` 的旧本地地址，但仍不允许多个活动的 Bind Listener 同时监听同一地址和端口；Windows 继续使用独占监听语义。
 
 就绪消息使用仅在当前 Update 存在的认证回环通道；Bind 不通过测试连接占用原监听端口。普通进程直接启动构建目录中的 `rchclient.py`，无需永久实例 ID 或固定 Launcher。
@@ -117,7 +117,7 @@ Linux systemd 和 Windows Service / Task Scheduler 的自动服务交接不受�
 
 Reverse 的 `Updated` 表示新进程已取得 Server Session Token 并通过存活检查；Bind 和 launchd 在旧命令连接结束前报告的是**Bundle 已准备、交接已开始**，最后结果在一次性交接日志中记录。Bind 的候选进程及回退进程输出同样记录在交接日志中。普通 Reverse 失败会终止新候选并保留旧实例；Bind/launchd 失败执行恢复旧版。系统崩溃或交接进程被强制杀死时，恢复旧版需人工检查并重新启动原入口。原有 Watchdog 在旧进程退出前停止，更新候选在确认成功后才启用监督。
 
-`update --keep-old` 只支持普通 Reverse。`update` 不修改当前 Server BindConnector、底层连接循环或 Clean 规则。
+`update --keep-old` 与 `update --observe` 均仅支持普通桌面 Reverse（不包括 launchd 托管及 iOS）；两个选项分别使用，不能同时指定。普通 `update` 仍在新版通过就绪验收后自动结束旧实例。`--observe` 的日志由旧 Client 的 Device Monitor 通过既有 Log Viewer 读取，旧实例被 Kill 后不再继续读取。`update` 不修改当前 Server BindConnector、底层连接循环或 Clean 规则。
 
 ## Release 的布局与维护
 
@@ -189,4 +189,4 @@ Reverse 的注册超时、Bind 的监听失败和交接超时均有明确错误�
 
 ## Process Recovery Watchdog 更新交接
 
-启用 [Process Recovery Watchdog](process_recovery_watchdog.md) 时，更新候选在就绪与 PID 校验完成前不会建立新的进程恢复监督链；成功验收后才启动相应 Watchdog。普通 Reverse 更新失败保留旧进程与原监督链；普通 Bind 及 launchd 更新时先停旧监督，再由新 Client 或服务管理器接管。`update --keep-old` 保留原 Client 的监督链。
+启用 [Process Recovery Watchdog](process_recovery_watchdog.md) 时，更新候选在就绪与 PID 校验完成前不会建立新的进程恢复监督链；成功验收后才启动相应 Watchdog。普通 Reverse 更新失败保留旧进程与原监督链；普通 Bind 及 launchd 更新时先停旧监督，再由新 Client 或服务管理器接管。`update --keep-old` 与 `update --observe` 均保留原 Client 的监督链。

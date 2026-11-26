@@ -127,7 +127,7 @@ Alias 的模板参数、平台覆盖与安全边界见 [Aliases / Quick Actions]
 |---|---|---|
 | `clean` | 扫描 Client 可清理项目，显示带类别选择的确认预览 | 默认预览时可能已勾选候选项；确认才执行删除 |
 | `clean --no-confirm` | 跳过交互、直接执行受规则允许的清理范围 | **会真实删除匹配数据**，执行前需确认清理范围 |
-| `update` | 构建、下载并准备新的 Client Bundle | iOS 更新交接与桌面自动启动方式不同 |
+| `update` | 构建、下载并启动新版 Client | 默认完成交接后退出旧实例；普通 Reverse 可用 `--observe` 保留旧会话并查看启动日志，`--keep-old` 仅保留旧会话；iOS 需手动重启 |
 
 Web Remote Files 的一次性文件管理 RPC 使用 `control(domain=remote_files)` 结构化请求，其中单项和多项删除都使用 `delete_paths` 加路径数组；浏览、重命名、复制/移动与 ZIP 管理遵守同一协议。对应交互使用 [Remote Files](remote_files.md)。Terminal `upload` 与 Web Upload 统一使用 Transfer 协议，文件内容通过 HTTP 传输。清理的具体范围见 [Cleanup](cleanup.md)。
 

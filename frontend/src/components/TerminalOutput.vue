@@ -134,9 +134,10 @@
               v-else
               class="terminal-line"
               :data-terminal-seq="entry.line.__terminalSeq ?? null"
-              :class="[`line-${entry.line.kind || 'default'}`, {
-                'terminal-warning-with-actions': entry.line.kind === 'warning' &&
-                  (getSuggestedCommandAction(entry.line) || getClientRevisionDetails(entry.line)),
+              :class="[getObserveUpdateActions(entry.line) ? 'line-warning' : `line-${entry.line.kind || 'default'}`, {
+                'terminal-warning-with-actions': !!getObserveUpdateActions(entry.line) ||
+                  (entry.line.kind === 'warning' &&
+                    (getSuggestedCommandAction(entry.line) || getClientRevisionDetails(entry.line))),
               }]"
           >
             <span
@@ -165,6 +166,20 @@
 >
   <TerminalLinkedText :text="entry.line.text" />
 </span>
+
+            <a
+                v-if="getObserveUpdateActions(entry.line)"
+                href="#"
+                class="table-action-link-aux terminal-text terminal-action-link-spaced"
+                @click.prevent.stop="killObservedClient(entry.line)"
+            >[ Kill Instance ]</a>
+
+            <a
+                v-if="getObserveUpdateActions(entry.line)"
+                href="#"
+                class="table-action-link-aux terminal-text terminal-action-link-spaced"
+                @click.prevent.stop="viewObservedUpdateLog(entry.line)"
+            >[ View Log ]</a>
 
             <a
                 v-if="getSuggestedCommandAction(entry.line)"
@@ -272,7 +287,8 @@
 
 <script>
 import { saveCommandOutputArtifact } from '../api/artifactsApi.js'
-import {ElMessage} from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { killInstance } from '../api/connectionsApi.js'
 import TerminalLinkedText from './TerminalLinkedText.vue'
 import {
   isTerminalCommandFinishedText,
@@ -636,6 +652,8 @@ export default {
 
       const seenLogs = new Set()
       for (const item of groupLines) {
+        // Observed Update renders its log link beside the inline Kill action.
+        if (this.getObserveUpdateActions(item)) continue
         for (const ref of item?.meta?.resultReferences || []) {
           if (ref?.type !== 'log_file' || !String(ref.path || '').trim()) continue
           const clientId = String(item?.meta?.resultClientId || this.selectedId || '').trim()
@@ -649,6 +667,38 @@ export default {
         }
       }
       return result
+    },
+
+    getObserveUpdateActions(line) {
+      const references = line?.meta?.resultReferences
+      if (!Array.isArray(references) || !references.some(ref =>
+        ref?.type === 'session_action' && ref.action === 'kill_instance')) return null
+      const clientId = String(line?.meta?.resultClientId || '').trim()
+      const log = references.find(ref => ref?.type === 'log_file' && String(ref.path || '').trim())
+      if (!clientId || !log) return null
+      return { clientId, path: log.path, title: String(log.title || 'Client update') }
+    },
+
+    viewObservedUpdateLog(line) {
+      const source = this.getObserveUpdateActions(line)
+      if (source) this.$emit('open-log-viewer', source)
+    },
+
+    async killObservedClient(line) {
+      const source = this.getObserveUpdateActions(line)
+      if (!source) return
+      try {
+        await ElMessageBox.confirm('Kill the original Client instance?', 'Kill Instance', {
+          type: 'warning', confirmButtonText: 'Kill Instance', cancelButtonText: 'Cancel',
+          confirmButtonClass: 'el-button--danger',
+        })
+      } catch { return }
+      try {
+        await killInstance(source.clientId)
+        ElMessage.success('Kill instance request sent')
+      } catch (error) {
+        ElMessage.error(error.message || 'Failed to kill Client instance')
+      }
     },
 
     getSuggestedCommandAction(line) {

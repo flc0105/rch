@@ -36,10 +36,15 @@ def test_build_request_includes_real_bind_settings(monkeypatch):
 
 
 def test_options_and_managed_restrictions(monkeypatch):
-    assert update_command._parse_update_options('') == {'keep_old': False}
-    assert update_command._parse_update_options('--keep-old') == {'keep_old': True}
+    assert update_command._parse_update_options('') == {'keep_old': False, 'observe': False}
+    assert update_command._parse_update_options('--keep-old') == {'keep_old': True, 'observe': False}
+    assert update_command._parse_update_options('--observe') == {'keep_old': False, 'observe': True}
     with pytest.raises(ValueError):
         update_command._parse_update_options('--keep-old --keep-old')
+    with pytest.raises(ValueError, match='Usage'):
+        update_command._parse_update_options('--keep-old --observe')
+    with pytest.raises(ValueError, match='Usage'):
+        update_command._parse_update_options('--observe --observe')
     monkeypatch.setattr(update_command, 'get_local_identity', lambda: SimpleNamespace(os_alias='linux'))
     monkeypatch.setattr(update_command, 'detect_launch_context', lambda _: {'source': 'systemd'})
     with pytest.raises(RuntimeError, match='not supported'):

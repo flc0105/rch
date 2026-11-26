@@ -13,17 +13,19 @@ from client.runtime.client_util import (
 )
 from client.runtime.launch_context import detect_launch_context
 from client.app.logging import get_client_log_path
-from client.runtime.temp_workspace import get_temp_category_dir
+from client.runtime.temp_workspace import get_temp_category_dir, make_client_startup_log
 from client.update.preparation import UpdatePreparation, build_request, publish_archive
 from client.update.signals import SignalListener, candidate_environment
 from core.device.local_identity import get_local_identity
+from core.protocol.references import log_file_reference, session_action_reference
 
 
 def _parse_update_options(arg=''):
     tokens = shlex.split(str(arg or ''))
-    if any(token != '--keep-old' for token in tokens) or tokens.count('--keep-old') > 1:
-        raise ValueError('Usage: update [--keep-old]')
-    return {'keep_old': bool(tokens)}
+    if (any(token not in ('--keep-old', '--observe') for token in tokens)
+            or len(set(tokens)) != len(tokens) or len(tokens) > 1):
+        raise ValueError('Usage: update [--keep-old | --observe]')
+    return {'keep_old': '--keep-old' in tokens, 'observe': '--observe' in tokens}
 
 
 def _build_update_request_payload():
@@ -101,6 +103,7 @@ def update(self, arg=''):
     process = None
     mode = ''
     managed = False
+    observe_log = ''
     try:
         options = _parse_update_options(arg)
         mode = str(RUNTIME_CONFIG.get('connection_mode') or 'reverse').strip()
@@ -110,6 +113,8 @@ def update(self, arg=''):
         managed = context.get('source') in ('launchagent', 'launchdaemon')
         if options['keep_old'] and (mode != 'reverse' or managed):
             raise ValueError('--keep-old only supports ordinary Reverse processes')
+        if options['observe'] and (mode != 'reverse' or managed or alias == 'ios'):
+            raise ValueError('--observe only supports ordinary desktop Reverse processes')
 
         script = UpdatePreparation(self).run()
         if alias == 'ios':
@@ -132,17 +137,27 @@ def update(self, arg=''):
         attempt = uuid4().hex
 
         if mode == 'reverse' and not managed:
+            if options['observe']:
+                observe_log = make_client_startup_log(prefix='update-')
             with SignalListener() as signal:
                 process = spawn_detached_python_script(
                     script, cwd=os.path.dirname(script),
                     env_overrides=candidate_environment(signal.port, signal.secret, attempt),
+                    **({'output_path': observe_log} if observe_log else {}),
                 )
                 packet = signal.accept(
                     attempt_id=attempt, process=process, revision=revision,
                     mode='reverse', timeout=45, checkpoint=self._checkpoint,
                 )
             result = f'Updated Client registered with Server: PID {process.pid}, Client ID {packet["client_id"]}'
-            if options['keep_old']:
+            if options['observe']:
+                self.emit_completed(
+                    status='success',
+                    message=f'{result}. Verify the new Client before ending this instance.',
+                    references=[log_file_reference(observe_log, title='Client update'),
+                                session_action_reference('kill_instance')],
+                )
+            elif options['keep_old']:
                 self.emit_completed(status='success', message=f'{result}. Old Client kept alive.')
             else:
                 self.emit_completed(status='success', message=f'{result}. Old Client will exit.')
@@ -173,4 +188,12 @@ def update(self, arg=''):
     except Exception as exc:
         if process is not None and process.poll() is None and (mode == 'reverse' and not managed):
             _stop_failed_candidate(process)
-        self.emit_completed(status='error', message=f'Failed to update Client bundle: {exc}')
+        if observe_log:
+            self.emit_completed(
+                status='error',
+                message=f'Failed to update Client bundle: {exc}. Original Client remains online.',
+                references=[log_file_reference(observe_log, title='Client update'),
+                            session_action_reference('kill_instance')],
+            )
+        else:
+            self.emit_completed(status='error', message=f'Failed to update Client bundle: {exc}')

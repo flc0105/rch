@@ -1,5 +1,5 @@
 from core.utils.formatting import format_bytes_precise
-from core.protocol.references import LOG_FILE_REFERENCE_TYPE
+from core.protocol.references import LOG_FILE_REFERENCE_TYPE, SESSION_ACTION_REFERENCE_TYPE
 from datetime import datetime, timezone
 
 
@@ -130,7 +130,11 @@ class NotificationEventProjector:
         result = payload.get('result') if isinstance(payload.get('result'), dict) else {}
         if result.get('event_type') != 'completed' or result.get('status') != 'success':
             return None
-        for reference in result.get('references') or []:
+        references = result.get('references') or []
+        # Observed Update has an inline action and is not a spawned-instance toast.
+        if any(isinstance(ref, dict) and ref.get('type') == SESSION_ACTION_REFERENCE_TYPE for ref in references):
+            return None
+        for reference in references:
             if not isinstance(reference, dict) or reference.get('type') != LOG_FILE_REFERENCE_TYPE:
                 continue
             path = str(reference.get('path') or '').strip()
