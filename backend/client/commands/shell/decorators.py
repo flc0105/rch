@@ -9,7 +9,7 @@ _VALID_PLATFORMS = frozenset({'mac', 'win', 'linux', 'ios'})
 
 
 def shell_command(description, group='general', suggest=True, *, output='collect',
-                  interaction=False, completion=None, platforms=None):
+                  may_interact=False, completion=None, platforms=None):
     """Mark an ordinary Client command; platforms=None enables all platforms.
 
     The original free-text argument convention is unchanged. CompletionSpec
@@ -34,7 +34,7 @@ def shell_command(description, group='general', suggest=True, *, output='collect
 
     def decorator(func):
         func.command_output = output
-        func.command_interaction = bool(interaction)
+        func.command_may_interact = bool(may_interact)
         if completion is not None:
             func.command_completion = completion
         func.help = description

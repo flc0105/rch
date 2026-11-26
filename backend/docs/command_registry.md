@@ -64,13 +64,13 @@ class ShellDiagnosticsCommands:
 
 这是新增扩展的示意代码。可把方法写入已有的 `shell/common/` 分组类，或者将独立文件中的函数挂载到对应分组类。当前运行时宿主需实际继承该分组类，Client 重启加载后才会生效。
 
-`@shell_command(description, group='general', suggest=True, *, output='collect', interaction=False, completion=None, platforms=None)` 将元数据挂在方法上：
+`@shell_command(description, group='general', suggest=True, *, output='collect', may_interact=False, completion=None, platforms=None)` 将元数据挂在方法上：
 
 - `help`：导出识别和帮助描述。**缺少 `@shell_command` 的普通方法不会作为普通 Client 命令被 ShellCommandRunner 分派**，哪怕它恰好是 public method。
 - `group`：Server `help client` 分组及 Command Manifest 的分类；不会单独决定权限或平台。
 - `platforms`：允许的 Client 平台（`mac` / `win` / `linux` / `ios`），缺省支持全部平台；不支持的平台不会导出或执行。
 - `suggest`：控制是否出现在默认帮助/候选展示中。`suggest=False` 不会禁止执行，Manifest 中仍可能包含该项，由展示层过滤。
-- `interaction`：标记通常可能请求 Web 交互，用于 Manifest 提示，不控制命令执行权限。
+- `may_interact`：标记通常可能请求 Web 前台交互，用于 Manifest 提示，不控制命令执行权限。
 - `completion`：可选的最小 `CompletionSpec(provider, kinds)`，声明命令参数由哪个 Client Completion Provider 处理及允许的候选类别；不复制命令名、参数位置或运行时路径。
 
 普通 Runner 的调用约定是：先通过项目解析器分离首个命令名称及其余文本；然后以方法签名决定调用 `handler()` 还是 `handler(arg)`。因此普通命令更适合无参或**单段原始参数文本**；多值、可验证的选项建议使用 ACMD。命令返回一般为 `(status, result)`，其中 `1` 表示成功、`0` 表示失败；其他输出约定需与执行链保持一致。中间流式结果应复用执行 Scope 的 `emit_chunk(message)`、`emit_progress(message, level=None)`；仅在直接管理终态的流式方法中调用 `emit_completed(status="success"|"error"|...)`。一次性函数继续返回 `(status, result)`，由执行入口生成唯一 completed；禁止主动发完 completed 又返回新的结果导致重复终态。显式 progress.level 支持 info/success/warning/error，由 Server 公共 Renderer 投影标记；不得在 Client 字符串里预先拼 Marker，也不得自行创建 Web WebSocket 事件。
@@ -153,7 +153,7 @@ Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，
 
 ## 六、受保护能力与执行策略如何接入
 
-普通 Client 命令和 ACMD 均可在当前 Web Task 中使用 Interaction Broker，使用连接建立时发放的会话凭证，不需要逐命令声明 Scope。`@confirm` 仍负责命令确认，`--no-confirm` 跳过该确认；`@shell_command(..., interaction=True)` 只用于 Manifest 显示提示，不参与访问权限判断。
+普通 Client 命令和 ACMD 均可在当前 Web Task 中使用 Interaction Broker，使用连接建立时发放的会话凭证，不需要逐命令声明 Scope。`@confirm` 仍负责命令确认，`--no-confirm` 跳过该确认；`@shell_command(..., may_interact=True)` 只用于 Manifest 显示提示，不参与访问权限判断。
 
 涉及 `CommandInteractions`、预览、Secret 输入、批准/拒绝时，详细使用和应答边界参阅 [Interaction Broker](interaction_broker.md)；Script SDK 的 Client API 路由由 [Client Session API](client_session_api.md) 说明；Command、ACMD 和 Script 共用 Client Session Token。
 
@@ -242,6 +242,6 @@ The viewer's Clear View clears browser display only. External Tools' existing
 
 ## 命令 Manifest 元数据
 
-Client 普通命令的 `@shell_command` 可以声明 `output='collect'|'stream'`、`interaction=True|False`，并保留 `help/group/suggest`。取消能力由现有 `@cancel_policy('none'|'cooperative'|'process')` 声明，命令执行时仍可根据具体执行模式更新当前取消策略。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器统一提取 `name/kind/source/help/group/suggest/cancel_policy/timeout/confirmation/interaction/output`；ACMD 注册表也生成相同字段。每个可补全的 ACMD 条目使用真实插入文本作为 `name`，隐藏命令不加入握手清单。
+Client 普通命令的 `@shell_command` 可以声明 `output='collect'|'stream'`、`may_interact=True|False`，并保留 `help/group/suggest`。取消能力由现有 `@cancel_policy('none'|'cooperative'|'process')` 声明，命令执行时仍可根据具体执行模式更新当前取消策略。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器导出 `name/kind/source/help/group/suggest/cancel_policy/may_interact` 和按需存在的 `confirmation/completion`；超时、输出模式及交互执行逻辑继续留在运行时。ACMD 注册表使用相同的命令候选约定。每个可补全的 ACMD 条目使用真实插入文本作为 `name`，隐藏命令不加入握手清单。
 
-Manifest 的取消与 Timeout 信息反映命令默认声明；实际执行中的取消策略以运行态为准。带有 `confirmation: true` 的命令由 `@confirm` 请求 Interaction Broker 确认；所有这类命令均接受 `--no-confirm`。`interaction.may_request` 是当前命令声明的“可能请求交互”提示，不表示每次执行都会产生弹窗。
+Manifest 中的取消策略是命令提示信息，Timeout 由执行上下文与命令注解确定；实际执行中的取消策略以运行态为准。带有 `confirmation: true` 的命令由 `@confirm` 请求 Interaction Broker 确认；所有这类命令均接受 `--no-confirm`。`may_interact` 是当前命令声明的“可能请求前台交互”提示，不表示每次执行都会产生弹窗。

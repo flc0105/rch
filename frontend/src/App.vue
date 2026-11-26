@@ -227,6 +227,7 @@
                   :current-connection="currentConnection"
                   @preview-artifact="previewArtifact"
                   @open-json="$refs.terminalJsonDialogRef?.open($event)"
+                  @open-log-viewer="openLogViewerDialog"
                   @artifact-saved="refreshArtifactsIfOpen"
                   @rerun-terminal-block="rerunTerminalBlock"
                   @suggest-command="applyTerminalSuggestedCommand"
@@ -1118,6 +1119,14 @@ export default {
 
       if (actionType === 'open_external_tools') {
         return this.callOptionalDialog('externalTools', 'openFromNotification', context)
+      }
+
+      if (actionType === 'view_client_log') {
+        return this.openLogViewerDialog({
+          clientId: String(context.client_id || '').trim(),
+          path: String(context.log_path || '').trim(),
+          title: String(context.log_title || 'Client startup').trim(),
+        })
       }
 
       if (actionType === 'view_external_tool_log') {

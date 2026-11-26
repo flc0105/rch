@@ -58,7 +58,7 @@ func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 	required := []string{
 		"machine_id", "machine_fingerprint_basis", "os_type", "os_alias", "os_name", "os_ver",
 		"arch", "manufacturer", "model", "process_id", "username", "process_name", "launch_command",
-		"feature_manifest", "variable_manifest", "system_paths", "command_manifest",
+		"feature_manifest", "system_paths", "command_manifest",
 	}
 	for _, key := range required {
 		if _, ok := payload[key]; !ok {
@@ -96,9 +96,6 @@ func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 				t.Errorf("unsupported feature %q is enabled", name)
 			}
 		}
-	}
-	if v, ok := payload["variable_manifest"].([]interface{}); !ok || len(v) != 0 {
-		t.Fatalf("variable manifest must be []: %#v", payload["variable_manifest"])
 	}
 	if paths, ok := payload["system_paths"].(map[string]string); !ok {
 		t.Fatalf("system paths must be object: %#v", payload["system_paths"])

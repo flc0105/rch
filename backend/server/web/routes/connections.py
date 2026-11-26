@@ -89,6 +89,13 @@ def create_connections_blueprint(server_instance):
             default_error_status=404,
         )
 
+    @blueprint.get('/api/connections/<client_id>/variable-manifest')
+    def get_variable_manifest(client_id):
+        return responder.json_endpoint(
+            lambda: connection_api.get_variable_manifest(client_id),
+            default_error_status=500,
+        )
+
     @blueprint.get('/api/connections/<client_id>/revision-status')
     def get_client_revision_status(client_id):
         return responder.json_endpoint(

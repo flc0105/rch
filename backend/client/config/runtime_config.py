@@ -17,6 +17,9 @@
 from core import transfer_settings
 
 
+# ------------------ logging ------------------ #
+LOG_LEVEL = 'INFO'
+
 # ------------------ command runtime ------------------ #
 # 通用命令兜底超时：只在命令没有更具体的 fallback timeout 时生效。
 # 不覆盖 shell / stream / HTTP 等命令自己的专用 timeout。
@@ -66,6 +69,12 @@ PROCESS_RECOVERY_WATCHDOG_ENABLED = False
 # expose=False 的配置保留在本文件和 set --all 输出中，但默认不允许直接 set 修改。
 # 如果以后希望隐藏项也允许修改，把 RuntimeConfigService.is_supported_key() 改为调用 is_known_config_key() 即可。
 _RUNTIME_CONFIG_META = {
+    'LOG_LEVEL': {
+        'group': 'logging',
+        'expose': True,
+        'desc': 'Client console and main log detail level.',
+        'choices': ['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+    },
     'COMMAND_DEFAULT_TIMEOUT': {
         'group': 'command',
         'expose': False,

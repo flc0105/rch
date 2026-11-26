@@ -142,7 +142,9 @@ def test_reverse_commands_keep_confirmation_metadata_and_usage(monkeypatch):
     assert elevated.spawn_elevated_instance(owner, '--no-confirm invalid') == (
         0, 'Usage: spawn_elevated_instance [--no-confirm]')
     assert command_metadata(elevated.spawn_elevated_instance, platform='mac')['confirmation'] is True
-    assert command_metadata(elevated.spawn_elevated_instance, platform='mac')['timeout'] == 150
+    from client.commands.runtime.interrupts import get_command_timeout
+    assert get_command_timeout(elevated.spawn_elevated_instance, 'mac') == 150
+    assert 'timeout' not in command_metadata(elevated.spawn_elevated_instance, platform='mac')
     assert command_metadata(commands.relaunch_instance)['confirmation'] is True
 
 

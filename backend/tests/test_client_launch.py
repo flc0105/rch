@@ -82,7 +82,9 @@ def test_spawn_windows_waits_for_original_status_file(monkeypatch, tmp_path, she
         status_path = Path(request['status_path'])
         assert status_path.parent.parent == tmp_path
         assert status_path.name == 'launch-status.json'
-        assert request['log_path'] == str(status_path.with_name('spawn.log'))
+        log_path = Path(request['log_path'])
+        assert log_path.parent == tmp_path
+        assert log_path.name.startswith('spawn-elevated-') and log_path.suffix == '.log'
         if report is not None:
             status_path.write_text(json.dumps(report), encoding='utf-8')
         return shell_status
@@ -94,11 +96,15 @@ def test_spawn_windows_waits_for_original_status_file(monkeypatch, tmp_path, she
         monkeypatch.setattr(instance, '_DETACHED_RESULT_TIMEOUT_SECONDS', 0)
 
     result, message = instance._spawn_elevated_win()
-    assert result == expected_status and text in message
+    displayed = message.get('message', '') if isinstance(message, dict) else message
+    assert result == expected_status and text in displayed
+    if result == 1:
+        assert message['references'][0]['type'] == 'log_file'
+        assert message['data']['pid'] == report['pid']
     if shell_status <= 32:
-        assert list(tmp_path.iterdir()) == []
-    else:
-        assert 'Startup log:' in message
+        assert all(not p.is_dir() for p in tmp_path.iterdir())
+    elif result != 1:
+        assert 'Startup log:' in displayed
 
 
 @pytest.mark.parametrize('mode', ['shell', 'collect'])

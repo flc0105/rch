@@ -88,6 +88,7 @@ import {
   sendCommand as sendCommandApi,
   getCommandCandidates,
   getCommandCompletions,
+  getVariableManifest,
 } from '../api/connectionsApi.js'
 import { getCommandHistory } from '../api/commandHistoryApi.js'
 import { cancelTask } from '../api/tasksApi.js'
@@ -149,6 +150,9 @@ export default {
   data() {
     return {
       commandText: '',
+      variableManifest: [],
+      variableManifestLoadedFor: '',
+      variableManifestLoadPromise: null,
       sending: false,
       cancelSending: false,
       commandCandidates: [],
@@ -185,6 +189,9 @@ export default {
       handler(value, oldValue) {
         if (value !== oldValue) {
           this.cancelSending = false
+          this.variableManifest = []
+          this.variableManifestLoadedFor = ''
+          this.variableManifestLoadPromise = null
           this.commandCandidates = []
           this.clientCompletionDeclarations = []
           this.commandCandidatesLoadedFor = ''
@@ -491,6 +498,7 @@ export default {
       const variableQuery = this.parseVariableCompletionQuery(effectiveQueryString)
 
       if (variableQuery) {
+        await this.ensureVariableManifestLoaded()
         emitCandidates(this.buildVariableCompletionCandidates(variableQuery))
         return
       }
@@ -719,10 +727,26 @@ export default {
       }
     },
 
+    async ensureVariableManifestLoaded() {
+      const clientId = String(this.selectedId || '')
+      if (!clientId || this.variableManifestLoadedFor === clientId) return
+      if (this.variableManifestLoadPromise) return this.variableManifestLoadPromise
+      const pending = getVariableManifest(clientId)
+      this.variableManifestLoadPromise = pending
+      try {
+        const items = await pending
+        if (String(this.selectedId || '') !== clientId) return
+        this.variableManifest = Array.isArray(items) ? items : []
+        this.variableManifestLoadedFor = clientId
+      } catch (error) {
+        if (String(this.selectedId || '') === clientId) this.variableManifest = []
+      } finally {
+        if (this.variableManifestLoadPromise === pending) this.variableManifestLoadPromise = null
+      }
+    },
+
     buildVariableCompletionCandidates(variableQuery) {
-      const manifest = Array.isArray(this.currentConnection?.variable_manifest)
-        ? this.currentConnection.variable_manifest
-        : []
+      const manifest = this.variableManifest
 
       if (!variableQuery?.hasNamespaceSeparator) {
         return this.buildVariableNamespaceCandidates(variableQuery, manifest)

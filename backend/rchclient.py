@@ -6,7 +6,7 @@ from client.connection.errors import terminal_connection_error
 from client.config.config import SERVER_ADDR
 from client.config.feature_config import resolve_features
 from client.config import runtime_config
-from client.app.logging import install_client_file_logging
+from client.app.logging import install_client_file_logging, apply_client_log_level
 from core.utils.logger import logger
 
 
@@ -20,6 +20,7 @@ def main():
         run_process_recovery_watchdog_worker_from_argv()
         sys.exit(0)
 
+    apply_client_log_level()
     install_client_file_logging()
     features = resolve_features()
     process_recovery_watchdog = None

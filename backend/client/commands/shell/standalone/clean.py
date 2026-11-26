@@ -11,7 +11,7 @@ from core.protocol.result_envelope import ResultEnvelope
 from core.utils.formatting import get_size
 
 
-@shell_command('Clean Client residue and obsolete bundle releases', group='maintenance', interaction=True)
+@shell_command('Clean Client residue and obsolete bundle releases', group='maintenance', may_interact=True)
 @cancel_policy('cooperative')
 def clean(self, arg=''):
     """Preview selectable cleanup categories; --no-confirm executes without Broker."""

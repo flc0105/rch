@@ -3,7 +3,6 @@ import platform
 from client.config.config import (
     CLIENT_BUILD_VERSION,
     CLIENT_SOURCE_REVISION,
-    CLIENT_SOURCE_REVISION_FILES,
 )
 from client.config import runtime_config
 from core.client_revision import build_client_revision_manifest
@@ -16,22 +15,30 @@ from client.runtime.filesystem.path_resolver import recover_current_directory, r
 
 
 _CLIENT_REVISION_MANIFEST = None
+_CLIENT_REVISION_FILE_STATS = None
 _LAUNCH_CONTEXT = None
 
 
 def _get_client_revision_manifest() -> dict:
-    global _CLIENT_REVISION_MANIFEST
+    global _CLIENT_REVISION_MANIFEST, _CLIENT_REVISION_FILE_STATS
 
     if CLIENT_SOURCE_REVISION:
         return {
             'revision': str(CLIENT_SOURCE_REVISION),
-            'files': dict(CLIENT_SOURCE_REVISION_FILES or {}),
+            'files': {},
         }
 
     if _CLIENT_REVISION_MANIFEST is None:
-        _CLIENT_REVISION_MANIFEST = build_client_revision_manifest()
+        _CLIENT_REVISION_FILE_STATS = {}
+        _CLIENT_REVISION_MANIFEST = build_client_revision_manifest(
+            include_files=False, file_stats=_CLIENT_REVISION_FILE_STATS)
 
     return dict(_CLIENT_REVISION_MANIFEST)
+
+
+def get_revision_file_stats_at_start() -> dict | None:
+    """Return the source-only snapshot captured alongside the handshake revision."""
+    return dict(_CLIENT_REVISION_FILE_STATS) if _CLIENT_REVISION_FILE_STATS is not None else None
 
 
 class ClientInfoBuilder:
@@ -76,7 +83,6 @@ class ClientInfoBuilder:
             'machine_fingerprint_basis': identity.fingerprint_basis,
             'build_version': CLIENT_BUILD_VERSION,
             'client_revision': revision_manifest.get('revision') or '',
-            'client_revision_files': dict(revision_manifest.get('files') or {}),
 
             'process_id': os.getpid(),
             'launch_command': get_executable_path(),
@@ -95,7 +101,6 @@ class ClientInfoBuilder:
 
             'command_manifest': self._build_command_manifest(),
             'feature_manifest': dict(features),
-            'variable_manifest': self._build_variable_manifest(),
             'system_paths': get_system_paths(),
         }
         return info
@@ -120,17 +125,6 @@ class ClientInfoBuilder:
         except Exception:
             command_manifest = []
         return command_manifest
-
-    def _build_variable_manifest(self):
-        variable_manifest = []
-        try:
-            if self.command_executor is not None:
-                getter = getattr(self.command_executor, 'get_command_variable_manifest', None)
-                if callable(getter):
-                    variable_manifest = getter()
-        except Exception:
-            variable_manifest = []
-        return variable_manifest
 
     def _build_process_info(self, os_alias: str):
         try:

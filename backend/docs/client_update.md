@@ -10,12 +10,12 @@ Server 的 Agent Builder 为每次构建生成独立的 `build_id`，形式为�
 
 Python Source Bundle 的下载文件名为 `rchclient_python_YYYYMMDD_HHMMSS_XXXXXXXX.zip`；对应 `build_version` 为 `python_YYYYMMDD_HHMMSS_XXXXXXXX`。构建版本用于 Release 目录和共享 Bundle 的定位。多个独立 Client 进程可以运行同一构建版本；连接实例使用各自的 Client ID。
 
-`client_revision` 则由 `build_client_revision_manifest()` 计算。它遍历构成 Python Client Bundle 的三个根：`client/`、`core/` 和 `rchclient.py`，按确定顺序把相对路径、分隔符与文件内容纳入 SHA-256，取前 **16 个十六进制字符**作为整体 Revision。同时生成文件级差异数据：
+`client_revision` 则由 `build_client_revision_manifest()` 计算。它遍历构成 Python Client Bundle 的运行代码根：`client/`、`core/`、`tunnel/` 和 `rchclient.py`，按确定顺序把相对路径、分隔符与文件内容纳入 SHA-256，取前 **16 个十六进制字符**作为整体 Revision。按需提供文件级差异数据：
 
 | 字段 | 表示内容 | 用途 |
 | --- | --- | --- |
 | `client_revision` | 整个 Client 源码集合的内容指纹 | 判断当前 Client 与 Server 源码是否一致 |
-| `client_revision_files` | 相对文件路径对应的文件内容指纹 | 精确展示新增、删除和修改的源码文件 |
+| 文件级 Revision 明细（按需查询） | 相对文件路径对应的文件内容指纹 | 精确展示新增、删除和修改的源码文件 |
 | `build_version` | 某次构建产物身份，源码开发运行时通常为 `dev` | 定位构建、Release 和客户端的交付来源 |
 
 Revision 对指定的 Client 源码文件计算指纹，覆盖范围见上文；计算时排除 `client/config`、`__pycache__`、虚拟环境、构建缓存，以及 `.pyc` 等非源码内容。因此，仅修改 Client 的 Server 地址、Profile 或其配置模块，不一定改变 Revision；反过来，增加、删除或修改被纳入范围的运行代码文件会改变指纹。文件差异比较使用路径和文件内容的实际指纹，并不依赖 Git 工作区或提交记录。
@@ -24,7 +24,7 @@ Revision 对指定的 Client 源码文件计算指纹，覆盖范围见上文；
 
 生成 Python Bundle 时，Server 将目标 Socket 地址、Web 地址及端口、连接模式、Bind 监听接口和端口、`build_version`、Revision 和文件指纹写入 `client/config/profiles/agent.json`，保留源码配置解析器以支持参数覆盖。计算 Revision 的依据是 **Server 原始 Client 源码**，不是把构建后注入的不同连接参数再重新算作代码变化。Bundle 随后压缩并交付，Client 在握手时读取这些值。
 
-在源码/IDE 环境中直接运行 Client，配置 Profile 通常给出 `build_version=dev`，没有预先注入的 `CLIENT_SOURCE_REVISION`。这种情况下 Client 首次构造握手信息时在本地计算源码指纹，并在当前进程内缓存。**编辑本地源码后，已经运行的进程不会自动重新计算指纹或热加载代码**；应重新启动对应源码进程以重新生成握手信息。
+在源码/IDE 环境中直接运行 Client，配置 Profile 通常给出 `build_version=dev`，没有预先注入的 `CLIENT_SOURCE_REVISION`。这种情况下 Client 首次构造握手信息时在本地计算源码指纹，并在当前进程内缓存，同时保留轻量文件状态快照以支持运行时源码改动的差异显示。文件内容哈希明细在打开差异时才计算。**编辑本地源码后，已经运行的进程不会自动重新计算指纹或热加载代码**；应重新启动对应源码进程以重新生成握手信息。
 
 Bind 模式的 `update` 在准备好新 Bundle 后先将交接提示发送给 Server，随后结束旧 Client 与当前会话，由一次性交接进程启动新版并验证监听成功。操作者在 Server 手动 Connect 到新版，不需要先单独执行 Disconnect。`spawn_instance`、`spawn_elevated_instance` 和 `relaunch_instance` 的同端口启动限制仍按现有规则执行，详见 [Connection Lifecycle](connection_lifecycle.md)。
 
@@ -61,7 +61,7 @@ Server 在临时工作目录复制 Bundle 所需源码，注入 Client 配置后
 
 ## 在线连接怎样判断是否需要更新
 
-Python Client 建立 TCP 连接后，在 `info` 握手中发送 `build_version`、`client_revision`、`client_revision_files`。Server 将这些字段保存在对应 `ClientSession`，同时用于设备信息展示与按需版本检查。
+Python Client 建立 TCP 连接后，在 `info` 握手中发送 `build_version` 和 `client_revision`。Server 使用整体 Revision 判断是否需要更新；查看差异时再向当前 Client 查询文件级摘要。源码运行态在此时计算文件明细；已构建 Bundle 可以复用构建期间保存的明细。
 
 Server 对**在线连接**把握手 Revision 与本机当前源码 Revision 比较：两者都存在且一致时为 `current`，两者都存在但不同为 `outdated`，任何一方缺失时为 `unknown`。状态由源码指纹比较确定。即使新的构建产物名称不同，只要源码指纹相同，仍可以是 `current`。
 
@@ -86,7 +86,7 @@ GET /api/connections/{client_id}/revision-status
 }
 ```
 
-上面的路径与 Revision 都是字段示意，不代表仓库中存在该文件。`changed_files` 通过客户端握手时的文件指纹集合与 Server 当前集合的并集求差，`change` 区分 `added`、`removed`、`modified`。如果 Client 没有提交文件指纹，仍可能根据整体 Revision 判断 `outdated`，但 `changed_files_available` 为 `false`，详情无法列出逐文件差异。
+上面的路径与 Revision 都是字段示意，不代表仓库中存在该文件。`changed_files` 通过查询时取得的 Client 文件指纹与 Server 当前集合比较；对于源码/IDE 启动的 Client，还结合启动时采集的文件状态识别运行后源码编辑，`change` 区分 `added`、`removed`、`modified`。如果 Client 无法提供文件明细，仍可能根据整体 Revision 判断 `outdated`，但 `changed_files_available` 为 `false`，详情无法列出逐文件差异。
 
 连接状态也是判断的前提：设备不处于 Online 时，列表不继续展示在线更新判定；直接查询上述接口也会按离线分支返回（包含 `stale` 的情况），而不是用最近设备缓存中的旧信息推测最新源码状况。连接健康状态另见 [Connection Lifecycle](connection_lifecycle.md)。
 
@@ -179,7 +179,7 @@ Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview �
 
 一台 Client 的 Build Version 变化但 Revision 不变，通常只说明重新构建了同一份源码；Revision 变了才说明参与指纹计算的源码内容发生差异。反之，只改连接参数或 Profile，可能改变构建配置，却不会改变 Client 源码指纹，不能用 Revision 代替所有配置的一致性检查。
 
-遇到更新提示没有出现时，先确认目标设备当前是否真正 Online、Client 是否提交了 `client_revision`、是否在源码模式下尚未重启，以及 Server 当前是否运行在预期的源码目录。若整体 Revision 不同却没有逐文件差异，检查握手中是否提供了 `client_revision_files`。这些诊断信息都依赖当前连接快照，而不是历史设备缓存。
+遇到更新提示没有出现时，先确认目标设备当前是否真正 Online、Client 是否提交了 `client_revision`、是否在源码模式下尚未重启，以及 Server 当前是否运行在预期的源码目录。若整体 Revision 不同却没有逐文件差异，检查当前 Client 的文件级摘要查询是否成功，以及源码文件是否可用。整体 Revision 来自当前连接，明细由用户查询触发。
 
 更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对其配置的 Web 地址及端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 TCP 或 mTLS/TCP 连接地址可达。安装验证需要同时检查 HTTP 下载端口与 Client 的 TCP Socket 连接端口。Update Bundle 沿用 Client 配置的连接地址、端口和 Web 地址；FRP/NAT 转发后的访问端口不需要与 Server 本地监听端口一致。TCP Update 不要求匹配唯一 Listener；TLS/TCP Update 仍需匹配 Server 的证书指纹。
 

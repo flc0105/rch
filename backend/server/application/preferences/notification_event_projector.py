@@ -1,4 +1,5 @@
 from core.utils.formatting import format_bytes_precise
+from core.protocol.references import LOG_FILE_REFERENCE_TYPE
 from datetime import datetime, timezone
 
 
@@ -17,6 +18,8 @@ class NotificationEventProjector:
         'screen_view_lifecycle',
         'artifact_created',
         'device_event',
+        'command_result',
+        'command_result_batch',
         'httpctl_timeout',
         'httpctl_consumed',
         'httpctl_result',
@@ -113,6 +116,37 @@ class NotificationEventProjector:
             actions=actions,
         )
 
+
+    def _build_command_result_batch(self, payload):
+        for item in payload.get('results') or []:
+            if not isinstance(item, dict):
+                continue
+            notification = self._build_command_result({**payload, 'result': item.get('result')})
+            if notification:
+                return notification
+        return None
+
+    def _build_command_result(self, payload):
+        result = payload.get('result') if isinstance(payload.get('result'), dict) else {}
+        if result.get('event_type') != 'completed' or result.get('status') != 'success':
+            return None
+        for reference in result.get('references') or []:
+            if not isinstance(reference, dict) or reference.get('type') != LOG_FILE_REFERENCE_TYPE:
+                continue
+            path = str(reference.get('path') or '').strip()
+            if not path:
+                continue
+            client_id = str(payload.get('client_id') or '').strip()
+            title = str(reference.get('title') or 'Client startup').strip()
+            message = str(result.get('message') or 'Client process started').strip()
+            return self._notification(
+                'device_event', 'Client Instance Started',
+                f'{self._device_name(client_id)} · {message}', 'success',
+                {'client_id': client_id, 'log_path': path, 'log_title': title,
+                 'command_id': payload.get('command_id')},
+                [{'id': 'view-log', 'type': 'view_client_log', 'label': 'View Log'}],
+            )
+        return None
 
     def _build_device_event(self, payload):
         client_id = str(payload.get('client_id') or '').strip()

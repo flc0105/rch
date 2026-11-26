@@ -1,6 +1,6 @@
 # Client Handshake & Capability Discovery
 
-RCH 的 Client 与 Server 建立 TCP 连接后，需要完成一件比“上线通知”更基础的工作：让 Server 知道**当前这条连接是谁、运行在哪个环境、带有哪些命令和变量提示信息、能够在哪里操作文件，以及它对应哪份 Client 构建源码**。Python Client 把这组资料放进首次发送的 `info` 消息；Server 将其保存为当前 `ClientSession` 的会话信息，再分别提供给设备列表、命令输入栏、Connection Info、版本检查等功能。
+RCH 的 Client 与 Server 建立 TCP 连接后，需要完成一件比“上线通知”更基础的工作：让 Server 知道**当前这条连接是谁、运行在哪个环境、带有哪些命令提示信息、如何按需查询变量以及能够在哪里操作文件，以及它对应哪份 Client 构建源码**。Python Client 把这组资料放进首次发送的 `info` 消息；Server 将其保存为当前 `ClientSession` 的会话信息，再分别提供给设备列表、命令输入栏、Connection Info、版本检查等功能。
 
 握手在**连接开始时上报状态快照和能力声明**。后续心跳更新最近响应及部分运行状态；动态命令补全、配置查询和远程文件操作使用各自的请求链路。理解这个边界，才能准确判断新命令为什么未出现在候选列表、设备详情为什么保留旧路径，以及重连之后哪些信息会刷新。
 
@@ -29,9 +29,9 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 | 当前连接身份 | `id`、`hostname`、`machine_id`、`machine_fingerprint_basis` | 区分活动 Client 实例与机器身份；来自当前进程的本地身份快照 |
 | 系统和硬件 | `os_type`、`os_alias`、`os_full`、`os_name`、`os_ver`、`arch`、`manufacturer`、`model`、`chassis_type` | 展示平台、架构和机箱分类等设备资料，供 UI 判断或呈现 |
 | 进程与权限 | `process_id`、`launch_command`、`launch_mode`、`launch_source`、`username`、`process_name`、`integrity`、`cwd`、`python_ver` | 说明 Client 进程当时如何运行、具有何种权限及初始工作目录 |
-| 构建与源码身份 | `build_version`、`client_revision`、`client_revision_files` | 标记构建产物，比较 Client 与 Server 的源码内容 |
+| 构建与源码身份 | `build_version`、`client_revision` | 标记构建产物，比较 Client 与 Server 的源码内容 |
 | 运行能力与配置快照 | `file_transfer_mode`、`script_default_execution_mode`、`script_default_output_mode` | 表示 Client 握手时采用的传输与执行模式；Watchdog 运行状态通过 `watchdog --json` 实时读取 |
-| 提示与路径 | `command_manifest`、`variable_manifest`、`system_paths` | 提供命令候选、变量提示和 Client 端已知路径 |
+| 提示与路径 | `command_manifest`、`system_paths` | 提供命令候选和 Client 端已知路径；变量清单在使用时查询 |
 
 `id` 是每个 Python `Client` 对象初始化时创建的 UUID v4；它代表 Client 进程实例，不是主机名或 `machine_id`。同一个对象因网络异常重连会继续使用原 `client_id`，进程重新启动则通常产生新值。`machine_id` 来自规范化机器特征的 SHA-256 指纹，特征不变时可以跨进程重启复现；它不会随着 `client_id` 每次重建而重新随机分配。`chassis_type` 按设备固件和系统可提供的机箱信息分类（如 `laptop`、`desktop`、`server`、`phone`、`tablet`）；没有有效类型时使用 `unknown`。Linux 读取 DMI `chassis_type`，其中 `1`（Other）为 `unknown`，不依据发行版或云厂商名称猜测类型。Windows 采用原有脚本验证过的 `Win32_SystemEnclosure` 机箱编码检测，PowerShell 读取限时 3 秒；macOS 优先读取 `hw.model`，无法判定时限时查询 `system_profiler`。结果在 Client 进程内缓存，重连无需重复探测；不参与 `machine_id` 指纹。完整的字段采集、指纹算法与设备库存归属见 [Device Identity & Inventory](./device_identity.md)。
 
@@ -45,7 +45,7 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
 
 ### 消息结构示意
 
-以下是**按字段类别裁剪的合成示例**，用于说明顶层层次；`command_manifest` 和 `variable_manifest` 中的条目为语法示例，不代表项目当前注册命令清单：
+以下是**按字段类别裁剪的合成示例**，用于说明顶层层次；`command_manifest` 中的条目为语法示例，不代表项目当前注册命令清单：
 
 ```json
 {
@@ -64,9 +64,6 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
   "command_manifest": [
     {"name": "example", "help": "Illustrative entry", "group": "general", "suggest": true}
   ],
-  "variable_manifest": [
-    {"namespace": "env", "name": "NAME", "template": "${env:NAME}", "dynamic": true, "candidates": ["HOME"]}
-  ],
   "system_paths": {"home": "/home/demo", "temp": "/tmp"}
 }
 ```
@@ -81,7 +78,7 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
 
 ## 3. 能力如何被发现和声明
 
-RCH 的能力发现并非 Server 在每次 Web 打开下拉框时扫描 Client 对象。Python Client 在构建握手时，通过其执行器与命令注册体系组装两份独立的 Manifest，并另行采集系统路径。这些信息最终挂在**这一条 ClientSession** 上；不同平台、不同 Client 构建可以提交不同结果。
+RCH 的能力发现并非 Server 在每次 Web 打开下拉框时扫描 Client 对象。Python Client 在构建握手时通过命令注册体系生成 Command Manifest，并另行采集系统路径。变量定义在 Terminal 使用变量补全、或用户打开 Variables 标签时按需从当前 Client 获取；不同平台与构建返回各自支持的数据。
 
 Web 以 `feature_manifest.log_viewer=false` 隐藏 Log Viewer，以 `feature_manifest.device_monitor=false` 在 Dashboard 显示不支持状态并停止建立监控会话；Go Client 当前将这两项声明为 `false`。Python Client 的 `log_viewer` 默认开启，可通过其启动 Feature 配置关闭。
 
@@ -112,9 +109,9 @@ Client 先取得当前平台的命令对象，然后检查拥有 `help` 装饰�
 - `env`：提供 `${env:NAME}` 模板，并在构建 Manifest 时列出 Client **当前进程环境变量的名称**作为候选。
 - `var`：提供 `${var:NAME}` 模板；当前连接的变量通过 `var NAME=VALUE` 命令设置，值在命令执行时读取。
 
-这里的关键区别是：Manifest **不携带环境变量的值**。`${env:...}` 在实际执行命令时由 Client 读取进程环境；`rch` 和 `path` 变量也由执行时的 Provider 求值。握手时提供 `env` 候选键，只为了让浏览器在输入阶段能够提示可能的名称，并不代表这些值会被传送给 Server。
+这里的关键区别是：Manifest **不携带环境变量的值**。`${env:...}` 在实际执行命令时由 Client 读取进程环境；`rch` 和 `path` 变量也由执行时的 Provider 求值。查询变量清单时提供 `env` 候选键，只为了让浏览器在输入阶段能够提示可能的名称，并不代表这些值会被传送给 Server。
 
-由于变量名是在握手时采集的，如果进程环境在同一条连接中改变，Web 可能暂时保留旧候选；但执行时的 `${env:...}` 会依据 Client 当下读取的环境求值。这种“输入时名称快照”和“执行时数值解析”是两种不同的时间语义。参见 [Variables](./variables.md)。
+由于变量名是在用户首次请求变量清单时采集的，如果进程环境在同一条连接中改变，Web 可能暂时保留旧候选；但执行时的 `${env:...}` 会依据 Client 当下读取的环境求值。这种“输入时名称快照”和“执行时数值解析”是两种不同的时间语义。参见 [Variables](./variables.md)。
 
 ### System Paths 路径快照
 
@@ -122,11 +119,11 @@ Client 先取得当前平台的命令对象，然后检查拥有 `help` 装饰�
 
 Server 保存的是这一刻的**路径字典**。它既不代表相应目录此刻一定存在，也不会替代 Remote Files 的文件列表与权限检查。远程浏览目录、判断文件类型、路径补全等依赖专门的 Client 操作；在更换用户环境或工作目录后，也不能仅靠此缓存推导真实可访问路径。`GET /api/connections/{client_id}/system-paths` 从当前 ClientSession 的已保存字段返回该字典，本身不是向 Client 重新发送一次系统路径采集请求。
 
-Manifest 构建采用局部容错：如果读取命令列表或变量清单的过程抛出异常，`ClientInfoBuilder` 会将相应字段设为空列表，仍然构造其他握手信息。因此在线状态由 TCP 会话确认；命令或变量清单为空时，应检查握手期间相应 Manifest 的生成结果。
+Manifest 构建采用局部容错：如果读取命令列表时发生异常，`ClientInfoBuilder` 会将命令字段设为空列表，仍然构造其他握手信息。变量查询通过独立请求返回结果。因此在线状态由 TCP 会话确认；命令或变量清单为空时，应检查握手期间相应 Manifest 的生成结果。
 
 ## 4. Server 如何把握手变成可用的连接
 
-Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合，交由 Web Connection Service 构造 `ClientSession`。`SessionInfo.from_dict()` 将标准字段转为会话属性，对 `client_revision_files` 等对象字段做基本的类型归一化；其余未在标准字段集合中的键放进 `extras`。例如 Python 的 `process_id`、`variable_manifest` 和传输模式，以及 Go 的 `go_version`，会沿这个扩展字段通道保存。
+Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合，交由 Web Connection Service 构造 `ClientSession`。`SessionInfo.from_dict()` 将标准字段转为会话属性，对标准字段做基本的类型归一化；其余未在标准字段集合中的键放进 `extras`。例如 Python 的 `process_id` 和传输模式，以及 Go 的 `go_version`，会沿这个扩展字段通道保存。
 
 标准字段与扩展字段的区别会影响后续读取方式，但它们均属于当前会话的握手资料。Server 并不依靠 `SessionInfo` 自动探测远端能力：未上报的字段会使用默认值或空集合，不能由此推断远端实际运行了哪些功能。
 
@@ -136,12 +133,13 @@ Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合�
 
 | Web 入口 | 读到的握手数据及用途 |
 | --- | --- |
-| `GET /api/connections` | 活跃连接和最近离线设备；展示身份、平台、运行模式、Build/Revision、变量 Manifest 及在线状态等序列化摘要 |
+| `GET /api/connections` | 活跃连接和最近离线设备；展示身份、平台、运行模式、Build/Revision 及在线状态等序列化摘要 |
 | `GET /api/connections/{client_id}/command-candidates` | 从活动 Session 的 `command_manifest` 获取 Client 候选（保留可选 `completion` 声明），再与 Server 命令候选合并、按模板去重、排序 |
 | `GET /api/connections/{client_id}/system-paths` | 直接返回活动 Session 在握手时保存的 `system_paths` 字典 |
-| `GET /api/connections/{client_id}/revision-status` | 读取 Client 所报 Revision，并与 Server 当前计算的源码 Manifest 比较，按需计算文件差异 |
+| `GET /api/connections/{client_id}/revision-status` | 比较 Client 与 Server 的 Revision；不一致时向 Client 请求文件级摘要并计算差异 |
+| `GET /api/connections/{client_id}/variable-manifest` | 向当前 Client 查询变量模板与候选名称，供 Terminal 与 Connection Info 使用 |
 
-尤其不要假设 `/api/connections` 直接返回整个 `command_manifest` 或 `system_paths`；当前连接摘要的序列化字段里**没有**这两个字段。Terminal 需要候选时另外调用 Command Candidates API，Connection Info 显示变量提示则直接读取摘要里的 `variable_manifest`。Browser 还可能在切换设备、历史固定命令变化等时重新合并自己的候选列表，但这不等于 Client 重新执行了握手。
+尤其不要假设 `/api/connections` 直接返回整个 `command_manifest` 或 `system_paths`；当前连接摘要的序列化字段里**没有**这两个字段。Terminal 需要候选时另外调用 Command Candidates API，Connection Info 的 Variables 标签按需请求变量清单。Browser 还可能在切换设备、历史固定命令变化等时重新合并自己的候选列表，但这不等于 Client 重新执行了握手。
 
 部分字段还会经过 Server 派生加工：例如 `client_revision_state` 根据活动连接状态及 Server 计算的当前源码 Revision 判定，不是 Client 直接在握手里声明的状态；`machine_alias`、隐藏偏好、分组来源于 Server 持久化数据，也不是 Client 上报的硬件能力。最近离线设备依靠此前保存的快照仍可出现在列表中，但已经没有可读取实时命令 Manifest 的活动 Socket 会话。
 
@@ -150,7 +148,7 @@ Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合�
 Python Client 握手同时传递 `build_version` 和 `client_revision`，但两者回答不同问题：
 
 - `build_version`：这次 Client 构建产物的标识，源码模式通常为 `dev`；它不用于推断代码内容的新旧大小顺序。
-- `client_revision`：纳入 Revision 计算范围的 Client 源码内容指纹；`client_revision_files` 是文件级摘要，用于细化差异展示。
+- `client_revision`：纳入 Revision 计算范围的 Client 源码内容指纹；文件级摘要仅在需要差异详情时向 Client 查询，用于细化差异展示。
 
 预构建 Bundle 可以把源码指纹及明细注入 Client 配置；源码模式在本地构建 Revision Manifest 并缓存。Server 查询时计算自己的当前源码指纹，比较相等时标记 `current`，不等时标记 `outdated`，缺乏可比 Revision 时为 `unknown`。这不是依赖某个自增版本号，也不是 Client 与 Server 建立连接前协商的协议版本。
 
@@ -160,7 +158,7 @@ Python Client 握手同时传递 `build_version` 和 `client_revision`，但两�
 
 ### 同一进程重连
 
-Python Client 的接收循环在发生 Socket 错误或其他连接异常后，会停止接收线程、清理与旧连接关联的运行态及后台任务，重建 Socket/执行上下文，重新建立连接并发送新的 `info`。此过程沿用当前 `Client` 对象的 `client_id`，但会重新组装 `command_manifest`、`variable_manifest`、`system_paths`、运行模式等字段。机器身份通过进程内 `LocalIdentity` 缓存获取；源码 Revision Manifest 也可能复用进程内或构建时注入的数据，因此不能笼统地说“每次重连所有内容都从磁盘与硬件重扫一遍”。
+Python Client 的接收循环在发生 Socket 错误或其他连接异常后，会停止接收线程、清理与旧连接关联的运行态及后台任务，重建 Socket/执行上下文，重新建立连接并发送新的 `info`。此过程沿用当前 `Client` 对象的 `client_id`，但会重新组装 `command_manifest`、`system_paths`、运行模式等字段。机器身份通过进程内 `LocalIdentity` 缓存获取；源码 Revision Manifest 也可能复用进程内或构建时注入的数据，因此不能笼统地说“每次重连所有内容都从磁盘与硬件重扫一遍”。
 
 当前实现没有单独的、可以在现有 Socket 连接中推送全量 `command_manifest` 或 `system_paths` 的通用 Capability Refresh 消息。若新增命令注册仅改变了运行中的执行器而未发生重连，Server 已保存的能力声明可能仍是旧快照；重新获取 Web 的候选 API 只会再次读取那份 Server 会话信息。修改后是否需要重新启动 Client，取决于命令注册与模块加载本身能否在运行进程内发生变化。
 
@@ -184,7 +182,7 @@ Heartbeat 更新连接的最近活跃信息、RTT 和可能的当前工作目录
 | --- | --- |
 | Socket 可连接，但设备没有正常注册 | 第一帧 JSON/长度头是否有效；首帧读取超时；Server 是否进入 Session 注册路径 |
 | Client Online，但没有本平台的命令候选 | `command_manifest` 是否构建成功；命令是否导出且注册；是否连接到新的进程/会话；前端候选是否重新加载 |
-| 补全提示中没有刚设置的环境变量名称 | 变量名候选来自上次握手时的环境快照；与执行时实时读取的值不是同一阶段 |
+| 补全提示中没有刚设置的环境变量名称 | 变量名候选来自最近一次变量清单查询时的环境快照；与执行时实时读取的值不是同一阶段 |
 | 系统路径看起来不符当前运行环境 | `system_paths` 是握手缓存；确认当前 Client 进程的用户/环境和最近一次连接时间 |
 | Client 在线但更新状态 Unknown | 是否实际提交了 `client_revision`，以及 Server 是否能计算对应 Revision |
 | 同机重启后设备归属改变 | 核对 `machine_id` 的指纹输入是否变化；设备归并不是仅按主机名进行 |
@@ -200,7 +198,7 @@ Go Client 在传输连接建立后发送 `type: "info"`，并在同一进程的�
 
 - 基础字段包括 `id`、`os_type`、`os_ver`、`hostname`、`cwd`、`integrity`、`go_version` 和 `build_version`；其中 Windows `integrity` 读取当前进程 Token 的完整性 RID。
 - `launch_mode` / `launch_source` 支持 `terminal`、`terminal_background`、`detached`、`user_service`、`system_service`、`scheduled`、`unknown` 七类外部运行形态，不使用 Python Client 的 `ide` 分类；启动时采集一次并在重连时复用，服务类型由实际管理器与当前进程 PID 核对。
-- `command_manifest` 来自 Go 自身的命令执行器，涵盖基本文件操作；`cd` 与 `download` 声明 `filesystem` CompletionSpec，Server 据此通过独立 `completion` 消息请求路径候选；`variable_manifest` 仍为空列表。
+- `command_manifest` 来自 Go 自身的命令执行器，涵盖基本文件操作；`cd` 与 `download` 声明 `filesystem` CompletionSpec，Server 据此通过独立 `completion` 消息请求路径候选；变量清单查询返回空列表。
 - `system_paths` 提供 Root、Home、Desktop、Documents、Downloads、Temp 和可执行文件目录，用于 Remote Files Quick Jump。
 - `machine_id` 和 `machine_fingerprint_basis` 使用 Go 的机器身份实现；`client_revision` 及 Python 源码指纹明细没有上报。
 - `feature_manifest.remote_files=true` 表示 Go 可使用目录导航及基本文件管理命令，并支持受管理文件传输、Preview 和 ZIP。
@@ -209,9 +207,9 @@ Go Client 的连接、身份、目录管理、Remote Files 上传／下载／预
 
 ## Capability Metadata 与启动 Feature
 
-Client 在原有 `info.command_manifest` 每个条目中上报命令描述：`name`、`kind`、`source`、`help`、`group`、`suggest`、`cancel_policy`、`timeout`、`confirmation`、`interaction`、`output`，以及可选的 `completion`。`completion` 是最小 CompletionSpec：只有 `provider` 和 `kinds`。Shell-like 命令由 `@shell_command(..., completion=CompletionSpec(...))` 声明；ACMD 在对应参数的 `ArgumentOptionSpec.completion` 声明，握手条目只携带去重后的 `{provider,kinds}` 列表，不重复传参数名/位置，具体参数绑定继续由 Client 本地 ACMD Schema 解析。当前实现 `filesystem` Provider，`kinds` 为 `file` 和/或 `directory`。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。`interaction.may_request=true` 表示命令可能调用 Interaction Broker。
+Client 在原有 `info.command_manifest` 每个条目中上报命令描述：`name`、`kind`、`source`、`help`、`group`、`suggest`、`cancel_policy`、`may_interact`、`confirmation`，以及可选的 `completion`。`completion` 是最小 CompletionSpec：只有 `provider` 和 `kinds`。Shell-like 命令由 `@shell_command(..., completion=CompletionSpec(...))` 声明；ACMD 在对应参数的 `ArgumentOptionSpec.completion` 声明，握手条目只携带去重后的 `{provider,kinds}` 列表，不重复传参数名/位置，具体参数绑定继续由 Client 本地 ACMD Schema 解析。当前实现 `filesystem` Provider，`kinds` 为 `file` 和/或 `directory`。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。`may_interact=true` 表示命令可能请求前台交互，属于平铺的提示字段。
 
-这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。`output=stream` 表示命令可能在最终结果前发送中间命令结果；`collect` 表示该命令只返回最终命令结果。
+这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。命令实际的超时预算和输出模式仍由运行时声明及执行上下文决定，不需要在握手的命令候选中复制。
 
 `info.feature_manifest` 是 Client 启动时解析的有效 Feature 布尔快照；部分 Feature 决定模块装载，`external_tool` 与 `process_monitor` 决定 Web 工具入口。支持 `pty`、`screen_view`、`screen_input`、`clipboard`、`watchdog`、`external_tool`、`process_monitor`。File Transfer 和 Device Monitor 仍沿用现有路径；Process Inspection/Control 暂未纳入 Feature 开关。Server 的连接列表序列化会透传 `feature_manifest`，供 Web 界面读取；Feature Manifest 用于能力展示，服务端权限仍由相应业务入口校验。
 

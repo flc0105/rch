@@ -4,6 +4,8 @@ import time
 
 from core.utils.datetime_utils import parse_iso_datetime
 from core.client_revision import build_client_revision_manifest
+from core.protocol.message_types import MSG_TYPE_CONTROL
+from core.protocol.control import ControlDomain, SessionAction
 from server.application.connection.control_command_store import get_control_command_store
 from server.connection.client_session import ClientSession
 from server.connection.runtime.foreground_task_snapshot import build_foreground_task_snapshot
@@ -182,7 +184,6 @@ class WebConnectionService:
             'file_transfer_mode': info.get_extra('file_transfer_mode'),
             'script_default_execution_mode': info.get_extra('script_default_execution_mode'),
             'script_default_output_mode': info.get_extra('script_default_output_mode'),
-            'variable_manifest': list(info.get_extra('variable_manifest') or []),
             'feature_manifest': dict(info.get_extra('feature_manifest') or {}),
         }
 
@@ -304,6 +305,31 @@ class WebConnectionService:
             return saved_store.remove(target_id)
         return bind_connector.run_if_offline(target['host'], target['port'], remove, target_id=target_id)
 
+    @staticmethod
+    def _query_client_session_metadata(session, action) -> dict:
+        results = session.send_command('', type=MSG_TYPE_CONTROL,
+                                       domain=ControlDomain.SESSION, action=action, payload={},
+                                       extra={'timeout': 30})
+        for result in results:
+            if not result.eof:
+                continue
+            event = result.event or {}
+            if event.get('status') != 'success':
+                raise RuntimeError(str(event.get('message') or 'Client metadata query failed'))
+            data = event.get('data')
+            if not isinstance(data, dict):
+                raise RuntimeError('Invalid Client metadata response')
+            return data
+        raise ConnectionError('Client disconnected during metadata query')
+
+    def get_variable_manifest(self, client_id: str) -> list[dict]:
+        session = self.server.get_target_connection_by_client_id(str(client_id or '').strip())
+        data = self._query_client_session_metadata(session, SessionAction.GET_VARIABLE_MANIFEST)
+        items = data.get('items')
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise RuntimeError('Invalid variable manifest')
+        return items
+
     def get_system_paths(self, client_id: str):
         session = self.server.get_target_connection_by_client_id(str(client_id or '').strip())
         return session.session_info.system_paths
@@ -324,17 +350,40 @@ class WebConnectionService:
             }
 
         # 每次查询都基于当前磁盘源码重新计算，Server 无需重启即可反映最新 revision。
-        server_manifest = build_client_revision_manifest(include_files=True)
+        server_manifest = build_client_revision_manifest(include_files=False)
         info = session.session_info
         client_revision = str(info.client_revision or '').strip()
         server_revision = str(server_manifest.get('revision') or '').strip()
         revision_state = self._get_revision_state(client_revision, server_revision)
-        client_files = dict(info.client_revision_files or {})
-        server_files = dict(server_manifest.get('files') or {})
-        changed_files_available = bool(client_files)
         changed_files = []
-        if revision_state == 'outdated' and changed_files_available:
-            changed_files = self._build_changed_revision_files(client_files, server_files)
+        changed_files_available = revision_state == 'current'
+        if revision_state == 'outdated':
+            detail = self._query_client_session_metadata(session, SessionAction.GET_REVISION_FILES)
+            client_files = detail.get('files')
+            if not isinstance(client_files, dict):
+                raise RuntimeError('Invalid Client revision files')
+            changed_files_available = bool(client_files)
+            if changed_files_available:
+                server_files = build_client_revision_manifest(include_files=True).get('files') or {}
+                changed_files = self._build_changed_revision_files(client_files, server_files)
+                # A source-launched Client still runs its original code if its
+                # on-disk sources are edited after connection establishment.
+                # File hashes reflect current disk, while startup stats identify
+                # those edits without eagerly hashing every file at handshake.
+                changed_paths = {item['path'] for item in changed_files}
+                for item in detail.get('changed_since_start') or []:
+                    if not isinstance(item, dict):
+                        continue
+                    path = item.get('path')
+                    if not isinstance(path, str) or not path or path in changed_paths:
+                        continue
+                    if item.get('change') not in ('added', 'removed', 'modified'):
+                        continue
+                    changed_files.append({'path': path, 'change': item['change']})
+                    changed_paths.add(path)
+                changed_files.sort(key=lambda item: item['path'])
+                if not changed_files:
+                    changed_files_available = False
 
         return {
             'client_id': client_id_text,

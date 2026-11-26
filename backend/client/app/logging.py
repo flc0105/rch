@@ -11,7 +11,22 @@ from client.runtime.temp_workspace import get_temp_category_dir
 
 CLIENT_LOG_FILENAME = 'client.log'
 CLIENT_LOG_MAX_BYTES = 10 * 1024 * 1024
+
 CLIENT_LOG_BACKUP_COUNT = 5
+
+
+def apply_client_log_level():
+    from client.config import runtime_config
+    from core.utils.logger import logger
+
+    level = getattr(logging, str(runtime_config.LOG_LEVEL), logging.INFO)
+    logger.setLevel(level)
+    root = logging.getLogger()
+    root.setLevel(level)
+    for handler in root.handlers:
+        if getattr(handler, '_rch_client_main_log', False):
+            handler.setLevel(level)
+
 
 
 def _report_file_log_failure(exc):
@@ -58,7 +73,8 @@ def install_client_file_logging() -> str:
             backupCount=CLIENT_LOG_BACKUP_COUNT,
             encoding='utf-8',
         )
-        handler.setLevel(logging.DEBUG)
+        from client.config import runtime_config
+        handler.setLevel(getattr(logging, str(runtime_config.LOG_LEVEL), logging.INFO))
         handler.setFormatter(logging.Formatter(
             '[%(asctime)s] %(levelname)s %(name)s: %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S',

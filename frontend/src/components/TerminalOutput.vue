@@ -59,7 +59,7 @@
                   href="#"
                   class="table-action-link-aux terminal-text"
                   @click.prevent.stop="handleTerminalActionClick(actionItem)"
-              >{{ actionItem.type === 'preview' ? '[ Preview ]' : '[ View JSON ]' }}</a><span
+              >{{ actionItem.type === 'preview' ? '[ Preview ]' : actionItem.type === 'log' ? '[ View Log ]' : '[ View JSON ]' }}</a><span
                   v-if="actionItem.type === 'preview'"
                   class="terminal-text"
               > {{ actionItem.fileName }}</span>
@@ -316,7 +316,7 @@ export default {
     },
   },
 
-  emits: ['preview-artifact', 'open-json', 'artifact-saved', 'rerun-terminal-block', 'suggest-command', 'open-task-details', 'terminal-scroll'],
+  emits: ['preview-artifact', 'open-json', 'open-log-viewer', 'artifact-saved', 'rerun-terminal-block', 'suggest-command', 'open-task-details', 'terminal-scroll'],
 
   data() {
     return {
@@ -634,6 +634,20 @@ export default {
         }
       })
 
+      const seenLogs = new Set()
+      for (const item of groupLines) {
+        for (const ref of item?.meta?.resultReferences || []) {
+          if (ref?.type !== 'log_file' || !String(ref.path || '').trim()) continue
+          const clientId = String(item?.meta?.resultClientId || this.selectedId || '').trim()
+          const key = `${clientId}:${ref.path}`
+          if (seenLogs.has(key)) continue
+          seenLogs.add(key)
+          result.push({
+            type: 'log', key: `log:${key}`, line: item,
+            source: { clientId, path: ref.path, title: String(ref.title || 'Client startup') },
+          })
+        }
+      }
       return result
     },
 
@@ -684,6 +698,11 @@ export default {
 
       if (actionItem.type === 'preview') {
         this.previewTerminalArtifact(actionItem.line)
+        return
+      }
+
+      if (actionItem.type === 'log') {
+        this.$emit('open-log-viewer', actionItem.source)
         return
       }
 

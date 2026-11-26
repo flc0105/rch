@@ -6,7 +6,7 @@ _VALID_PLATFORMS = frozenset({'mac', 'win', 'linux', 'ios'})
 
 
 def argument_command(name: str, spec: ArgumentCommandSpec | None = None, *,
-                     interaction=False, output='collect', platforms=None):
+                     may_interact=False, output='collect', platforms=None):
     """
     标记一个 acmd 实验命令处理方法
     """
@@ -30,7 +30,7 @@ def argument_command(name: str, spec: ArgumentCommandSpec | None = None, *,
         func.command_output = output
         func.argument_command_name = name
         func.argument_command_spec = spec
-        func.command_interaction = bool(interaction)
+        func.command_may_interact = bool(may_interact)
         func.argument_command_platforms = supported
         return func
     return decorator

@@ -47,6 +47,10 @@ export function reorderOnlineDevices(machineIds) {
   return apiFetch('/api/machines/order', jsonRequestOptions('PATCH', { machine_ids: machineIds }))
 }
 
+export function getVariableManifest(clientId) {
+  return apiData(`/api/connections/${encodeURIComponent(clientId)}/variable-manifest`, {}, [])
+}
+
 export function getConnectionRevisionStatus(clientId) {
   return apiData(`/api/connections/${encodeURIComponent(clientId)}/revision-status`, {}, {})
 }

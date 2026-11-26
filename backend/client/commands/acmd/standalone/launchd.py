@@ -39,7 +39,7 @@ LAUNCHD_ARGUMENT_SPEC = ArgumentCommandSpec(
 )
 
 
-@argument_command('launchd', spec=LAUNCHD_ARGUMENT_SPEC, interaction=True, platforms=('mac',))
+@argument_command('launchd', spec=LAUNCHD_ARGUMENT_SPEC, may_interact=True, platforms=('mac',))
 def launchd(self, args_dict, payload=None):
     from client.runtime.sdk import launchd
 

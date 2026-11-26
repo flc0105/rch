@@ -137,7 +137,6 @@ func (c *Client) buildHandshake(cwd string) map[string]interface{} {
 		"launch_source":             c.launch.source,
 		"command_manifest":          executor.CommandManifest(),
 		"feature_manifest":          featureManifest(),
-		"variable_manifest":         []interface{}{},
 		"system_paths":              systemPaths(),
 	}
 }

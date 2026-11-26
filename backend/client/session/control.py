@@ -9,6 +9,28 @@ class SessionControl:
         self.connection = connection
 
     def execute(self, scope, action, payload):
+        if action == SessionAction.GET_REVISION_FILES:
+            from client.config.config import CLIENT_SOURCE_REVISION, CLIENT_SOURCE_REVISION_FILES
+            from core.client_revision import build_client_revision_manifest
+            if CLIENT_SOURCE_REVISION:
+                files = dict(CLIENT_SOURCE_REVISION_FILES or {})
+            else:
+                from client.connection.handshake import get_revision_file_stats_at_start
+                original = get_revision_file_stats_at_start()
+                current = {} if original is not None else None
+                files = build_client_revision_manifest(include_files=True, file_stats=current).get('files') or {}
+                changed = []
+                if current is not None:
+                    for path in sorted(set(original) | set(current)):
+                        if original.get(path) == current.get(path):
+                            continue
+                        change = ('added' if path not in original else
+                                  'removed' if path not in current else 'modified')
+                        changed.append({'path': path, 'change': change})
+                return 1, {'files': files, 'changed_since_start': changed}
+            return 1, {'files': files}
+        if action == SessionAction.GET_VARIABLE_MANIFEST:
+            return 1, {'items': self.connection.runtime.command_executor.get_command_variable_manifest()}
         if action != SessionAction.DISCONNECT:
             return 0, 'Unsupported session Control action'
         scope._checkpoint()

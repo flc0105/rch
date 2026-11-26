@@ -151,7 +151,7 @@ Client 将剩余的 `Alice` 作为完整字符串 `arg` 传入函数，函数返
 
 | 注解 | 用途 | 关键参数与行为 |
 |---|---|---|
-| `@shell_command(description, group='general', suggest=True, interaction=False, platforms=None)` | **导出命令**，描述帮助文本和补全分类 | `description` 是帮助说明；`group` 用于 Help 分组；`suggest=False` 不进入推荐列表但仍可以执行；`interaction` 表示命令通常会请求 Web 交互；`platforms` 约束支持的 mac/win/linux/ios 平台 |
+| `@shell_command(description, group='general', suggest=True, may_interact=False, platforms=None)` | **导出命令**，描述帮助文本和补全分类 | `description` 是帮助说明；`group` 用于 Help 分组；`suggest=False` 不进入推荐列表但仍可以执行；`may_interact` 表示命令可能会请求 Web 前台交互；`platforms` 约束支持的 mac/win/linux/ios 平台 |
 | `@confirm(message=None)` | 执行方法体**之前**请求 Web 确认 | 不传参数时生成默认提示；同意才进入原函数，拒绝、超时或没有可用交互时返回失败；在命令参数中显式传入 `--no-confirm` 时直接调用原方法 |
 | `@timeout(seconds)` | 声明命令默认的正数超时预算 | 请求方指定的有效超时只可缩短预算；这是执行上下文的期限，不保证强制终止任意 Python 代码 |
 | `@cancel_policy(mode='none', message='')` | 声明命令可以采用的取消机制 | `none` 不接受取消；`cooperative` 在检查点响应；`process` 用于实际由命令管理的子进程；`message` 是取消不可用等情况的解释文本 |
@@ -195,7 +195,7 @@ def approved_demo(context):
 
 所有 `@confirm` 命令都支持显式 `--no-confirm`：命令输入参数开头或末尾的该标记会在进入方法体前移除，此次执行无需请求 Interaction Broker。该标记由命令装饰器解析，不请求 Interaction Broker。未提供标记时照常请求确认。操作系统自身的 UAC / sudo 授权按平台机制执行。
 
-如果需要自定义文本输入、选择或先展示计划再批准，则在命令内部显式使用 `CommandInteractions`，并可在 `@shell_command` 中设置 `interaction=True` 以提示界面：
+如果需要自定义文本输入、选择或先展示计划再批准，则在命令内部显式使用 `CommandInteractions`，并可在 `@shell_command` 中设置 `may_interact=True` 以提示界面：
 
 ```python
 from client.commands.shell.decorators import shell_command
@@ -203,7 +203,7 @@ from client.runtime.execution.interaction_service import (
     CommandInteractions, CommandInteractionError,
 )
 
-@shell_command('Choose a demonstration label', group='general', interaction=True)
+@shell_command('Choose a demonstration label', group='general', may_interact=True)
 def choose_label(context, arg=''):
     ui = CommandInteractions(context)
     try:

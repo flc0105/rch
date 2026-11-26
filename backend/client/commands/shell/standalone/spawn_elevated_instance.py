@@ -14,6 +14,9 @@ from client.runtime.mac_util import escape_osascript_text
 from client.commands.runtime.interrupts import timeout
 from client.commands.shell.decorators import shell_command, reverse_only
 from client.runtime.client_util import get_executable_path, get_runtime_root
+from client.runtime.temp_workspace import make_client_startup_log
+from core.protocol.result_envelope import ResultEnvelope
+from core.protocol.references import log_file_reference
 from core.utils.decorator import confirm
 
 
@@ -46,7 +49,7 @@ try:
     with open(log_path, 'ab') as errors:
         child = subprocess.Popen(
             request['argv'], cwd=request['cwd'], env=env,
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors,
+            stdin=subprocess.DEVNULL, stdout=errors, stderr=errors,
             close_fds=True, shell=False,
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
@@ -88,8 +91,7 @@ def _spawn_elevated_mac():
     launcher = 'setsid() != -1 or die "setsid failed: $!"; exec @ARGV or die "exec failed: $!";'
     command = f'/usr/bin/perl -MPOSIX=setsid -e {shlex.quote(launcher)} -- {get_executable_path()}'
 
-    log_fd, log_path = tempfile.mkstemp(prefix='rch-elevated-', suffix='.log')
-    os.close(log_fd)
+    log_path = make_client_startup_log(prefix='spawn-elevated-')
     log_file = shlex.quote(log_path)
     script = (
         f'cd {shlex.quote(get_runtime_root())} || exit 1; '
@@ -119,10 +121,11 @@ def _spawn_elevated_mac():
     match = re.search(r'RCH_ELEVATED_CLIENT_PID=(\d+)', result.stdout or '')
     if not match:
         return 0, f'Elevated Client launch failed: no Client PID (startup log: {log_path})'
-    return 1, (
-        f'Elevated Client process started (PID: {int(match.group(1))}) '
-        f'(startup stderr: {log_path}); connection not yet verified'
-    )
+    return 1, ResultEnvelope(
+        message=f'Elevated Client process started (PID: {int(match.group(1))}); connection not yet verified',
+        data={'pid': int(match.group(1))},
+        references=[log_file_reference(log_path)],
+    ).as_payload()
 
 
 def _spawn_elevated_win():
@@ -135,7 +138,7 @@ def _spawn_elevated_win():
             dir=get_temp_category_dir('client_logs', private=True),
         )
         status_path = os.path.join(work_dir, 'launch-status.json')
-        log_path = os.path.join(work_dir, 'spawn.log')
+        log_path = make_client_startup_log(prefix='spawn-elevated-')
         executable, parameters = _detached_launch_arguments(status_path, log_path)
         result = ctypes.windll.shell32.ShellExecuteW(
             None, 'runas', executable, parameters, os.getcwd(), 0,
@@ -146,7 +149,11 @@ def _spawn_elevated_win():
 
         status = _wait_for_detached_launch_status(status_path)
         if status.get('ok') and int(status.get('pid') or 0) > 0:
-            return 1, f'Elevated detached Client started, PID: {status["pid"]}. Startup log: {log_path}'
+            return 1, ResultEnvelope(
+                message=f'Elevated detached Client started, PID: {status["pid"]}.',
+                data={'pid': int(status['pid'])},
+                references=[log_file_reference(log_path)],
+            ).as_payload()
         detail = str(status.get('error') or 'No child PID reported')
         return 0, f'Elevated detached Client launch failed: {detail}. Startup log: {log_path}'
     except Exception as exc:

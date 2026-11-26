@@ -77,6 +77,8 @@ class WatchdogAction(ControlValue):
 
 class SessionAction(ControlValue):
     DISCONNECT = "disconnect"
+    GET_REVISION_FILES = "get_revision_files"
+    GET_VARIABLE_MANIFEST = "get_variable_manifest"
 
 
 class ExternalToolAction(ControlValue):
@@ -160,6 +162,8 @@ _CONTROL_ACTIONS = {
     },
     ControlDomain.SESSION: {
         SessionAction.DISCONNECT: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        SessionAction.GET_REVISION_FILES: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
+        SessionAction.GET_VARIABLE_MANIFEST: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),
     },
     ControlDomain.TUNNEL: {
         TunnelAction.START: ControlActionSpec(ExecutionPolicy.INDEPENDENT, activity=ActivityPolicy.OPTIONAL),

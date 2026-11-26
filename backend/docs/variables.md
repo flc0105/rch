@@ -244,7 +244,7 @@ shell ls "${rch:cwd}"
 
 ### Manifest 提供的发现能力
 
-Client 在连接握手时上报 `variable_manifest`，Server 随连接信息保存并转给 Web UI。Manifest 是**支持的变量定义清单**，不是在连接时固定计算好的所有变量值。每个预定义变量包含命名空间、名称、模板、描述和动态标记，例如：
+Terminal 首次使用变量补全时、或 Connection Info 打开 Variables 标签时，Server 向当前 Client 请求 `variable_manifest`。Manifest 是**支持的变量定义清单**，不是在连接时固定计算好的所有变量值。每个预定义变量包含命名空间、名称、模板、描述和动态标记，例如：
 
 ```json
 {
@@ -271,7 +271,7 @@ Client 在连接握手时上报 `variable_manifest`，Server 随连接信息保�
 
 上面的 `candidates` 仅示意数据结构；实际名称来自目标 Client 的环境变量，不保证与示例相同。
 
-连接信息窗口的 **Variables** 标签展示变量模板及说明；设置与删除连接级自定义变量使用 `var` 命令。打开标签页不会重新查询 Client 上各变量的当前值。
+连接信息窗口的 **Variables** 标签展示变量模板及说明；设置与删除连接级自定义变量使用 `var` 命令。打开标签页会获取变量定义与候选名称，不读取变量的当前值。
 
 ### 补全提示和候选内容
 

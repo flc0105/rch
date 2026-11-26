@@ -5,6 +5,9 @@ import threading
 
 from client.runtime.client_util import get_executable_argv, get_runtime_root
 from client.runtime.command_variable_resolver import CommandVariableResolutionError
+from client.runtime.temp_workspace import make_client_startup_log
+from core.protocol.result_envelope import ResultEnvelope
+from core.protocol.references import log_file_reference
 from core.utils.decorator import confirm
 from client.commands.shell.decorators import shell_command, reverse_only
 
@@ -60,11 +63,20 @@ def reexec_instance(self):
 @shell_command('Start a new client instance without exiting current process', group='session', platforms=('mac', 'win', 'linux'))
 @reverse_only('Duplicate Instance is not supported in Bind mode. Use a different profile and port to start a separate instance.')
 def spawn_instance(self):
-    process = _spawn_instance()
+    log_path = make_client_startup_log()
+    try:
+        process = _spawn_instance(stderr_path=log_path, stdout_path=log_path)
+    except Exception as exc:
+        return 0, ResultEnvelope(status='error', message=f'Client launch failed: {exc}',
+                                 references=[log_file_reference(log_path)]).as_payload()
     # Duplicate 已是独立 session；父进程只负责异步回收退出状态，避免 zombie。
     if os.name == 'posix' and callable(getattr(process, 'wait', None)):
         threading.Thread(target=process.wait, name='rch-duplicate-reaper', daemon=True).start()
-    return 1, f'New client instance started, pid={process.pid}'
+    return 1, ResultEnvelope(
+        message=f'New client instance started, pid={process.pid}',
+        data={'pid': process.pid},
+        references=[log_file_reference(log_path)],
+    ).as_payload()
 
 
 def _relaunch_instance(socket):
@@ -104,19 +116,21 @@ def _reexec_instance(socket):
     os.execv(argv[0], argv)
 
 
-def _spawn_instance(*, start_new_session=True, stderr_path=''):
+def _spawn_instance(*, start_new_session=True, stderr_path='', stdout_path=''):
     """Start a separate Client instance; relaunch and duplicate both use this."""
     restart_argv = get_executable_argv()
     launch_cwd = get_runtime_root()
 
     from client.watchdog.watchdog_environment import without_process_recovery_watchdog_environment
 
-    stderr_file = open(stderr_path, 'ab') if stderr_path else None
+    stdout_file = open(stdout_path, 'ab') if stdout_path else None
+    stderr_file = stdout_file if stdout_path and stdout_path == stderr_path else (
+        open(stderr_path, 'ab') if stderr_path else None)
     popen_kwargs = {
         'cwd': launch_cwd,
         'env': without_process_recovery_watchdog_environment(),
         'stdin': subprocess.DEVNULL,
-        'stdout': subprocess.DEVNULL,
+        'stdout': stdout_file or subprocess.DEVNULL,
         'stderr': stderr_file or subprocess.DEVNULL,
         'close_fds': True,
     }
@@ -131,5 +145,7 @@ def _spawn_instance(*, start_new_session=True, stderr_path=''):
                                     start_new_session=start_new_session, **popen_kwargs)
         raise RuntimeError(f'Unsupported os.name: {os.name}')
     finally:
-        if stderr_file is not None:
+        if stderr_file is not None and stderr_file is not stdout_file:
             stderr_file.close()
+        if stdout_file is not None:
+            stdout_file.close()

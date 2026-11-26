@@ -34,6 +34,7 @@ class RuntimeConfigEffects:
         self.is_launchd_managed_client = is_launchd_managed_client
         self._callbacks = {}
         self.register(('SCREEN_FRAME_STRATEGY',), self._screen_strategy_notice)
+        self.register(('LOG_LEVEL',), self._apply_log_level)
         self.register(('PROCESS_RECOVERY_WATCHDOG_ENABLED',), self._apply_watchdog_update)
         self.register(self.WATCHDOG_CONFIG_KEYS, self._apply_watchdog_update)
 
@@ -46,6 +47,11 @@ class RuntimeConfigEffects:
         for callback in self._callbacks.get(key, ()):
             messages.extend(callback(key, value))
         return messages
+
+    def _apply_log_level(self, _key, _value):
+        from client.app.logging import apply_client_log_level
+        apply_client_log_level()
+        return []
 
     def _screen_strategy_notice(self, _key, _value):
         return [warning('Applies to new Screen View sessions; restart the current Screen View to switch mode')]

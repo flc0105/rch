@@ -161,7 +161,7 @@ from client.runtime.execution.interaction_service import (
 )
 
 class ShellExampleCommands:
-    @shell_command('Ask for an operation label', group='general', interaction=True)
+    @shell_command('Ask for an operation label', group='general', may_interact=True)
     def ask_label(self, arg=''):
         try:
             label = CommandInteractions(self).ask(

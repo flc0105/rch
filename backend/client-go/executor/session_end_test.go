@@ -119,20 +119,21 @@ func TestLifecycleCommandsRejectInvalidArguments(t *testing.T) {
 
 func TestShellCommandManifestDeclaresProcessCancellation(t *testing.T) {
 	policies := map[string]string{}
-	outputs := map[string]string{}
 	for _, entry := range CommandManifest() {
 		item := entry.(map[string]interface{})
 		name := item["name"].(string)
 		policies[name] = item["cancel_policy"].(string)
-		outputs[name] = item["output"].(string)
+		if _, exists := item["output"]; exists {
+			t.Fatal("output mode leaked into command manifest")
+		}
 	}
 	for _, name := range []string{"shell", "shell_stream"} {
 		if policies[name] != "process" {
 			t.Fatalf("%s policy: %q", name, policies[name])
 		}
 	}
-	if outputs["shell_stream"] != "stream" || outputs["shell"] != "collect" {
-		t.Fatalf("shell output metadata: %#v", outputs)
+	if cmd, ok := LookupCommand("shell_stream"); !ok || cmd.Output != "stream" {
+		t.Fatal("runtime stream mode missing")
 	}
 	for _, name := range []string{"kill_instance", "relaunch_instance", "spawn_instance"} {
 		if policies[name] != "none" {

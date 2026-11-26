@@ -2,6 +2,8 @@
 
 Web Configuration 与 Server `config` 命令共享 Client 配置服务、类型/choices 校验、覆盖文件和运行时副作用。Server 解析终端 `config` 与 `watchdog`，分别使用与 Web 相同的 Configuration、Watchdog Control；Configuration GET 返回统一 Result，其中 `data` 是完整配置对象；SET/RESET 仅返回状态和简短消息。`config list --json` 返回包含 group、key、value、default 的四字段配置视图。无效枚举值不得写入配置。
 
+Client 的 `LOG_LEVEL` 默认 `INFO`，可通过现有 Runtime Configuration / `set` 命令切换为 `DEBUG`、`WARNING` 或 `ERROR`。变更对当前 Client 控制台及主日志文件即时生效；`DEBUG` 保留完整协议收发与心跳诊断内容。
+
 ## `config` 命令与 Configuration
 
 RCH 为每台 Client 提供一套可以在线查询和调整的运行配置。它主要用于选择文件传输、Python 执行和 Screen View 的工作策略，以及调整超时、重连、预览与 Watchdog 等行为。

@@ -554,6 +554,7 @@
 
 <script>
 import { getBackgroundJobs } from '../api/backgroundJobsApi.js'
+import { getVariableManifest } from '../api/connectionsApi.js'
 import { formatBytesHuman, formatDateTimeStandard as formatDateTimeStandardValue, formatLaunchMode } from '../utils/formatters.js'
 import { formatConnectionDirection, formatConnectionLastSeen as formatConnectionLastSeenValue, formatConnectionRtt as formatConnectionRttValue, formatConnectionStatus as formatConnectionStatusValue, getConnectionDisplayState as getConnectionDisplayStateValue } from '../utils/connectionInfoFormatting.js'
 import { ElMessage } from 'element-plus'
@@ -606,6 +607,8 @@ export default {
       connectionCommandSource: 'client',
       connectionCommandSearch: '',
       activeTab: 'basic',
+      variableManifest: [],
+      variableManifestLoadedFor: '',
       runtimeConfigItems: [],
       runtimeConfigStorePath: '',
       runtimeConfigLoading: false,
@@ -796,7 +799,7 @@ export default {
     },
 
     variableManifestItems() {
-      const manifest = this.currentConnection?.variable_manifest
+      const manifest = this.variableManifest
       if (!Array.isArray(manifest)) return []
 
       return manifest
@@ -813,6 +816,9 @@ export default {
 
   watch: {
     activeTab(value, previousValue) {
+      if (value === 'variables' && this.infoVisible) {
+        void this.loadVariableManifest(this.selectedId)
+      }
       if (value === 'configuration' && this.infoVisible && !this.runtimeConfigLoaded) {
         this.loadRuntimeConfig(this.selectedId)
       }
@@ -867,6 +873,20 @@ export default {
       else if (path) this.$emit('open-remote-files', path)
     },
 
+    async loadVariableManifest(clientId) {
+      const id = String(clientId || '')
+      if (!id || this.variableManifestLoadedFor === id) return
+      try {
+        const items = await getVariableManifest(id)
+        if (this.infoVisible && String(this.selectedId || '') === id) {
+          this.variableManifest = Array.isArray(items) ? items : []
+          this.variableManifestLoadedFor = id
+        }
+      } catch (error) {
+        if (String(this.selectedId || '') === id) this.variableManifest = []
+      }
+    },
+
     async open() {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
@@ -884,6 +904,8 @@ export default {
       this.connectionInfoClientCommands = []
       this.connectionInfoServerCommands = []
       this.activeTab = 'basic'
+      this.variableManifest = []
+      this.variableManifestLoadedFor = ''
       this.runtimeConfigItems = []
       this.runtimeConfigStorePath = ''
       this.runtimeConfigLoaded = false

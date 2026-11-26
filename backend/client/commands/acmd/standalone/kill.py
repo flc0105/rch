@@ -20,7 +20,7 @@ KILL_ARGUMENT_SPEC = ArgumentCommandSpec(
 
 
 
-@argument_command('kill', spec=KILL_ARGUMENT_SPEC, interaction=True, platforms=('mac', 'win', 'linux'))
+@argument_command('kill', spec=KILL_ARGUMENT_SPEC, may_interact=True, platforms=('mac', 'win', 'linux'))
 def kill(self, args_dict, payload=None):
     from client.runtime.execution.process.approved_process_service import (
         ClientCommandInteractions, ProcessApprovalError, find_targets,

@@ -64,6 +64,14 @@ def make_client_temp_file(category: str, prefix: str = '', suffix: str = '') -> 
     return fd, path
 
 
+def make_client_startup_log(prefix: str = 'spawn-') -> str:
+    """Allocate a persistent, random Client log for an independent process."""
+    fd, path = tempfile.mkstemp(
+        prefix=prefix, suffix='.log', dir=get_temp_category_dir('client_logs', private=True))
+    os.close(fd)
+    return os.path.abspath(path)
+
+
 def register_temp_path(path: str):
     normalized = _normalize_path(path)
     if not normalized:

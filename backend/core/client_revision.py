@@ -117,7 +117,7 @@ def _hash_file(file_path: str) -> str:
     return digest.hexdigest()[:REVISION_DIGEST_LENGTH]
 
 
-def _hash_files(source_root: str, relative_paths) -> str:
+def _hash_files(source_root: str, relative_paths, *, file_stats=None) -> str:
     digest = hashlib.sha256()
     matched = False
 
@@ -127,6 +127,9 @@ def _hash_files(source_root: str, relative_paths) -> str:
             relative_file = _normalize_relative_path(os.path.relpath(file_path, source_root))
             digest.update(relative_file.encode('utf-8'))
             digest.update(b'\0')
+            if file_stats is not None:
+                stat = os.stat(file_path)
+                file_stats[relative_file] = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
             with open(file_path, 'rb') as file_obj:
                 while True:
                     chunk = file_obj.read(1024 * 1024)
@@ -145,6 +148,7 @@ def _hash_files(source_root: str, relative_paths) -> str:
 def build_client_revision_manifest(
     source_root: str = '',
     include_files: bool = True,
+    file_stats: dict | None = None,
 ) -> dict:
     """
     计算 Client 源码 revision。
@@ -161,6 +165,6 @@ def build_client_revision_manifest(
                 files[relative_file] = _hash_file(file_path)
 
     return {
-        'revision': _hash_files(root, CLIENT_BUNDLE_SOURCE_PATHS),
+        'revision': _hash_files(root, CLIENT_BUNDLE_SOURCE_PATHS, file_stats=file_stats),
         'files': files,
     }

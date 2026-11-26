@@ -241,7 +241,7 @@ func CommandManifest() []interface{} {
 			"group":         cmd.Group,
 			"suggest":       cmd.Suggest,
 			"cancel_policy": cmd.CancelPolicy,
-			"output":        cmd.Output,
+			"may_interact":  false,
 		}
 		if cmd.Completion != nil {
 			entry["completion"] = map[string]interface{}{

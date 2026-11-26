@@ -102,7 +102,9 @@ Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → py
 
 各平台均根据进程与服务管理器的实际状态确认 Launch Mode。macOS 的短生命周期 Bootstrap 退出、Client 被 `launchd` 收养后，仍按它自己的 session/控制终端状态归类。原 Client 即使来自 `IDE (PyCharm)`，采用 `start_new_session=True` 启动的新 Client 也按实际新会话显示 `Detached`。
 
-macOS `spawn_elevated_instance` 经系统管理员授权后，由 root shell 执行 `get_executable_path()` 提供的原始 Client 启动命令；不会向 Client 追加内部 bootstrap 参数。命令返回**新 Client 的实际 PID**；如果管理员取消授权、启动失败或 Client 立即退出，则返回错误详情。启动时保留原有命令行参数，包括 `--profile tls-local` 等连接配置，TLS 校验沿用对应 profile。命令始终使用新 Session，预期显示 `Detached (new session)`。`--no-confirm` 仅跳过 RCH 确认。返回 PID 表示已启动 Client 进程，Server 上线状态仍需单独核实。
+`spawn_instance` 和 `spawn_elevated_instance` 启动的独立 Client 将 stdout/stderr 写入 Client 临时目录 `client_logs` 下的随机日志文件。成功回执返回启动 PID 和结构化 `log_file` 引用，Terminal 提供 **[ View Log ]**，通知中心的 **Client Instance Started** 通知也提供 **View Log**，均复用既有 Log Viewer。日志文件由新进程独立持有，旧 Client 的执行完成与退出不会关闭其输出目标。返回 PID 表示进程已创建，设备是否上线需以连接状态为准。
+
+macOS `spawn_elevated_instance` 经系统管理员授权后，由 root shell 执行 `get_executable_path()` 提供的原始 Client 启动命令；不会向 Client 追加内部 bootstrap 参数。命令返回**新 Client 的实际 PID 和启动日志引用**；如果管理员取消授权、启动失败或 Client 立即退出，则返回错误详情。启动时保留原有命令行参数，包括 `--profile tls-local` 等连接配置，TLS 校验沿用对应 profile。命令始终使用新 Session，预期显示 `Detached (new session)`。`--no-confirm` 仅跳过 RCH 确认。返回 PID 表示已启动 Client 进程，Server 上线状态仍需单独核实。
 
 在 macOS 实机测试时，先运行 `spawn_elevated_instance`，再用 `ps -o pid,ppid,user,command -p <PID>` 验证返回的 PID 确实属于 root Python Client（不是 `osascript`）。可进一步用 `acmd ps --pid <PID>` 检查进程，并在 Server 设备列表中确认新实例使用目标 Listener 上线。如果命令报告启动失败，查看其错误输出；若新进程启动后没有上线，查看回执中给出的 root Client 启动 stderr 日志路径。
 

@@ -72,6 +72,10 @@ WebEventBus 发布时生成一份临时事件对象：
 
 前台 Task 是实时运行态，不进行通知持久化。`foreground_task_changed` 广播中的 `task` 是当前会话状态快照，所有标签页均可直接使用；事件丢失后由浏览器在 WebSocket 连接建立及重连时调用已有的连接 Task 查询接口重新同步。其他同步命令来源也在共用执行槽上发出相同事件，避免用周期性 HTTP 轮询补漏。
 
+## 独立 Client 启动日志通知
+
+当命令的结构化完成结果包含 `type=log_file` 的 Client 日志引用时，Server 通过既有命令结果事件（单项或批量）投影一条 **Client Instance Started** 通知，附带 **View Log** 操作。点击后使用通知中的 Client ID 与日志路径打开现有 Log Viewer；Terminal 在同一条命令结果上显示 **[ View Log ]**。这适用于 `spawn_instance` 和 `spawn_elevated_instance`，不改变 `update`、`relaunch_instance` 的生命周期。通知是否以 Toast 展示仍受现有设备事件通知偏好控制。
+
 ## Watchdog 恢复后的上线通知
 
 Watchdog 恢复使用 `connection_online` 事件及同名通知偏好。Local Heartbeat Watchdog 检测到心跳过期并拉起新的 Client 时，首次上线事件附带 `recovery_source: "local_heartbeat_watchdog"`；Process Recovery Watchdog 检测到 Client PID 消失并拉起新 Client 时，附带 `recovery_source: "process_recovery_watchdog"`。Server 只允许这两个已知值进入上线事件；正常启动、Remote HTTP Relaunch 和普通断线重连都不标注恢复来源。
