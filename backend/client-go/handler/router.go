@@ -113,6 +113,9 @@ func Handle(session *executor.Session, msg map[string]interface{}) {
 		payload, _ := msg["payload"].(map[string]interface{})
 		session.StartTransfer(id, operation, payload)
 
+	case "transfer_register":
+		session.AcceptTransferRegistration(msg)
+
 	case "transfer_cancel":
 		id, _ := msg["transfer_id"].(string)
 		session.CancelTransfer(id)

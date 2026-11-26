@@ -3,7 +3,7 @@ import socket
 import time
 import uuid
 
-from client.connection.lifecycle import ClientConnectionLifecycle
+from client.connection.lifecycle import ClientConnectionLifecycle, next_reconnect_delay
 from client.connection.receiver_worker import ClientReceiverWorker
 from client.config import runtime_config
 from client.config.runtime_config_reporter import log_runtime_config_overrides_if_any
@@ -13,20 +13,12 @@ from core.utils.logger import logger
 
 
 class Client:
-    @property
-    def RECONNECT_INTERVAL(self):
-        return getattr(self, '_reconnect_interval_override', runtime_config.RECONNECT_INTERVAL_SECONDS)
-
-    @RECONNECT_INTERVAL.setter
-    def RECONNECT_INTERVAL(self, interval):
-        self._reconnect_interval_override = interval
-
     def __init__(self, address, process_recovery_watchdog_manager=None):
         self.address = address
         self.client_id = str(uuid.uuid4())
         self.server = None
         self.info = None
-        self._reconnect_delay = min(self.RECONNECT_INTERVAL, 30)
+        self._reconnect_delay = 0
         self._bind_immediate_retry_used = False
         self.process_recovery_watchdog_manager = process_recovery_watchdog_manager
         self.recovery_source = consume_recovery_source()
@@ -91,7 +83,7 @@ class Client:
         连接异常后的恢复逻辑
         """
         if getattr(getattr(self, 'server', None), 'client_session_token', ''):
-            self._reconnect_delay = min(self.RECONNECT_INTERVAL, 30)
+            self._reconnect_delay = 0
             self._bind_immediate_retry_used = False
         logger.warning('Connection lost: %s', error)
         first_attempt = True
@@ -105,10 +97,10 @@ class Client:
             if immediate:
                 self._bind_immediate_retry_used = True
             else:
-                delay = min(getattr(self, '_reconnect_delay', self.RECONNECT_INTERVAL), 30)
+                delay = next_reconnect_delay(getattr(self, '_reconnect_delay', 0))
+                self._reconnect_delay = delay
                 logger.warning('Reconnecting in %gs after: %s', delay, error)
                 time.sleep(delay)
-                self._reconnect_delay = min(max(delay * 2, min(self.RECONNECT_INTERVAL, 30)), 30)
             first_attempt = False
             if self.connection_lifecycle.is_paused is True:
                 return

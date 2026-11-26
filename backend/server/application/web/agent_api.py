@@ -81,6 +81,7 @@ class WebAgentApi:
                     'listener_id': listener_id,
                     'listener_name': listener_name,
                     'connection_mode': connection_mode,
+                    'listener_protocol': listener_protocol,
                     'bind_host': bind_host if connection_mode == 'bind' else '',
                     'bind_port': bind_port if connection_mode == 'bind' else None,
                 },

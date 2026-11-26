@@ -133,4 +133,4 @@ mobile Safari), Terminal Copy uses a synchronous selection fallback for the
 currently loaded Terminal window. Saving Terminal output to Artifact continues
 to use the full local History, including rows not currently loaded onscreen.
 
-Agent Outputs 以 `python`、`go`、`go_loader` 为正式 Builder ID，显示为 Python Bundle、Go、Go Loader；输出文件名固定以 `rchclient` 为前缀，Build Version 使用 Builder 名；两者共用构建时间与八位哈希后缀。列表支持 Builder、Listener 和搜索过滤，Utilities 中可直接进入。
+Agent Outputs 以 `python`、`go`、`go_loader` 为正式 Builder ID，显示为 Python Bundle、Go、Go Loader；输出文件名固定以 `rchclient` 为前缀，Build Version 使用 Builder 名；两者共用构建时间与八位哈希后缀。列表展示 Filename、Connection、Transport、Size，支持 Builder、Mode 筛选；Info 显示构建来源、目标平台、端点及构建时间，Utilities 中可直接进入。

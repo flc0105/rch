@@ -73,8 +73,7 @@ func cmdKillInstance(s *Session, args []string) (int, string) {
 		return 0, "Usage: kill_instance"
 	}
 	s.ReportSessionEnd("server_requested_disconnect", "kill_instance")
-	_ = s.Sock.Close()
-	os.Exit(0)
+	s.exitProcess()
 	return 1, ""
 }
 
@@ -86,8 +85,7 @@ func cmdRelaunchInstance(s *Session, args []string) (int, string) {
 		return 0, fmt.Sprintf("Failed to restart client: %v", err)
 	}
 	s.ReportSessionEnd("client_restart", "relaunch_instance")
-	_ = s.Sock.Close()
-	os.Exit(0)
+	s.exitProcess()
 	return 1, ""
 }
 

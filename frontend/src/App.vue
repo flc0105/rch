@@ -1268,7 +1268,7 @@ export default {
       if (!target) return
       const { connectToClient } = await import('./api/connectionsApi.js')
       try {
-        const result = await connectToClient(target.host, target.port, target.server_web_base_url)
+        const result = await connectToClient(target.host, target.port, target.server_web_base_url, target.name || '', target.transport)
         if (result.status === 'already_connected') {
           ElMessage.info('Client already connected')
         } else {

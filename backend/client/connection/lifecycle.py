@@ -5,8 +5,14 @@ import time
 from client.connection.server_connection import ServerConnection
 from client.connection.transport_connectors import get_connector
 from client.config.config import RUNTIME_CONFIG
+from client.config.runtime_config_service import reconnect_backoff_bounds
 from client.connection.handshake import ClientInfoBuilder
 from core.utils.logger import logger
+
+
+def next_reconnect_delay(previous_delay=0):
+    minimum, maximum = reconnect_backoff_bounds()
+    return min(max(previous_delay * 2, minimum), maximum)
 
 
 class ClientConnectionLifecycle:
@@ -111,7 +117,7 @@ class ClientConnectionLifecycle:
         connector = get_connector(protocol)
         connector.validate(RUNTIME_CONFIG)
         logger.info('Connecting to %s via %s', self.client.address, protocol)
-        retry_delay = min(self.client.RECONNECT_INTERVAL, 30)
+        retry_delay = 0
         while True:
             try:
                 if connector.connect(self.client.server, self.client.address, RUNTIME_CONFIG):
@@ -120,9 +126,9 @@ class ClientConnectionLifecycle:
             except OSError as exc:
                 logger.warning('Connection attempt failed: %s', exc)
             self.client.server.close()
+            retry_delay = next_reconnect_delay(retry_delay)
             logger.info('Retrying connection in %gs', retry_delay)
             time.sleep(retry_delay)
-            retry_delay = min(max(retry_delay * 2, min(self.client.RECONNECT_INTERVAL, 30)), 30)
             self.client.server = self.create_connection()
 
     def handshake(self):

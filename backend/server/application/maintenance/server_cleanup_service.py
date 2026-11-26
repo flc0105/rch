@@ -201,7 +201,7 @@ class ServerCleanupService:
         return [
             str(record.get('file_name') or '').strip()
             for record in self.agent_output_registry.list_outputs()
-            if str(record.get('source') or '').strip().lower() in ('update', 'bootstrap')
+            if str(record.get('build_origin') or '').strip().lower() in ('update', 'bootstrap')
             and str(record.get('file_name') or '').strip()
         ]
 
@@ -274,7 +274,7 @@ class ServerCleanupService:
                 result['errors'].append(f'{file_name}: {exc}')
                 continue
 
-            if str(record.get('source') or '').strip().lower() not in ('update', 'bootstrap'):
+            if str(record.get('build_origin') or '').strip().lower() not in ('update', 'bootstrap'):
                 continue
 
             file_path = os.path.abspath(os.path.join(self.agent_output_registry.output_dir, file_name))

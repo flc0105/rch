@@ -8,9 +8,10 @@ from typing import Optional
 
 class AgentOutputRegistry:
     FIELDS = (
-        'file_name', 'builder', 'build_version', 'source', 'created_at',
-        'target_os', 'target_arch', 'listener_id', 'listener_name_snapshot',
-        'connect_host', 'connect_port', 'web_scheme', 'web_host', 'web_port',
+        'file_name', 'builder', 'build_version', 'connection_mode',
+        'transport', 'listener_id', 'listener_name_snapshot', 'target_os',
+        'target_arch', 'build_origin', 'endpoint_ip', 'endpoint_port',
+        'web_ip', 'web_port', 'created_at',
     )
 
     def __init__(self, output_dir: str, database):
@@ -39,23 +40,11 @@ class AgentOutputRegistry:
     @staticmethod
     def _to_record(row: sqlite3.Row, size: int) -> dict:
         data = dict(row)
-        # Keep the existing Agent Outputs API without storing duplicate aliases.
         return {
-            'file_name': data['file_name'],
+            **data,
+            'listener_name': data['listener_name_snapshot'] if data['connection_mode'] == 'reverse' else '',
             'size': size,
             'build_time': data['created_at'],
-            'build_version': data['build_version'],
-            'builder': data['builder'],
-            'source': data['source'],
-            'target_os': data['target_os'],
-            'target_arch': data['target_arch'],
-            'listener_id': data['listener_id'],
-            'listener_name': data['listener_name_snapshot'],
-            'server_host': data['connect_host'],
-            'server_port': data['connect_port'],
-            'server_web_scheme': data['web_scheme'],
-            'server_web_host': data['web_host'],
-            'web_port': data['web_port'],
             'warnings': [],
         }
 
@@ -64,22 +53,43 @@ class AgentOutputRegistry:
         filename = self._normalize_filename(build_result.get('file_name'))
         file_path = self._safe_join_output(filename)
         os.stat(file_path)  # A successful build must have produced its binary before registration.
+        mode = str(payload.get('connection_mode') or '').strip()
+        transport = str(payload.get('listener_protocol') or '').strip()
+        if mode not in ('reverse', 'bind'):
+            raise ValueError('Invalid Agent connection mode')
+        if transport not in ('tcp', 'mtls_tcp'):
+            raise ValueError('Invalid Agent transport')
+        builder = str(build_result.get('builder') or payload.get('builder') or '').strip()
+        # Bind listens locally; Reverse connects to the selected Server listener.
+        endpoint_ip = str(payload.get('bind_host' if mode == 'bind' else 'server_host') or '').strip()
+        endpoint_port = self._port(payload.get('bind_port' if mode == 'bind' else 'server_port'))
+        if not endpoint_ip or not 1 <= endpoint_port <= 65535:
+            raise ValueError('Invalid Agent endpoint')
+        show_web = mode == 'reverse' or builder == 'go_loader'
+        web_ip = (
+            str(payload.get('server_web_host') or (payload.get('server_host') if mode == 'reverse' else '') or '').strip()
+            if show_web else ''
+        )
+        web_port = self._port(payload.get('web_port')) if show_web else 0
+        if show_web and (not web_ip or not 1 <= web_port <= 65535):
+            raise ValueError('Invalid Agent web endpoint')
         created_at = datetime.now().isoformat()
         values = (
             filename,
-            str(build_result.get('builder') or payload.get('builder') or '').strip(),
+            builder,
             str(build_result.get('build_version') or '').strip(),
+            mode,
+            transport,
+            str(payload.get('listener_id') or '').strip() if mode == 'reverse' else '',
+            str(payload.get('listener_name') or '').strip() if mode == 'reverse' else '',
+            str(build_result['target_os'] if 'target_os' in build_result else payload.get('target_os') or '').strip(),
+            str(build_result['target_arch'] if 'target_arch' in build_result else payload.get('target_arch') or '').strip(),
             str(source or payload.get('source') or 'manual').strip(),
+            endpoint_ip,
+            endpoint_port,
+            web_ip,
+            web_port,
             created_at,
-            str(build_result.get('target_os') or payload.get('target_os') or '').strip(),
-            str(build_result.get('target_arch') or payload.get('target_arch') or '').strip(),
-            str(payload.get('listener_id') or '').strip(),
-            str(payload.get('listener_name') or '').strip(),
-            str(payload.get('server_host') or '').strip(),
-            self._port(payload.get('server_port')),
-            str(payload.get('server_web_scheme') or 'http').strip(),
-            str(payload.get('server_web_host') or payload.get('server_host') or '').strip(),
-            self._port(payload.get('web_port')),
         )
         columns = ', '.join(self.FIELDS)
         placeholders = ', '.join('?' for _ in self.FIELDS)

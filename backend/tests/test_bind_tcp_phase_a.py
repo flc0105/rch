@@ -270,7 +270,6 @@ def test_bind_mode_is_opt_in_and_reverse_path_untouched(monkeypatch):
     from client.connection import lifecycle
     fake = SimpleNamespace()
     fake.server = SimpleNamespace(adopt_socket=lambda sock: None)
-    fake.RECONNECT_INTERVAL = 0.01
     worker = ClientReceiverWorker()
     fake.receiver_worker = worker
     fake.client_id = str(uuid.uuid4())
@@ -426,7 +425,6 @@ def test_bind_loss_releases_old_socket_before_reverse_backoff(monkeypatch):
     from client.app.client import Client
     from client.app import client as client_app
     fake = SimpleNamespace(
-        RECONNECT_INTERVAL=15,
         connection_lifecycle=SimpleNamespace(
             is_paused=False, is_bind_mode=True,
             reset_connection=Mock(),
@@ -454,7 +452,7 @@ def test_client_wait_survives_bind_initial_handshake_error_and_toolbar_disconnec
         client_id=str(uuid.uuid4()), features=features, watchdog_manager=None,
         process_recovery_watchdog_manager=None,
         receiver_worker=ClientReceiverWorker(), recovery_source='', info=None,
-        RECONNECT_INTERVAL=0.01, local_ipc=None,
+        local_ipc=None,
     )
     client.server = ServerConnection(features=features)
     client.server.client_id = client.client_id
@@ -466,6 +464,7 @@ def test_client_wait_survives_bind_initial_handshake_error_and_toolbar_disconnec
     client._recover_from_connection_error = MethodType(Client._recover_from_connection_error, client)
     client._wait_for_commands = MethodType(Client._wait_for_commands, client)
     original_connect = MethodType(Client.connect, client)
+    monkeypatch.setattr(client_lifecycle, "reconnect_backoff_bounds", lambda: (0.01, 0.03))
     startup_calls = []
 
     def connect():
@@ -561,9 +560,9 @@ def test_bind_recovers_listening_after_initial_port_conflict(monkeypatch):
         port = occupied.getsockname()[1]
         occupied.listen(1)
         monkeypatch.setattr(lifecycle, 'RUNTIME_CONFIG', _config(port))
+        monkeypatch.setattr(lifecycle, "reconnect_backoff_bounds", lambda: (0.02, 0.04))
         accepted = []
         fake = SimpleNamespace(
-            RECONNECT_INTERVAL=0.02,
             server=SimpleNamespace(adopt_socket=accepted.append),
         )
         manager = ClientConnectionLifecycle(fake)

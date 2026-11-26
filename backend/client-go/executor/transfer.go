@@ -24,19 +24,25 @@ type transferState struct {
 }
 
 type transferTracker struct {
-	mu     sync.Mutex
-	active map[string]*transferState
+	mu      sync.Mutex
+	active  map[string]*transferState
+	closed  bool
+	workers sync.WaitGroup
 }
 
 func (t *transferTracker) start(id string, cancel context.CancelFunc) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		return false
+	}
 	if t.active == nil {
 		t.active = make(map[string]*transferState)
 	}
 	if _, exists := t.active[id]; exists {
 		return false
 	}
+	t.workers.Add(1)
 	t.active[id] = &transferState{cancel: cancel}
 	return true
 }
@@ -54,10 +60,12 @@ func (t *transferTracker) finish(id string) {
 	t.mu.Lock()
 	delete(t.active, id)
 	t.mu.Unlock()
+	t.workers.Done()
 }
 
 func (t *transferTracker) close() {
 	t.mu.Lock()
+	t.closed = true
 	all := make([]context.CancelFunc, 0, len(t.active))
 	for _, item := range t.active {
 		all = append(all, item.cancel)
@@ -66,6 +74,8 @@ func (t *transferTracker) close() {
 	for _, cancel := range all {
 		cancel()
 	}
+	// A new connection must not inherit workers from the prior session.
+	t.workers.Wait()
 }
 
 func (s *Session) CloseTransfers()          { s.transfers.close() }
@@ -116,8 +126,10 @@ func (s *Session) StartTransfer(id, operation string, payload map[string]interfa
 	go func() {
 		defer cancel()
 		defer s.transfers.finish(id)
-		s.transferUpdate(id, map[string]interface{}{"state": "running", "cancel_supported": true, "progress_supported": true})
-		err := s.runTransfer(ctx, id, operation, payload)
+		strategy := currentTransferStrategy()
+		s.transferUpdate(id, map[string]interface{}{"state": "running", "cancel_supported": true, "progress_supported": true,
+			"metadata": map[string]interface{}{"file_transfer_mode": strategy.mode()}})
+		err := s.runTransfer(ctx, id, operation, payload, strategy)
 		if err == nil {
 			return
 		}
@@ -129,7 +141,7 @@ func (s *Session) StartTransfer(id, operation string, payload map[string]interfa
 	}()
 }
 
-func (s *Session) runTransfer(ctx context.Context, id, operation string, payload map[string]interface{}) error {
+func (s *Session) runTransfer(ctx context.Context, id, operation string, payload map[string]interface{}, strategy fileTransferStrategy) error {
 	switch operation {
 	case "client_to_server_file", "client_to_server_preview":
 		path, err := remoteExisting(s, payloadText(payload["path"]), false)
@@ -155,7 +167,7 @@ func (s *Session) runTransfer(ctx context.Context, id, operation string, payload
 				category = v
 			}
 		}
-		return s.uploadTransferFile(ctx, id, path, filepath.Base(path), typ, category)
+		return strategy.upload(s, ctx, id, path, filepath.Base(path), typ, category)
 	case "client_to_server_zip":
 		paths, err := pathsForTransfer(s, payload["paths"])
 		if err != nil {
@@ -184,7 +196,7 @@ func (s *Session) runTransfer(ctx context.Context, id, operation string, payload
 		if !strings.HasSuffix(strings.ToLower(filename), ".zip") {
 			filename += ".zip"
 		}
-		return s.uploadTransferFile(ctx, id, name, filename, "saved", "downloads")
+		return strategy.upload(s, ctx, id, name, filename, "saved", "downloads")
 	case "client_to_server_zip_entry":
 		archivePath, err := remoteExisting(s, payloadText(payload["path"]), false)
 		if err != nil {
@@ -212,9 +224,9 @@ func (s *Session) runTransfer(ctx context.Context, id, operation string, payload
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("ZIP entry download requires a file")
 		}
-		return s.uploadTransferFile(ctx, id, extracted, filepath.Base(extracted), "saved", "downloads")
+		return strategy.upload(s, ctx, id, extracted, filepath.Base(extracted), "saved", "downloads")
 	case "server_to_client_file":
-		return s.downloadTransferFile(ctx, id, payload)
+		return strategy.download(s, ctx, id, payload)
 	default:
 		return fmt.Errorf("unsupported transfer: %s", operation)
 	}

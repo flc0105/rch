@@ -21,7 +21,7 @@ Server 使用独立的 `server-ca.crt` / `server-ca.key` 签发 Server Identity�
 - **Server 尚未初始化**：mTLS Listener 无法启动，或构建 mTLS Agent 被拒绝；独立的 TCP Listener 仍可使用。
 - **撤销**：在 Identities 中点击对应 Client 的 **Revoke**。同一个 Client Identity 的**后续主会话、文件数据和隧道连接**会被拒绝；既有已连接会话不被立即踢下线。按需手动断开旧会话。撤销是不可逆操作，重新授权需签发新身份并安全分发。
 - **到期 / 轮换**：客户端证书到期前签发并安装新的 Client Identity，再撤销旧身份；服务器 TLS 身份默认 365 天，需在到期前维护/更新身份文件并重启相关 mTLS Listener 以加载新证书。目前不提供自动证书续签或 Server 轮换 UI；切勿直接删除整个 Identity 根目录，否则此前发出的 Client 安装材料不再匹配新信任根。
-- **重连**：Client 在网络失败或身份被拒绝后从 5 秒开始退避（5、10、20、30 秒），上限 30 秒；认证被拒绝的原因在 Client 日志中显示。
+- **重连**：Reverse Client 在网络失败或身份被拒绝后按指数退避重试。Python 和 Go 的 Configuration 使用 `RECONNECT_BACKOFF_MIN_SECONDS`（默认 5 秒）和 `RECONNECT_BACKOFF_MAX_SECONDS`（默认 30 秒），均为正整数且最小值不得大于最大值；两者相等时采用固定间隔。修改在下一次退避计算时生效，认证成功后重置退避。认证被拒绝的原因在 Client 日志中显示。
 - **配置校验**：Listener 配置只接受 `tcp` 和 `mtls_tcp`。无效协议会拒绝加载原配置，配置文件不会被自动改写。Client 选择 mTLS 时需要预先安装有效身份。
 - **私钥备份**：Server Identity 目录包含两套 CA 私钥和 Client 私钥，必须严格访问控制、离线加密备份。下载 ZIP、Client 的 Identity 目录和浏览器下载缓存均按敏感凭据处理。
 

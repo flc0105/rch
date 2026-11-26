@@ -9,10 +9,7 @@ from client.config import runtime_config
 from client.config.runtime_config_store import (
     clear_runtime_overrides,
     get_runtime_config_path,
-    load_runtime_overrides,
-    remove_runtime_override,
     save_runtime_overrides,
-    update_runtime_override,
 )
 from core.utils.output_marker import warning, error
 
@@ -26,6 +23,23 @@ def _locked_config(method):
         with _config_lock:
             return method(*args, **kwargs)
     return locked
+
+@_locked_config
+def reconnect_backoff_bounds():
+    return (runtime_config.RECONNECT_BACKOFF_MIN_SECONDS,
+            runtime_config.RECONNECT_BACKOFF_MAX_SECONDS)
+
+
+def _validate_reconnect_backoff_change(key, value):
+    minimum, maximum = reconnect_backoff_bounds()
+    if key == 'RECONNECT_BACKOFF_MIN_SECONDS':
+        minimum = value
+    elif key == 'RECONNECT_BACKOFF_MAX_SECONDS':
+        maximum = value
+    else:
+        return
+    runtime_config.validate_reconnect_backoff(minimum, maximum)
+
 
 @dataclass
 class RuntimeConfigUpdateResult:
@@ -64,7 +78,7 @@ class RuntimeConfigService:
 
     @_locked_config
     def list_config_items(self, include_hidden: bool = False) -> list[tuple[str, object, object, str]]:
-        overrides = load_runtime_overrides()
+        overrides = runtime_config.effective_runtime_overrides()
         defaults = self.get_default_values()
 
         items = []
@@ -155,7 +169,7 @@ class RuntimeConfigService:
         return f'{key} = {value_text}  [default]'
 
     def format_active_overrides(self, include_hidden: bool = False) -> str:
-        overrides = load_runtime_overrides()
+        overrides = runtime_config.effective_runtime_overrides()
         if not include_hidden:
             overrides = {
                 key: value
@@ -216,15 +230,18 @@ class RuntimeConfigService:
         else:
             new_value = self.coerce_value(raw_value, default_value)
         self.validate_config_value(normalized_key, new_value)
+        _validate_reconnect_backoff_change(normalized_key, new_value)
         override_removed = False
 
+        overrides = runtime_config.effective_runtime_overrides()
         if normalized_key in defaults and new_value == default_value:
-            store_path = remove_runtime_override(normalized_key)
+            overrides.pop(normalized_key, None)
             override_removed = True
             source = 'default'
         else:
-            store_path = update_runtime_override(normalized_key, new_value)
+            overrides[normalized_key] = new_value
             source = 'override'
+        store_path = save_runtime_overrides(overrides)
 
         setattr(runtime_config, normalized_key, new_value)
         self._refresh_runtime_override_markers()
@@ -253,8 +270,11 @@ class RuntimeConfigService:
 
         old_value = getattr(runtime_config, normalized_key)
         default_value = defaults[normalized_key]
+        _validate_reconnect_backoff_change(normalized_key, default_value)
 
-        store_path = remove_runtime_override(normalized_key)
+        overrides = runtime_config.effective_runtime_overrides()
+        overrides.pop(normalized_key, None)
+        store_path = save_runtime_overrides(overrides)
         setattr(runtime_config, normalized_key, default_value)
         self._refresh_runtime_override_markers()
 
@@ -291,7 +311,7 @@ class RuntimeConfigService:
         - 后来你手动把 runtime_config.py 默认值也改成 false
         - 这个 override 已经没有意义，查询 set 时顺手清理
         """
-        overrides = load_runtime_overrides()
+        overrides = runtime_config.effective_runtime_overrides()
         defaults = self.get_default_values()
 
         removed = []
@@ -445,7 +465,7 @@ class RuntimeConfigService:
                 yield key
 
     def _refresh_runtime_override_markers(self):
-        overrides = load_runtime_overrides()
+        overrides = runtime_config.effective_runtime_overrides()
         try:
             runtime_config._RUNTIME_CONFIG_OVERRIDE_KEYS = sorted(overrides.keys())
             runtime_config._RUNTIME_CONFIG_OVERRIDE_PATH = get_runtime_config_path()

@@ -171,7 +171,7 @@ def test_config_kv_never_rewrites_real_config_keys():
     control_result = ResultEnvelope(data={'items': [
         {'group': 'command', 'key': 'COMMAND_DEFAULT_SHELL_TIMEOUT',
          'value': 60, 'default_value': 30},
-        {'group': 'connection', 'key': 'RECONNECT_INTERVAL_SECONDS',
+        {'group': 'connection', 'key': 'RECONNECT_BACKOFF_MIN_SECONDS',
          'value': 5, 'default_value': 10},
         {'group': 'preview', 'key': 'PREVIEW_IMAGE_COMPRESS_ENABLED',
          'value': False, 'default_value': True},
@@ -180,7 +180,7 @@ def test_config_kv_never_rewrites_real_config_keys():
     run = lambda tail: next(support.config(registry.parse_invocation('config', tail)))
     assert run('list --format kv')[1] == (
         'COMMAND_DEFAULT_SHELL_TIMEOUT = 60\n'
-        'RECONNECT_INTERVAL_SECONDS = 5\n'
+        'RECONNECT_BACKOFF_MIN_SECONDS = 5\n'
         'PREVIEW_IMAGE_COMPRESS_ENABLED = False'
     )
     assert '[command]\nCOMMAND_DEFAULT_SHELL_TIMEOUT = 60' in run('list')[1]

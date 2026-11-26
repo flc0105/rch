@@ -2,6 +2,10 @@ package executor
 
 import (
 	"bytes"
+	"client-go/config"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +24,13 @@ func (s *Session) uploadSingleFileToServerResult(filePath string, category strin
 		fileSize = info.Size()
 	}
 
-	payload, err := s.uploadFileToServer(filePath, category)
+	var payload map[string]interface{}
+	var err error
+	if config.Runtime().FileTransferMode() == config.TransferTCPStreaming {
+		payload, err = s.uploadCommandFileTCP(filePath, category)
+	} else {
+		payload, err = s.uploadFileToServer(filePath, category)
+	}
 	if err != nil {
 		return 0, err.Error()
 	}
@@ -30,6 +40,50 @@ func (s *Session) uploadSingleFileToServerResult(filePath string, category strin
 		message = fmt.Sprintf("HTTP upload completed\nOriginal: %s\nSize: %d bytes", filepath.Base(filePath), fileSize)
 	}
 	return 1, message
+}
+
+func (s *Session) uploadCommandFileTCP(path, category string) (map[string]interface{}, error) {
+	if s.CurrentCommandID <= 0 {
+		return nil, fmt.Errorf("file transfer requires an active command")
+	}
+	stat, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !stat.Mode().IsRegular() {
+		return nil, fmt.Errorf("not a regular file")
+	}
+	var randomID [16]byte
+	if _, err = rand.Read(randomID[:]); err != nil {
+		return nil, err
+	}
+	id := hex.EncodeToString(randomID[:])
+	filename := filepath.Base(path)
+	ctx, cancel := context.WithCancel(context.Background())
+	if !s.transfers.start(id, cancel) {
+		cancel()
+		return nil, fmt.Errorf("Client session is closed")
+	}
+	defer cancel()
+	defer s.transfers.finish(id)
+	registration := map[string]interface{}{
+		"command_id": s.CurrentCommandID, "direction": "client_to_server", "filename": filename,
+		"source_path": path, "total_bytes": stat.Size(), "file_transfer_mode": config.TransferTCPStreaming,
+	}
+	if err = s.registerTransfer(ctx, id, registration); err != nil {
+		return nil, err
+	}
+	extra := map[string]interface{}{}
+	if category == "screenshots" {
+		extra = map[string]interface{}{"saved_from": "client_command", "source_command": "screenshot"}
+	}
+	data, err := s.uploadTransferFileTCPExtra(ctx, id, path, filename, "saved", defaultString(category, "inbox"), extra)
+	if err != nil {
+		s.transferUpdate(id, map[string]interface{}{"state": "failed", "stage": "failed", "error": err.Error()})
+		return nil, err
+	}
+	// Transfer completion already went over the managed Transfer channel.
+	return map[string]interface{}{"message": "TCP upload completed", "data": data}, nil
 }
 
 func (s *Session) uploadFileToServer(filePath string, category string) (map[string]interface{}, error) {

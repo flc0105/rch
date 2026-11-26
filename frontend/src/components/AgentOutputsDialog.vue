@@ -43,28 +43,6 @@
         </div>
 
         <div class="agent-outputs-toolbar-right">
-          <el-input
-              v-model="outputSearch"
-              clearable
-              size="small"
-              class="agent-output-search"
-              placeholder="Search"
-          />
-          <el-select
-              v-model="outputListenerFilter"
-              class="agent-output-listener-filter"
-              clearable
-              filterable
-              size="small"
-              placeholder="Filter listener"
-          >
-            <el-option
-                v-for="listener in listenerOptions"
-                :key="listener.id"
-                :label="listener.name"
-                :value="listener.id"
-            />
-          </el-select>
           <el-select
               v-model="outputBuilderFilter"
               class="agent-output-builder-filter"
@@ -79,6 +57,16 @@
                 :label="displayAgentBuilder(builder)"
                 :value="builder"
             />
+          </el-select>
+          <el-select
+              v-model="outputModeFilter"
+              class="agent-output-mode-filter"
+              clearable
+              size="small"
+              placeholder="Filter mode"
+          >
+            <el-option label="Reverse" value="reverse" />
+            <el-option label="Bind" value="bind" />
           </el-select>
 
           <span class="agent-outputs-count">
@@ -127,22 +115,22 @@
           </el-table-column>
 
           <el-table-column
-              label="Builder"
-              width="146"
-              show-overflow-tooltip
+              label="Connection"
+              width="130"
+              align="center"
           >
             <template #default="{ row }">
-              {{ displayAgentBuilder(row.builder) }}
+              {{ displayAgentConnectionMode(row.connection_mode) }}
             </template>
           </el-table-column>
 
           <el-table-column
-              label="Listener"
-              width="120"
-              show-overflow-tooltip
+              label="Transport"
+              width="140"
+              align="center"
           >
             <template #default="{ row }">
-              <span class="agent-output-ellipsis" :title="row.listener_name || '-'">{{ row.listener_name || '-' }}</span>
+              {{ displayAgentTransport(row.transport) }}
             </template>
           </el-table-column>
 
@@ -228,31 +216,19 @@
                     {{ row.file_name || '-' }}
                   </div>
 
-                  <div class="agent-output-mobile-tags">
-                    <el-tag size="small">
-                      {{ displayAgentBuilder(row.builder) }}
-                    </el-tag>
-
-                    <el-tag v-if="row.listener_name" size="small" type="info" effect="plain">
-                      {{ row.listener_name }}
-                    </el-tag>
-                  </div>
-
                   <div class="agent-output-mobile-meta">
                     <div class="agent-output-mobile-meta-item">
-                      <div class="agent-output-mobile-meta-label">Version</div>
+                      <div class="agent-output-mobile-meta-label">Connection</div>
                       <div class="agent-output-mobile-meta-value">
-                        {{ row.build_version || '-' }}
+                        {{ displayAgentConnectionMode(row.connection_mode) }}
                       </div>
                     </div>
-
                     <div class="agent-output-mobile-meta-item">
-                      <div class="agent-output-mobile-meta-label">Build Time</div>
+                      <div class="agent-output-mobile-meta-label">Transport</div>
                       <div class="agent-output-mobile-meta-value">
-                        {{ formatOutputDateTime(row.build_time) }}
+                        {{ displayAgentTransport(row.transport) }}
                       </div>
                     </div>
-
                     <div class="agent-output-mobile-meta-item">
                       <div class="agent-output-mobile-meta-label">Size</div>
                       <div class="agent-output-mobile-meta-value">
@@ -399,8 +375,7 @@ export default {
       loading: false,
       outputs: [],
       outputBuilderFilter: '',
-      outputListenerFilter: '',
-      outputSearch: '',
+      outputModeFilter: '',
       selectedOutputFileNames: [],
       bulkDeleting: false,
       agentOutputsDeleting: {},
@@ -419,27 +394,13 @@ export default {
       return Array.from(builders).sort((a, b) => a.localeCompare(b))
     },
 
-    listenerOptions() {
-      const listeners = new Map()
-      for (const row of this.outputs || []) {
-        const id = String(row?.listener_id || '').trim()
-        const name = String(row?.listener_name || '').trim()
-        if (id && name) listeners.set(id, name)
-      }
-      return [...listeners].map(([id, name]) => ({id, name}))
-        .sort((a, b) => a.name.localeCompare(b.name))
-    },
-
     filteredOutputs() {
       const builder = this.outputBuilderFilter
-      const listener = this.outputListenerFilter
-      const keyword = this.outputSearch.trim().toLowerCase()
+      const mode = this.outputModeFilter
       return (this.outputs || []).filter(item => {
         if (builder && item.builder !== builder) return false
-        if (listener && item.listener_id !== listener) return false
-        if (!keyword) return true
-        return [item.file_name, item.build_version, item.listener_name, displayAgentBuilder(item.builder)]
-          .some(value => String(value || '').toLowerCase().includes(keyword))
+        if (mode && item.connection_mode !== mode) return false
+        return true
       })
     },
 
@@ -457,68 +418,31 @@ export default {
 
     formattedAgentOutputInfoRows() {
       const row = this.agentOutputInfoItem || {}
+      const reverse = row.connection_mode === 'reverse'
+      const showWeb = reverse || row.builder === AGENT_BUILDER.GO_LOADER
       const rows = [
+        { key: 'file_name', label: 'File Name', value: row.file_name },
+        { key: 'build_version', label: 'Version', value: row.build_version },
+        { key: 'builder', label: 'Builder', value: displayAgentBuilder(row.builder) },
+        { key: 'connection_mode', label: 'Connection Mode', value: this.displayAgentConnectionMode(row.connection_mode) },
+        { key: 'transport', label: 'Transport', value: this.displayAgentTransport(row.transport) },
+        ...(reverse ? [{ key: 'listener', label: 'Listener', value: row.listener_name }] : []),
+        { key: 'target_os', label: 'Target OS', value: row.target_os },
+        { key: 'target_arch', label: 'Target Arch', value: row.target_arch },
+        { key: 'build_origin', label: 'Build Origin', value: this.formatAgentSourceText(row.build_origin) },
         {
-          key: 'file_name',
-          label: 'Filename',
-          value: row.file_name || '-',
-        },
-
-        {
-          key: 'builder',
-          label: 'Builder',
-          value: displayAgentBuilder(row.builder),
-        },
-
-        {
-          key: 'listener_name',
-          label: 'Listener',
-          value: row.listener_name || '-',
-        },
-        {
-          key: 'build_version',
-          label: 'Version',
-          value: row.build_version || '-',
-        },
-        {
-          key: 'target_os',
-          label: 'OS',
-          value: row.target_os || '-',
-        },
-        {
-          key: 'target_arch',
-          label: 'Arch',
-          value: row.target_arch || '-',
-        },
-        {
-          key: 'source',
-          label: 'Source',
-          value: this.formatAgentSourceText(row.source),
-        },
-        {
-          key: 'socket',
-          label: 'Socket',
-          value: this.formatAgentListenerText(row),
+          key: 'endpoint',
+          label: reverse ? 'Connect To' : 'Listen On',
+          value: this.formatAgentEndpoint(row),
           mono: true,
         },
-        {
-          key: 'web',
-          label: 'Web',
-          value: this.formatAgentWebListenerText(row),
-          mono: true,
-        },
-        {
-          key: 'build_time',
-          label: 'Build Time',
-          value: this.formatOutputDateTime(row.build_time),
-        },
-        {
-          key: 'size',
-          label: 'Size',
-          value: this.formatOutputBytes(row.size),
-        },
+        ...(showWeb ? [
+          { key: 'web_ip', label: 'Web IP', value: row.web_ip, mono: true },
+          { key: 'web_port', label: 'Web Port', value: row.web_port },
+        ] : []),
+        { key: 'build_time', label: 'Build Time', value: this.formatOutputDateTime(row.build_time) },
+        { key: 'size', label: 'Size', value: this.formatOutputBytes(row.size) },
       ]
-
       return rows.map(item => ({
         ...item,
         value: this.formatAgentOutputInfoValue(item.value),
@@ -575,19 +499,19 @@ export default {
       return mapping[source] || source
     },
 
-    formatAgentListenerText(row) {
-      const host = String(row?.server_host || '').trim()
-      const port = Number(row?.server_port || 0)
-      if (!host || !port) return '-'
-      return `${host}:${port}`
+    displayAgentConnectionMode(mode) {
+      return {reverse: 'Reverse', bind: 'Bind'}[mode] || '-'
     },
 
-    formatAgentWebListenerText(row) {
-      const scheme = String(row?.server_web_scheme || 'http').trim() || 'http'
-      const host = String(row?.server_web_host || row?.server_host || '').trim()
-      const port = Number(row?.web_port || 0)
-      if (!host || !port) return '-'
-      return `${scheme}://${host}:${port}`
+    displayAgentTransport(transport) {
+      return {tcp: 'TCP', mtls_tcp: 'mTLS/TCP'}[transport] || '-'
+    },
+
+    formatAgentEndpoint(row) {
+      const ip = String(row?.endpoint_ip || '').trim()
+      const port = Number(row?.endpoint_port || 0)
+      if (!ip || !port) return '-'
+      return `${ip}:${port}`
     },
 
     formatOutputDateTime(value) {
@@ -876,12 +800,10 @@ export default {
   margin: 0;
 }
 
-.agent-output-builder-filter, .agent-output-listener-filter { width: 155px; }
-.agent-output-search { width: 210px; }
-.agent-outputs-toolbar-right :deep(.el-input__wrapper) { min-height: 32px; border-radius: 10px; }
+.agent-output-builder-filter, .agent-output-mode-filter { width: 155px; }
 
 .agent-output-builder-filter :deep(.el-select__wrapper),
-.agent-output-listener-filter :deep(.el-select__wrapper) {
+.agent-output-mode-filter :deep(.el-select__wrapper) {
   min-height: 32px;
   height: 32px;
   border-radius: 10px;
@@ -1046,26 +968,15 @@ export default {
   word-break: break-all;
 }
 
-.agent-output-mobile-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
 .agent-output-mobile-meta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px 12px;
   margin-top: 12px;
 }
 
 .agent-output-mobile-meta-item {
   min-width: 0;
-}
-
-.agent-output-mobile-meta-item:first-child {
-  grid-column: 1 / -1;
 }
 
 .agent-output-mobile-meta-label {
@@ -1146,7 +1057,7 @@ export default {
     flex-direction: column;
   }
   .agent-outputs-toolbar-right { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
-  .agent-output-builder-filter, .agent-output-listener-filter, .agent-output-search { width: min(100%, 190px); }
+  .agent-output-builder-filter, .agent-output-mode-filter { width: min(100%, 190px); }
 
 
   .agent-outputs-toolbar-left,

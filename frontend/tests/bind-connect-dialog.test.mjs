@@ -153,3 +153,45 @@ test('removed offline Reverse records cannot suppress a subsequent online sessio
   assert.equal(hidden.call(scope, {...row, connection_state: 'online'}), false)
   assert.equal(hidden.call(scope, row), false)
 })
+
+
+test('offline saved Bind right-click Connect uses the stored TCP or mTLS transport', async () => {
+  const begin = app.indexOf('    async connectSavedBindTarget(target) {')
+  const end = app.indexOf('    async handleBindClientConnected(clientId)', begin)
+  assert.ok(begin >= 0 && end > begin)
+  // Replace only the module loader in the extracted App method; run the real call body.
+  const source = app.slice(begin, end).replace(
+    "await import('./api/connectionsApi.js')", 'await loadConnectionApi()',
+  )
+  const calls = []
+  const messages = []
+  const connect = vm.runInNewContext(`({${source}}).connectSavedBindTarget`, {
+    loadConnectionApi: async () => ({
+      connectToClient: async (...args) => {
+        calls.push([...args])
+        return { client_id: `client-${calls.length}`, status: 'connected' }
+      },
+    }),
+    ElMessage: {
+      success: message => messages.push(['success', message]),
+      info: message => messages.push(['info', message]),
+      error: error => { throw new Error(error) },
+    },
+  })
+  const selected = []
+  const instance = { handleBindClientConnected: async id => selected.push(id) }
+  await connect.call(instance, {
+    host: '192.168.1.25', port: 9443,
+    server_web_base_url: 'http://server:8085', name: 'Lab mTLS', transport: 'mtls_tcp',
+  })
+  await connect.call(instance, {
+    host: '192.168.1.26', port: 9444,
+    server_web_base_url: 'http://server:8085', name: 'Lab TCP', transport: 'tcp',
+  })
+  assert.deepEqual(calls, [
+    ['192.168.1.25', 9443, 'http://server:8085', 'Lab mTLS', 'mtls_tcp'],
+    ['192.168.1.26', 9444, 'http://server:8085', 'Lab TCP', 'tcp'],
+  ])
+  assert.deepEqual(selected, ['client-1', 'client-2'])
+  assert.equal(messages.length, 2)
+})

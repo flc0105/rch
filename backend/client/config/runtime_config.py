@@ -45,7 +45,10 @@ SCRIPT_DEFAULT_OUTPUT_MODE = 'collect'
 SCREEN_FRAME_STRATEGY = 'keyframe_delta'
 
 
-RECONNECT_INTERVAL_SECONDS = 5
+RECONNECT_BACKOFF_MIN_SECONDS = 5
+RECONNECT_BACKOFF_MAX_SECONDS = 30
+# Signed 32-bit seconds are portable across both Client implementations.
+_backoff_seconds_limit = 2147483647
 # Set to 0 to disable Client-side inbound idle timeout recovery.
 SERVER_INBOUND_TIMEOUT_SECONDS = 120
 REMOTE_CONTROL_WATCHDOG_ENABLED = False
@@ -129,10 +132,19 @@ _RUNTIME_CONFIG_META = {
         'desc': 'Screen View frame strategy: full_jpeg or keyframe_delta. Applies to new screen sessions.',
         'choices': ['full_jpeg', 'keyframe_delta'],
     },
-    'RECONNECT_INTERVAL_SECONDS': {
+    'RECONNECT_BACKOFF_MIN_SECONDS': {
         'group': 'connection',
         'expose': True,
-        'desc': 'Initial reconnect delay in seconds; exponential backoff capped at 30 seconds.',
+        'desc': 'Initial reconnect delay in seconds.',
+        'min': 1,
+        'max': _backoff_seconds_limit,
+    },
+    'RECONNECT_BACKOFF_MAX_SECONDS': {
+        'group': 'connection',
+        'expose': True,
+        'desc': 'Maximum reconnect delay in seconds.',
+        'min': 1,
+        'max': _backoff_seconds_limit,
     },
     'SERVER_INBOUND_TIMEOUT_SECONDS': {
         'group': 'connection',
@@ -181,14 +193,43 @@ _RUNTIME_CONFIG_DEFAULTS = {
 }
 
 
+def validate_reconnect_backoff(minimum, maximum):
+    if any(type(value) is not int or not 1 <= value <= _backoff_seconds_limit
+           for value in (minimum, maximum)):
+        raise ValueError(f'Reconnect backoff values must be integers from 1 to {_backoff_seconds_limit}')
+    if minimum > maximum:
+        raise ValueError('RECONNECT_BACKOFF_MIN_SECONDS must be <= RECONNECT_BACKOFF_MAX_SECONDS')
+
+
+def effective_runtime_overrides(*, warn_invalid=False):
+    from client.config.runtime_config_store import load_runtime_overrides
+
+    overrides = {key: value for key, value in load_runtime_overrides().items()
+                 if key in _RUNTIME_CONFIG_DEFAULTS}
+    keys = ('RECONNECT_BACKOFF_MIN_SECONDS', 'RECONNECT_BACKOFF_MAX_SECONDS')
+    for key in keys:
+        value = overrides.get(key)
+        if type(value) is float and value.is_integer():
+            overrides[key] = int(value)
+    try:
+        validate_reconnect_backoff(*(overrides.get(key, _RUNTIME_CONFIG_DEFAULTS[key]) for key in keys))
+    except ValueError as exc:
+        if warn_invalid:
+            from core.utils.logger import logger
+            logger.warning('Invalid reconnect backoff configuration: %s; using defaults', exc)
+        for key in keys:
+            overrides.pop(key, None)
+    return overrides
+
+
 # 外部 runtime_config.json 覆盖默认值。这里不写源码文件，兼容打包场景。
 try:
-    from client.config.runtime_config_store import load_runtime_overrides, get_runtime_config_path
+    from client.config.runtime_config_store import get_runtime_config_path
 
     _RUNTIME_CONFIG_OVERRIDE_PATH = get_runtime_config_path()
     _RUNTIME_CONFIG_OVERRIDE_KEYS = []
 
-    for _key, _value in load_runtime_overrides().items():
+    for _key, _value in effective_runtime_overrides(warn_invalid=True).items():
         if _key in globals() and _key.isupper():
             globals()[_key] = _value
             _RUNTIME_CONFIG_OVERRIDE_KEYS.append(_key)
@@ -196,10 +237,6 @@ except Exception:
     _RUNTIME_CONFIG_OVERRIDE_PATH = ''
     _RUNTIME_CONFIG_OVERRIDE_KEYS = []
 finally:
-    try:
-        del load_runtime_overrides
-    except Exception:
-        pass
     try:
         del get_runtime_config_path
     except Exception:

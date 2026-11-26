@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,19 +18,32 @@ type runtimeOption struct {
 	Group       string
 	Description string
 	Min         int
-	Max         int
+	Max         int // Zero means no upper bound for integer settings.
 	Choices     []string
 }
 
 const (
-	ScriptExecutionConfig = "SCRIPT_DEFAULT_EXECUTION_MODE"
-	ScriptOutputConfig    = "SCRIPT_DEFAULT_OUTPUT_MODE"
-	ScriptSubprocessPipe  = "subprocess_pipe"
-	ScriptCollect         = "collect"
-	ScriptStream          = "stream"
+	ReconnectBackoffMinConfig  = "RECONNECT_BACKOFF_MIN_SECONDS"
+	ReconnectBackoffMaxConfig  = "RECONNECT_BACKOFF_MAX_SECONDS"
+	backoffSecondsLimit        = 2147483647
+	ServerInboundTimeoutConfig = "SERVER_INBOUND_TIMEOUT_SECONDS"
+	TransferModeConfig         = "FILE_TRANSFER_MODE"
+	TransferBufferConfig       = "HTTP_TRANSFER_BUFFER_SIZE"
+	TransferHTTPStreaming      = "http_streaming"
+	TransferTCPStreaming       = "tcp_streaming"
+	ScriptExecutionConfig      = "SCRIPT_DEFAULT_EXECUTION_MODE"
+	ScriptOutputConfig         = "SCRIPT_DEFAULT_OUTPUT_MODE"
+	ScriptSubprocessPipe       = "subprocess_pipe"
+	ScriptCollect              = "collect"
+	ScriptStream               = "stream"
 )
 
 var runtimeOptions = map[string]runtimeOption{
+	ReconnectBackoffMinConfig:        {5, "connection", "Initial reconnect delay in seconds.", 1, backoffSecondsLimit, nil},
+	ReconnectBackoffMaxConfig:        {30, "connection", "Maximum reconnect delay in seconds.", 1, backoffSecondsLimit, nil},
+	ServerInboundTimeoutConfig:       {120, "connection", "Seconds without an inbound Server message before reconnecting; 0 disables this timeout.", 0, 0, nil},
+	TransferModeConfig:               {TransferHTTPStreaming, "transfer", "File transfer mode.", 0, 0, []string{TransferHTTPStreaming, TransferTCPStreaming}},
+	TransferBufferConfig:             {1048576, "transfer", "Shared file transfer buffer size in bytes.", 65536, 16777216, nil},
 	ScriptExecutionConfig:            {ScriptSubprocessPipe, "script", "Script default execution mode (external Python only).", 0, 0, []string{ScriptSubprocessPipe}},
 	ScriptOutputConfig:               {ScriptCollect, "script", "Script default output mode.", 0, 0, []string{ScriptCollect, ScriptStream}},
 	"COMMAND_DEFAULT_SHELL_TIMEOUT":  {30, "command", "Default timeout for shell command execution (seconds).", 1, 86400, nil},
@@ -60,6 +74,7 @@ func NewRuntimeStore(path string) *RuntimeStore {
 		store.loadErr = fmt.Errorf("read runtime config: %w", err)
 		return store
 	}
+	var backoffErr error
 	for key, value := range values {
 		if key == "_meta" {
 			continue
@@ -70,6 +85,10 @@ func NewRuntimeStore(path string) *RuntimeStore {
 		}
 		normalized, err := checkValue(key, value, opt)
 		if err != nil {
+			if key == ReconnectBackoffMinConfig || key == ReconnectBackoffMaxConfig {
+				backoffErr = err
+				continue
+			}
 			store.overrides = make(map[string]interface{})
 			store.loadErr = fmt.Errorf("runtime config %s: %w", key, err)
 			return store
@@ -77,6 +96,14 @@ func NewRuntimeStore(path string) *RuntimeStore {
 		if normalized != opt.Default {
 			store.overrides[key] = normalized
 		}
+	}
+	if backoffErr == nil {
+		backoffErr = validateReconnectBackoff(store.overrides)
+	}
+	if backoffErr != nil {
+		log.Printf("Invalid reconnect backoff configuration: %v; using defaults", backoffErr)
+		delete(store.overrides, ReconnectBackoffMinConfig)
+		delete(store.overrides, ReconnectBackoffMaxConfig)
 	}
 	return store
 }
@@ -93,17 +120,41 @@ var activeRuntimeStore = NewRuntimeStore(RuntimeConfigPath())
 
 func Runtime() *RuntimeStore { return activeRuntimeStore }
 
-func (s *RuntimeStore) Get(key string) interface{} {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if v, ok := s.overrides[key]; ok {
+func runtimeValue(overrides map[string]interface{}, key string) interface{} {
+	if v, ok := overrides[key]; ok {
 		return v
 	}
 	return runtimeOptions[key].Default
 }
 
-func (s *RuntimeStore) Seconds(key string) int { return s.Get(key).(int) }
-func (s *RuntimeStore) PythonPath() string     { return s.Get("SCRIPT_PYTHON_PATH").(string) }
+func (s *RuntimeStore) Get(key string) interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return runtimeValue(s.overrides, key)
+}
+
+func reconnectBackoffBounds(overrides map[string]interface{}) (int, int) {
+	return runtimeValue(overrides, ReconnectBackoffMinConfig).(int), runtimeValue(overrides, ReconnectBackoffMaxConfig).(int)
+}
+
+func (s *RuntimeStore) ReconnectBackoffBounds() (int, int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return reconnectBackoffBounds(s.overrides)
+}
+
+func validateReconnectBackoff(overrides map[string]interface{}) error {
+	minimum, maximum := reconnectBackoffBounds(overrides)
+	if minimum > maximum {
+		return fmt.Errorf("%s must be <= %s", ReconnectBackoffMinConfig, ReconnectBackoffMaxConfig)
+	}
+	return nil
+}
+
+func (s *RuntimeStore) Seconds(key string) int   { return s.Get(key).(int) }
+func (s *RuntimeStore) PythonPath() string       { return s.Get("SCRIPT_PYTHON_PATH").(string) }
+func (s *RuntimeStore) FileTransferMode() string { return s.Get(TransferModeConfig).(string) }
+func (s *RuntimeStore) TransferBufferSize() int  { return s.Seconds(TransferBufferConfig) }
 
 func checkValue(key string, value interface{}, opt runtimeOption) (interface{}, error) {
 	switch opt.Default.(type) {
@@ -115,7 +166,10 @@ func checkValue(key string, value interface{}, opt runtimeOption) (interface{}, 
 				ok = true
 			}
 		}
-		if !ok || number != float64(int(number)) || int(number) < opt.Min || int(number) > opt.Max {
+		if !ok || number != float64(int(number)) || int(number) < opt.Min || (opt.Max > 0 && int(number) > opt.Max) {
+			if opt.Max == 0 {
+				return nil, fmt.Errorf("%s must be an integer >= %d", key, opt.Min)
+			}
 			return nil, fmt.Errorf("%s must be an integer from %d to %d", key, opt.Min, opt.Max)
 		}
 		return int(number), nil
@@ -177,6 +231,9 @@ func (s *RuntimeStore) SetValue(key string, value interface{}) (string, error) {
 	} else {
 		next[key] = normalized
 	}
+	if err := validateReconnectBackoff(next); err != nil {
+		return "", err
+	}
 	if err := s.persist(next); err != nil {
 		return "", err
 	}
@@ -199,6 +256,9 @@ func (s *RuntimeStore) Reset(key string) error {
 	}
 	next := cloneOverrides(s.overrides)
 	delete(next, key)
+	if err := validateReconnectBackoff(next); err != nil {
+		return err
+	}
 	if err := s.persist(next); err != nil {
 		return err
 	}
@@ -213,6 +273,9 @@ func (s *RuntimeStore) ResetAll() error {
 		return s.loadErr
 	}
 	next := map[string]interface{}{}
+	if err := validateReconnectBackoff(next); err != nil {
+		return err
+	}
 	if err := s.persist(next); err != nil {
 		return err
 	}
@@ -286,7 +349,10 @@ func (s *RuntimeStore) Payload() map[string]interface{} {
 		}
 		var min, max interface{}
 		if kind == "integer" {
-			min, max = opt.Min, opt.Max
+			min = opt.Min
+			if opt.Max > 0 {
+				max = opt.Max
+			}
 		}
 		items = append(items, map[string]interface{}{
 			"key": key, "value": current, "default_value": opt.Default,

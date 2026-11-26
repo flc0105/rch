@@ -4,11 +4,13 @@ import (
 	"client-go/config"
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"client-go/protocol"
 )
@@ -20,6 +22,7 @@ type Session struct {
 	Cwd                  string
 	CurrentCommandID     int
 	transfers            transferTracker
+	closeOnce            sync.Once
 	controlHandlers      map[protocol.ControlDomain]ControlDomainRegistration
 	shellMu              sync.Mutex
 	shellCommandID       int
@@ -32,6 +35,11 @@ type Session struct {
 	webMu                sync.RWMutex
 	webBaseURL           string
 	webEndpointRequired  bool
+	transferMu           sync.RWMutex
+	sessionToken         string
+	fileDataOpener       func(context.Context, string, string, func()) (net.Conn, error)
+	registrationMu       sync.Mutex
+	pendingRegistrations map[string]chan map[string]interface{}
 }
 
 func NewSession(sock *protocol.RATSocket, clientID string) *Session {
@@ -54,6 +62,21 @@ func NewSession(sock *protocol.RATSocket, clientID string) *Session {
 	}
 	session.controlHandlers = newControlHandlers()
 	return session
+}
+
+// Close releases managed work before the session is discarded. Closing the
+// socket first unblocks workers sending progress or waiting for registration.
+func (s *Session) Close() {
+	s.closeOnce.Do(func() {
+		_ = s.Sock.Close()
+		s.CloseTransfers()
+		s.CloseExecutions()
+	})
+}
+
+func (s *Session) exitProcess() {
+	s.Close()
+	os.Exit(0)
 }
 
 // RequireSessionWebEndpoint makes Bind wait for the Server's session_config.
@@ -92,6 +115,91 @@ func (s *Session) ServerWebBaseURL() string {
 		return s.webBaseURL
 	}
 	return config.UPLOAD_BASE_URL
+}
+
+// Transfer registrations are responses on the existing control connection.
+func (s *Session) AcceptTransferRegistration(packet map[string]interface{}) {
+	id, _ := packet["transfer_id"].(string)
+	s.registrationMu.Lock()
+	pending := s.pendingRegistrations[id]
+	if pending != nil {
+		select {
+		case pending <- packet:
+		default:
+		}
+	}
+	s.registrationMu.Unlock()
+}
+
+func (s *Session) registerTransfer(ctx context.Context, id string, payload map[string]interface{}) error {
+	reply := make(chan map[string]interface{}, 1)
+	s.registrationMu.Lock()
+	if s.pendingRegistrations == nil {
+		s.pendingRegistrations = make(map[string]chan map[string]interface{})
+	}
+	s.pendingRegistrations[id] = reply
+	s.registrationMu.Unlock()
+	defer func() { s.registrationMu.Lock(); delete(s.pendingRegistrations, id); s.registrationMu.Unlock() }()
+	payload["type"] = "transfer_register"
+	payload["transfer_id"] = id
+	if err := s.Sock.Send(payload); err != nil {
+		return err
+	}
+	timer := time.NewTimer(15 * time.Second)
+	defer timer.Stop()
+	select {
+	case result := <-reply:
+		if result["accepted"] == true {
+			return nil
+		}
+		return fmt.Errorf("file transfer registration rejected: %v", result["error"])
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return fmt.Errorf("timed out registering file transfer")
+	}
+}
+
+// File data connections are authorized by the token issued for this active session.
+func (s *Session) SetSessionToken(token string) {
+	s.transferMu.Lock()
+	defer s.transferMu.Unlock()
+	s.sessionToken = strings.TrimSpace(token)
+}
+func (s *Session) SetFileDataOpener(opener func(context.Context, string, string, func()) (net.Conn, error)) {
+	s.transferMu.Lock()
+	defer s.transferMu.Unlock()
+	s.fileDataOpener = opener
+}
+func (s *Session) openFileData(ctx context.Context, id string) (net.Conn, error) {
+	s.transferMu.RLock()
+	token, open := s.sessionToken, s.fileDataOpener
+	s.transferMu.RUnlock()
+	if token == "" {
+		return nil, fmt.Errorf("Client Session Token is unavailable")
+	}
+	if open == nil {
+		return nil, fmt.Errorf("file data socket is unavailable")
+	}
+	conn, err := open(ctx, id, token, func() { s.transferUpdate(id, map[string]interface{}{"data_ready": true}) })
+	if err != nil {
+		return nil, err
+	}
+	stop := cancelFileSocket(ctx, conn)
+	defer stop()
+	ack, err := receiveFileControl(conn)
+	if err == nil && ack["ok"] != true {
+		err = fmt.Errorf("file data connection rejected: %v", ack["error"])
+	}
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if err = conn.SetDeadline(time.Time{}); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
 }
 
 // Shell commands are the only cancellable execution mode in the minimal Go Client.

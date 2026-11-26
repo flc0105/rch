@@ -1,8 +1,10 @@
 package executor
 
 import (
+	"context"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -147,5 +149,70 @@ func TestSpawnCommandKeepsExecutableAndArgsSeparate(t *testing.T) {
 	}
 	if cmd.SysProcAttr == nil {
 		t.Fatal("spawn is not detached")
+	}
+}
+
+// Run the real exit paths in child test processes so os.Exit cannot terminate
+// the test runner. The marker is written only after transfer cancellation.
+func TestExplicitExitWaitsForTransfers(t *testing.T) {
+	if mode := os.Getenv("RCH_TEST_EXIT_MODE"); mode != "" {
+		left, right := net.Pipe()
+		session := NewSession(protocol.NewRATSocket(left), "exit-test")
+		go func() {
+			defer right.Close()
+			peer := protocol.NewRATSocket(right)
+			for {
+				msg, err := peer.Recv()
+				if err != nil {
+					return
+				}
+				if msg["type"] == "session_end" {
+					if err := peer.Send(map[string]interface{}{"type": "session_end_ack", "end_id": msg["end_id"]}); err != nil {
+						return
+					}
+				}
+			}
+		}()
+		ctx, cancel := context.WithCancel(context.Background())
+		if !session.transfers.start("active", cancel) {
+			t.Fatal("cannot register transfer")
+		}
+		go func() {
+			defer session.transfers.finish("active")
+			<-ctx.Done()
+			// Simulate a worker's final cleanup rather than just cancellation.
+			time.Sleep(30 * time.Millisecond)
+			if err := os.WriteFile(os.Getenv("RCH_TEST_EXIT_MARKER"), []byte("cleaned"), 0600); err != nil {
+				panic(err)
+			}
+		}()
+		switch mode {
+		case "kill":
+			cmdKillInstance(session, nil)
+		case "disconnect":
+			registration, ok := session.ControlHandler(protocol.ControlSession)
+			if !ok {
+				t.Fatal("session control unavailable")
+			}
+			registration.Execute(context.Background(), session, 1, protocol.SessionDisconnect, nil, nil)
+		default:
+			t.Fatalf("unknown mode %q", mode)
+		}
+		t.Fatal("exit path returned")
+	}
+	for _, mode := range []string{"kill", "disconnect"} {
+		t.Run(mode, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "cleanup")
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestExplicitExitWaitsForTransfers$")
+			cmd.Env = append(os.Environ(), "RCH_TEST_EXIT_MODE="+mode, "RCH_TEST_EXIT_MARKER="+marker)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("exit process: %v %s", err, out)
+			}
+			if got, err := os.ReadFile(marker); err != nil || string(got) != "cleaned" {
+				t.Fatalf("exited before cleanup: %q %v", got, err)
+			}
+		})
 	}
 }

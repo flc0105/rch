@@ -40,7 +40,7 @@ func TestRuntimeSetCommandQuotedWindowsPaths(t *testing.T) {
 	if err := json.Unmarshal([]byte(msg), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc) != 6 {
+	if len(doc) != 11 {
 		t.Fatal("incorrect payload")
 	}
 	status, msg = runtimeSetCommand("COMMAND_DEFAULT_SHELL_TIMEOUT 12", store)
@@ -92,7 +92,7 @@ func TestRuntimeSetDispatchJsonUsesBuiltin(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload) != 6 {
+	if len(payload) != 11 {
 		t.Fatal("unexpected configuration fields")
 	}
 }
