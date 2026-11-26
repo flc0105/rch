@@ -32,12 +32,12 @@ func classifyLaunch(f launchFacts) launchContext {
 		return f.managed
 	}
 	if f.platform != "windows" && f.newSession && !f.interactive {
-		return launchContext{"detached", "new_session"}
+		return launchContext{"detached", ""}
 	}
 	parent := strings.TrimPrefix(strings.ToLower(filepath.Base(strings.ReplaceAll(strings.TrimSpace(f.directParent), `\`, "/"))), "-")
 	if source := shellLaunchSources[parent]; source != "" {
 		if f.platform == "windows" && !f.interactive {
-			return launchContext{"detached", "detached_process"}
+			return launchContext{"detached", ""}
 		}
 		if f.background || !f.interactive {
 			return launchContext{"terminal_background", source}
@@ -48,7 +48,7 @@ func classifyLaunch(f launchFacts) launchContext {
 		return launchContext{"terminal", ""}
 	}
 	if f.platform == "windows" {
-		return launchContext{"detached", "detached_process"}
+		return launchContext{"detached", ""}
 	}
 	if f.platform == "darwin" && f.noTerminal {
 		return launchContext{"detached", ""}

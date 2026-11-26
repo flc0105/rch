@@ -51,9 +51,11 @@ def build_control_dispatcher(runtime):
                                              ExternalToolAction.INSTALL_PACKAGE: 'cooperative',
                                              ExternalToolAction.RUN_ONESHOT: 'cooperative',
                                              ExternalToolAction.EXEC: 'cooperative'})
-    # Tunnel is currently disabled for Client sessions; keep the existing
-    # control domain registered so requests fail explicitly without importing it.
+    # Load Tunnel only on the first business request, not on ordinary Client startup.
     def tunnel_control(scope, action, payload):
-        return 0, 'Tunnel disabled on Client'
+        if not runtime.features.get('tunnel', True):
+            return 0, 'Tunnel disabled on Client'
+        from tunnel.client import execute
+        return execute(scope, action, payload)
     register_control_domain(dispatcher, ControlDomain.TUNNEL, tunnel_control)
     return dispatcher

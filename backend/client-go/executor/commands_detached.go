@@ -12,7 +12,7 @@ import (
 
 var _ = Register(
 	"run_bg", Usage("run_bg <program> [args...]"),
-	Help("Start an independent program in a new session"),
+	Help("Launch a program directly as a detached background process"),
 	Group("execution"), CancelPolicy("none"), CommandRunner(cmdRunBg),
 )
 

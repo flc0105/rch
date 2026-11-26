@@ -127,8 +127,6 @@ export function formatLaunchMode(modeValue, sourceValue = '') {
     windows_service: 'Windows Service',
     cron: 'cron',
     schtasks: 'Task Scheduler',
-    new_session: 'new session',
-    detached_process: 'detached process',
   }
 
   const modeLabel = modeLabels[mode] || mode || 'Unknown'

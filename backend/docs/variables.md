@@ -66,7 +66,7 @@ var --unset pid
 | `${rch:exec_path}` | 当前 Client 使用的 Python 解释器或打包程序的可执行路径 |
 | `${rch:launch_command}` | 启动当前 Client 的完整命令，包含必要的启动参数 |
 | `${rch:launch_mode}` | 当前 Client 的运行形态，如 `terminal`、`ide`、`detached`、`user_service`、`system_service`、`scheduled`、`unknown` |
-| `${rch:launch_detail}` | 运行形态的具体来源，如 `zsh`、`pycharm`、`launchagent`、`cron`、`new_session`；没有可用细节时为空字符串 |
+| `${rch:launch_detail}` | 运行形态的具体来源，如 `zsh`、`pycharm`、`launchagent`、`cron`；没有可用细节时为空字符串 |
 | `${rch:runtime}` | Client 的运行根目录 |
 | `${rch:pid}` | 当前 Client 进程的 PID |
 | `${rch:uid}` | 当前 Client 进程的运行用户名 |
@@ -77,7 +77,7 @@ var --unset pid
 
 - `exec_path` 表示**可执行程序本身**。在 Python 脚本运行方式下通常是 Python 解释器路径；打包后通常是 Client 程序路径。路径包含空格时，这个变量返回的值会用双引号包裹。
 - `launch_command` 表示**启动命令**。通过 Python 脚本启动时包含解释器、启动脚本及原始参数；打包方式下通常是程序的启动路径。它不是单纯的目录，也不一定只有一个可执行文件名。
-- `launch_mode` 表示 Client 当前的运行形态，`launch_detail` 提供更具体的宿主或管理器信息。两者使用与连接启动快照相同的检测结果，例如 `ide` + `pycharm`、`user_service` + `launchagent` 或 `detached` + `new_session`。RCH Variables 使用 `launch_detail` 作为变量名；当前握手和连接快照中的细节字段仍名为 `launch_source`。
+- `launch_mode` 表示 Client 当前的运行形态，`launch_detail` 提供更具体的宿主或管理器信息。两者使用与连接启动快照相同的检测结果，例如 `ide` + `pycharm`、`user_service` + `launchagent`；`detached` 的来源为空字符串。RCH Variables 使用 `launch_detail` 作为变量名；当前握手和连接快照中的细节字段仍名为 `launch_source`。
 - `runtime` 表示**运行根目录**：Python 脚本运行方式为 Client 启动脚本所在目录，打包模式为客户端可执行文件所在目录。
 - `cwd` 是当前工作目录，可能随着运行中的目录切换而改变，不能当成 `runtime` 的同义词。
 - `uid` 返回运行用户名，而非数字形式的 Unix UID；`shell` 会根据系统及可用的 Shell 选择对应路径。

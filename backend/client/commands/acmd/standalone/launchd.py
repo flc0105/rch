@@ -7,7 +7,7 @@ from core.utils.command_output import StructuredCommandResult, ResultDataShape
 
 LAUNCHD_ARGUMENT_SPEC = ArgumentCommandSpec(
     name='launchd',
-    description='Manage a macOS LaunchAgent or LaunchDaemon',
+    description='Manage RCH Client launchd services',
     options=[
         # Required execution choices are collected through Interaction Broker if omitted.
         ArgumentOptionSpec(name='action', option_type='str', required=True, default='', allow_empty=False,

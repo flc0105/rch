@@ -71,7 +71,7 @@ except Exception as exc:
 _DETACHED_RESULT_TIMEOUT_SECONDS = 12
 
 
-@shell_command('Launch a new instance with elevated privileges ([--no-confirm] skips RCH confirmation)',
+@shell_command('Launch a new instance with elevated privileges',
                group='privilege', platforms=('mac', 'win'))
 @timeout({'mac': 150})
 @reverse_only('Duplicate Instance is not supported in Bind mode. Use a different profile and port to start a separate elevated instance.')

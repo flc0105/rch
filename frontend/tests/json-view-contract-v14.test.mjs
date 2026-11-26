@@ -11,8 +11,8 @@ const view = {
   titleField: 'name', columns: [{ field: 'id', width: 88 }, { field: 'state', minWidth: 150 }],
   details: ['note', 'owner'],
   actions: [
-    { label: 'Delete', command: 'acmd view_probe --delete {id}', refresh: true },
-    { label: 'Inspect', command: 'acmd view_probe --inspect {id}', confirm: false },
+    { label: 'Delete', command: 'acmd kill --pid {id}', refresh: true },
+    { label: 'Inspect', command: 'acmd ps --pid {id}', confirm: false },
     { label: 'Read Name', command: 'acmd ps --name {name}' },
   ],
 }
@@ -28,7 +28,7 @@ test('result metadata selects primary columns, Card title, Details, and all acti
   assert.equal(model.rows[0][JSON_ROW_SOURCE].id, 101)
   const actions = resolveJsonViewRowActions(p, model.rows[0][JSON_ROW_SOURCE])
   assert.equal(actions.length, 3)
-  assert.equal(actions[0].command, 'acmd view_probe --delete 101')
+  assert.equal(actions[0].command, 'acmd kill --pid 101')
   assert.equal(actions[0].refresh, true)
   assert.equal(actions[1].confirm, false)
   assert.equal(actions[2].command, "acmd ps --name 'O'\\''Brien'")

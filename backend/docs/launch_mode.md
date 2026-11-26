@@ -6,7 +6,7 @@
 
 `launch_mode` 表示 Client 当前 OS 进程属于哪一种**外部运行形态**。它不记录某个 RCH 内部动作名。
 
-`launch_source` 保存该形态下可识别的具体宿主、Shell、IDE 或系统服务管理器。
+`launch_source` 保存该形态下可识别的具体宿主、Shell、IDE 或系统服务管理器；`detached` 的该字段始终为空字符串。
 
 Python Client 在 PyCharm 直接启动时，例如：
 
@@ -34,7 +34,7 @@ Python Client 使用以下八类标准 mode。Go Client 使用其中七类：`te
 | `terminal` | Terminal | 由交互式终端直接运行 | `zsh`, `bash`, `cmd`, `powershell`, `pwsh` |
 | `terminal_background` | Terminal background | 仍由 Shell 直接启动，但当前是后台/非交互运行 | `zsh`, `bash`, `powershell` |
 | `ide` | IDE | IDE 或受支持的 IDE-like host 直接启动 | `pycharm`, `pythonista` |
-| `detached` | Detached | 独立 session/process group 或无控制台的独立后台进程 | `new_session`, `detached_process` |
+| `detached` | Detached | 独立 session/process group 或无控制台的独立后台进程 | 空 |
 | `user_service` | User service | 用户级服务管理器托管 | `launchagent`, `systemd_user` |
 | `system_service` | System service | 系统级服务管理器托管 | `launchdaemon`, `systemd`, `windows_service` |
 | `scheduled` | Scheduled | 调度器启动 | `cron`, `schtasks` |
@@ -46,7 +46,7 @@ Python Client 使用以下八类标准 mode。Go Client 使用其中七类：`te
 Terminal (zsh)
 Terminal background (PowerShell)
 IDE (PyCharm)
-Detached (new session)
+Detached
 User service (LaunchAgent)
 System service (LaunchDaemon)
 Scheduled (cron)
@@ -84,11 +84,11 @@ Connection History 使用既有 `connection_sessions.snapshot_json` 保存这两
 
 1. **iOS/Pythonista**：记录为 `ide / pythonista`。
 2. **Scheduler / Service manager**：cron、Task Scheduler 根据实际进程宿主识别；macOS 通过运行中的 launchd 作业和 PID 验证；Linux 将当前进程的 cgroup 所属 `.service` unit 与 `systemctl show` 的 `ActiveState=active`、`MainPID` 精确核对；Windows 将当前 PID 与运行中的 SCM 服务注册信息匹配。
-3. **POSIX 独立 session**：没有交互 TTY 且当前进程是 session leader 时，记录为 `detached / new_session`。
+3. **POSIX 独立 session**：没有交互 TTY 且当前进程是 session leader 时，记录为 `detached`。
 4. **直接 Shell**：识别 zsh/bash/sh/fish/CMD/PowerShell 等直接父进程，根据控制终端或前台进程组判断。Windows 先通过 `GetConsoleProcessList` 核实当前进程是否附着控制台，再检查标准流是否可交互。继承的控制台句柄和 `GetConsoleWindow()` 都不能单独证明 Terminal；没有控制台附着的 Shell 子进程归为 Detached。
 5. **IDE（仅 Python Client）**：识别 PyCharm / pydevd / JetBrains 环境。
 6. **剩余交互式 TTY**：记录为 `terminal`，source 可为空。
-7. **Windows 无控制台剩余进程**：记录为 `detached / detached_process`。
+7. **Windows 无控制台剩余进程**：记录为 `detached`。
 8. **macOS 无控制终端**：在没有已验证服务或 Shell（以及 Python Client 的 IDE）宿主时，若系统报告没有控制终端则归为 `detached`。其他情况为 `unknown`。
 
 Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → python` 仍能归为 `Scheduled (cron)`。Shell 分类只认**直接父 Shell**，因此 PyCharm 内置 Terminal 显示 Terminal，Python Client 通过 PyCharm Run/Debug 启动显示 IDE。Go Client 不使用 PyCharm 环境变量或祖先信息进行 IDE 分类；它根据当前进程的 Session、控制终端及服务宿主确定模式。macOS 使用系统 `getsid()` 获取 Session ID，并识别 `-zsh` 等登录 Shell 名称。
@@ -97,14 +97,14 @@ Service/Scheduler 检测会查看进程祖先链，因此 `cron → sh -c → py
 
 普通 Duplicate/Restart 与 SSH Bootstrap 等路径创建独立 Client：
 
-- POSIX：`start_new_session=True`，记录 `detached / new_session`；
-- Windows：使用 `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` 创建独立后台进程，记录 `detached / detached_process`；PowerShell One-liner 也经短生命周期 Python 启动器使用同一组进程标志。
+- POSIX：`start_new_session=True`，记录 `detached`；
+- Windows：使用 `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` 创建独立后台进程，记录 `detached`；PowerShell One-liner 也经短生命周期 Python 启动器使用同一组进程标志。
 
 各平台均根据进程与服务管理器的实际状态确认 Launch Mode。macOS 的短生命周期 Bootstrap 退出、Client 被 `launchd` 收养后，仍按它自己的 session/控制终端状态归类。原 Client 即使来自 `IDE (PyCharm)`，采用 `start_new_session=True` 启动的新 Client 也按实际新会话显示 `Detached`。
 
 `spawn_instance` 和 `spawn_elevated_instance` 启动的独立 Client 将 stdout/stderr 写入 Client 临时目录 `client_logs` 下的随机日志文件。成功回执返回启动 PID 和结构化 `log_file` 引用，Terminal 提供 **[ View Log ]**，通知中心的 **Client Instance Started** 通知也提供 **View Log**，均复用既有 Log Viewer。日志文件由新进程独立持有，旧 Client 的执行完成与退出不会关闭其输出目标。返回 PID 表示进程已创建，设备是否上线需以连接状态为准。
 
-macOS `spawn_elevated_instance` 经系统管理员授权后，由 root shell 执行 `get_executable_path()` 提供的原始 Client 启动命令；不会向 Client 追加内部 bootstrap 参数。命令返回**新 Client 的实际 PID 和启动日志引用**；如果管理员取消授权、启动失败或 Client 立即退出，则返回错误详情。启动时保留原有命令行参数，包括 `--profile tls-local` 等连接配置，TLS 校验沿用对应 profile。命令始终使用新 Session，预期显示 `Detached (new session)`。`--no-confirm` 仅跳过 RCH 确认。返回 PID 表示已启动 Client 进程，Server 上线状态仍需单独核实。
+macOS `spawn_elevated_instance` 经系统管理员授权后，由 root shell 执行 `get_executable_path()` 提供的原始 Client 启动命令；不会向 Client 追加内部 bootstrap 参数。命令返回**新 Client 的实际 PID 和启动日志引用**；如果管理员取消授权、启动失败或 Client 立即退出，则返回错误详情。启动时保留原有命令行参数，包括 `--profile tls-local` 等连接配置，TLS 校验沿用对应 profile。命令始终使用新 Session，预期显示 `Detached`。`--no-confirm` 仅跳过 RCH 确认。返回 PID 表示已启动 Client 进程，Server 上线状态仍需单独核实。
 
 在 macOS 实机测试时，先运行 `spawn_elevated_instance`，再用 `ps -o pid,ppid,user,command -p <PID>` 验证返回的 PID 确实属于 root Python Client（不是 `osascript`）。可进一步用 `acmd ps --pid <PID>` 检查进程，并在 Server 设备列表中确认新实例使用目标 Listener 上线。如果命令报告启动失败，查看其错误输出；若新进程启动后没有上线，查看回执中给出的 root Client 启动 stderr 日志路径。
 
@@ -182,7 +182,7 @@ IDE (PyCharm)
 最直接的项目内测试是对现有在线 Reverse Client 使用 **Duplicate Instance** 或 **Restart Instance**。新进程预期：
 
 ```text
-Detached (new session)
+Detached
 ```
 
 Elevated 独立实例可以执行：
@@ -191,7 +191,7 @@ Elevated 独立实例可以执行：
 spawn_elevated_instance
 ```
 
-预期 root Client 同样为 `Detached (new session)`；关闭原 IDE/Terminal 后，新 PID 应继续存在。
+预期 root Client 同样为 `Detached`；关闭原 IDE/Terminal 后，新 PID 应继续存在。
 
 ### 7.5 LaunchAgent
 
@@ -296,7 +296,7 @@ Unknown
 
 ### Terminal / Terminal background / Detached / cron
 
-Linux 的 Terminal、后台 Shell 与 cron 可以直接复用上一节对应命令。RCH 创建的 new-session Client 预期 `Detached (new session)`。
+Linux 的 Terminal、后台 Shell 与 cron 可以直接复用上一节对应命令。RCH 创建的 new-session Client 预期 `Detached`。
 
 ### systemd --user
 
@@ -356,7 +356,7 @@ Start-Process $Py -ArgumentList '<RCH_ROOT>\backend\rchclient.py' -WorkingDirect
 预期：
 
 ```text
-Detached (detached process)
+Detached
 ```
 
 `pythonw.exe` 不提供交互控制台；PowerShell 中直接执行 `python.exe`，仍按 9.2 验证 Terminal 模式。
@@ -376,14 +376,14 @@ PyCharm 内置 Terminal 中手动运行则应显示 Terminal，而不是 IDE。
 使用 RCH Reverse 设备菜单的 **Duplicate Instance / Restart Instance** 创建新 Client，预期：
 
 ```text
-Detached (detached process)
+Detached
 ```
 
 这也是 Windows 上验证标准 detached helper 最稳定的方式。
 
 ### 9.5.1 Windows elevated background launch
 
-`spawn_elevated_instance` 经 Windows UAC 授权后，由提权命令的辅助脚本以 `DETACHED_PROCESS` 创建无控制台的 elevated Client，复用原 Client 启动参数并返回新进程的 PID；启动失败时返回错误及日志路径。新 Client 在握手时报告 `Detached (detached process)`。默认先经过 RCH 交互确认，再请求 Windows UAC 授权。`--no-confirm` 仅跳过 RCH 确认。在 Session 0 或无可交互桌面的环境中应使用适当的系统服务启动方式。
+`spawn_elevated_instance` 经 Windows UAC 授权后，由提权命令的辅助脚本以 `DETACHED_PROCESS` 创建无控制台的 elevated Client，复用原 Client 启动参数并返回新进程的 PID；启动失败时返回错误及日志路径。新 Client 在握手时报告 `Detached`。默认先经过 RCH 交互确认，再请求 Windows UAC 授权。`--no-confirm` 仅跳过 RCH 确认。在 Session 0 或无可交互桌面的环境中应使用适当的系统服务启动方式。
 
 ### 9.6 Task Scheduler
 

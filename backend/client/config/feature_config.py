@@ -5,7 +5,7 @@ use platform defaults. PTY/Screen/Clipboard/Watchdog disable imports;
 external_tool and process_monitor only control Web entry availability.
 """
 
-# Edit these values locally. Accepted keys are listed in _DEFAULTS below.
+# Edit these values locally. Accepted keys are in _DEFAULTS plus tunnel.
 # Example: {'screen_view': False, 'screen_input': False, 'pty': False}
 # external_tool and process_monitor control Web entry availability; their shared
 # runtime code may still be imported by Script / commands / Device Monitor.
@@ -24,6 +24,7 @@ def resolve_features(os_alias=None, overrides=None):
         from core.device.local_identity import get_local_identity
         os_alias = get_local_identity().os_alias
     defaults = dict(_DEFAULTS.get(os_alias, _DEFAULTS['linux']))
+    defaults['tunnel'] = True
     chosen = FEATURE_OVERRIDES if overrides is None else overrides
     if not isinstance(chosen, dict):
         raise ValueError('FEATURE_OVERRIDES must be a dict')
@@ -47,5 +48,4 @@ def resolve_features(os_alias=None, overrides=None):
         defaults['watchdog'] = False
         defaults['external_tool'] = False
         defaults['process_monitor'] = False
-    defaults['tunnel'] = False
     return defaults

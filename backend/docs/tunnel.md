@@ -1,7 +1,9 @@
 # Optional TCP Tunnel
 
 The Tunnel is a manually controlled, in-process TCP port forwarder for Python
-Clients. Each saved instance chooses where the forwarded port is exposed with
+Clients. The Python Client advertises Tunnel on all platforms by default; the
+Go Client does not implement Tunnel. Tunnel components load when the feature
+is used, not during an ordinary Client connection. Each saved instance chooses where the forwarded port is exposed with
 `expose_on`. The RCH Client's Bind or Reverse connection mode does not select
 the mapping direction. The Tunnel is inactive until manually started from the
 RCH Web Terminal or **Toolbox → Tunnel**.

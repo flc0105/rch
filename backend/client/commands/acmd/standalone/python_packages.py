@@ -10,7 +10,7 @@ from core.utils.command_output import StructuredCommandResult, ResultDataShape
 
 PYTHON_PACKAGES_SPEC = ArgumentCommandSpec(
     name='python_packages',
-    description='Inspect installed distributions, loaded distributions, or an individual import',
+    description='Explore Python packages and modules',
     options=[
         ArgumentOptionSpec('loaded', 'flag', default=False, alias='l',
                            help_text='List distributions with loaded modules in the Client process'),

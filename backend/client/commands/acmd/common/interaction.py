@@ -15,7 +15,7 @@ from core.protocol.control import ClipboardAction
 
 CLIPBOARD_READ_SPEC = ArgumentCommandSpec(
     name='clipboard_read',
-    description='Read clipboard text',
+    description='View clipboard contents',
     options=[
         ArgumentOptionSpec('download', 'flag', default=False, help_text='Save clipboard images or files to Artifacts'),
         ArgumentOptionSpec('help', 'flag', default=False, help_text='Show this help message'),
@@ -24,7 +24,7 @@ CLIPBOARD_READ_SPEC = ArgumentCommandSpec(
 
 CLIPBOARD_WRITE_SPEC = ArgumentCommandSpec(
     name='clipboard_write',
-    description='Write clipboard text or clear the clipboard',
+    description='Set or clear clipboard contents',
     options=[
         ArgumentOptionSpec('text', 'str', help_text='Text to write. Quote multi-word values after --text.'),
         ArgumentOptionSpec('clear', 'flag', default=False, help_text='Clear all clipboard contents'),

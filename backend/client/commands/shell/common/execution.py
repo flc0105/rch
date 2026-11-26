@@ -39,7 +39,7 @@ def shell(self, command):
         return 0, 'Command timed out'
     except Exception as e:
         return 0, f'Failed to execute command: {e}'
-@shell_command('Run a program in background', group='execution', platforms=('mac', 'win', 'linux'))
+@shell_command('Run a shell command as a detached background process', group='execution', platforms=('mac', 'win', 'linux'))
 def shell_bg(self, command):
     command_text = (command or '').strip()
     if not command_text:
@@ -59,7 +59,7 @@ def shell_bg(self, command):
         return 0, 'Command timed out'
     except Exception as e:
         return 0, f'Failed to start background process: {e}'
-@shell_command('Start an independent program in a new session', group='execution', platforms=('mac', 'win', 'linux'))
+@shell_command('Launch a program directly as a detached background process', group='execution', platforms=('mac', 'win', 'linux'))
 def run_bg(self, command):
     command_text = (command or '').strip()
     if not command_text:

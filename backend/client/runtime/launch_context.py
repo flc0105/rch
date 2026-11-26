@@ -306,7 +306,7 @@ def detect_launch_context(os_alias: str) -> dict:
     if not is_windows and os.name == 'posix' and not interactive_terminal:
         try:
             if os.getsid(0) == os.getpid():
-                return {'mode': 'detached', 'source': 'new_session'}
+                return {'mode': 'detached', 'source': ''}
         except Exception:
             pass
 
@@ -342,7 +342,7 @@ def detect_launch_context(os_alias: str) -> dict:
         # A short-lived PowerShell/cmd bootstrap may still be the parent at
         # startup. Without an attached console the child is a detached process.
         if is_windows and not interactive_terminal:
-            return {'mode': 'detached', 'source': 'detached_process'}
+            return {'mode': 'detached', 'source': ''}
         return {
             'mode': 'terminal_background' if is_background_terminal_job() else 'terminal',
             'source': shell_source,
@@ -355,7 +355,7 @@ def detect_launch_context(os_alias: str) -> dict:
         return {'mode': 'terminal', 'source': ''}
 
     if is_windows:
-        return {'mode': 'detached', 'source': 'detached_process'}
+        return {'mode': 'detached', 'source': ''}
 
     if is_macos and not interactive_terminal:
         # If the process is no longer associated with a controlling terminal,

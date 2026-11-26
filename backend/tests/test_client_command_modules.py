@@ -24,9 +24,7 @@ def test_platform_command_counts_and_owners(catalog):
     platform = catalog._get_platform_name()
     shell = catalog.get_exported_shell_commands()
     acmd = catalog.get_argument_command_registry()
-    # view_probe is an optional removable standalone test command.
-    optional_probe = 1 if 'view_probe' in acmd._entries else 0
-    assert (len(shell), len(acmd._entries) - optional_probe) == counts[platform]
+    assert (len(shell), len(acmd._entries)) == counts[platform]
     assert 'cd' in shell and 'getinfo' in shell and 'pyexec' in shell
     assert 'download' in acmd._entries and 'zip' in acmd._entries
     assert ('webcam_snap' in shell) == (platform == 'mac')
