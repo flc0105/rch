@@ -42,7 +42,7 @@ Artifact 对象可能从普通文件列表、终端运行结果、通知动作�
 - `truncated` 和 `editable` 共同决定 Edit 是否可用：内容必须完整且能严格无损解码。`encoding` 由 Server 对原始字节判断，并用于原编码写回。
 - `image` 类型改为读取 `url`，如果附带 `image_info` 则允许打开图片信息弹窗；`unsupported` 不会偷偷尝试用 Monaco 打开二进制内容。
 
-普通 Artifact 预览先检查文件签名识别图片与 ZIP（`archive`），再以严格流式解码判定其他文件是否为文本；扩展名只用于语法高亮，不决定预览资格。它最多向浏览器发送前 **512 KiB（524,288 字节，默认可配置）**范围内的完整字符文本；编码校验使用增量解码器流式检查**整份文件**，所以即使截断边界落在 UTF-8 多字节序列或 UTF-16 字符中间，也不会错误地显示 `unknown`。超过预览限额设置 `truncated=true`，工具栏保留 `Truncated` 标签，文本编辑器末尾单独显示英文截断提示；提示不属于文件正文，也不会进入 Copy 或保存内容。
+普通 Artifact 预览先检查文件签名识别图片与 ZIP（`archive`），再以严格流式解码判定其他文件是否为文本；扩展名只用于语法高亮，不决定预览资格。它最多向浏览器发送前 **512 KiB（524,288 字节，默认值；Settings → Server Preferences 可配置）**范围内的完整字符文本；编码校验使用增量解码器流式检查**整份文件**，所以即使截断边界落在 UTF-8 多字节序列或 UTF-16 字符中间，也不会错误地显示 `unknown`。超过预览限额设置 `truncated=true`，工具栏保留 `Truncated` 标签，文本编辑器末尾单独显示英文截断提示；提示不属于文件正文，也不会进入 Copy 或保存内容。
 
 读取先尝试严格识别 UTF-8、UTF-8 BOM 和带 BOM 的 UTF-16 LE/BE，只有解码成功且不含明显二进制控制字符、内容未截断时才允许编辑。编码不受支持或含二进制控制字符的文件直接返回 `unsupported`，不会显示有损替换文本供编辑。预览截断发生于字节层，因此即使编码可识别，截断内容也不可编辑。
 
@@ -50,7 +50,7 @@ Artifact 对象可能从普通文件列表、终端运行结果、通知动作�
 
 在 Web Terminal 输入 `edit <远端文件路径>`，例如 `edit ./config/app.json`、`edit "my notes.txt"`、`edit /Users/flc/Desktop/example.py`，会直接打开共享 Monaco Dialog 的编辑状态，显示 **Save / More / Cancel**。当前选中的 Client 就是文件来源；相对路径由目标 Client 的当前工作目录解析。该入口也可以搭配 Terminal 的 `@@` 路径补全。编辑内容在点击 **Save** 前只保存在浏览器中；Save 沿用 Remote Files 的原编码写回 API。
 
-预览服务器的默认文本上限为 **512 KiB**。如果文件超过上限（返回 `truncated=true`）、是图片/压缩包/二进制内容，或者编码不可无损编辑，`edit` 会直接提示不支持编辑，不打开截断文本的编辑窗口。Remote Files Browser 原有的 **Preview → Edit → Save** 顺序保持不变。`edit` 由 Web 前端处理，不会作为 Client Shell 命令发送，也不是 RCHCLI 的本地编辑器命令。
+Server 全局 **Text preview/edit limit** 默认 **512 KiB**，可在 Settings → Server Preferences 配置 64 KiB～8 MiB，适用于远端和 Server Artifact 的 Monaco 文本预览、编辑以及 Documents 文本编辑上限。如果文件超过上限（返回 `truncated=true`）、是图片/压缩包/二进制内容，或者编码不可无损编辑，`edit` 会直接提示不支持编辑，不打开截断文本的编辑窗口。Remote Files Browser 原有的 **Preview → Edit → Save** 顺序保持不变。`edit` 由 Web 前端处理，不会作为 Client Shell 命令发送，也不是 RCHCLI 的本地编辑器命令。
 
 ### Remote Files 有额外的传输阶段
 

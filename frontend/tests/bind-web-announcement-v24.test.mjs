@@ -47,10 +47,10 @@ test('Bind Python and Go Client hide Web inputs; Go Loader needs a download endp
   assert.match(build, /v-if="agentForm.connection_mode === 'bind'" label="Listen Port"/)
 })
 
-test('Connection Direction is available in Base Info and selectable Connection Context', () => {
+test('Direction is available in Base Info and selectable Connection Context', () => {
   assert.match(card, /Connection Direction/)
   assert.match(card, /formatConnectionDirection\(connection\.connection_direction\)/)
   assert.match(info, /label: 'Connection Direction'/)
-  assert.match(catalogue, /id: 'connection_direction', label: 'Connection Direction'/)
+  assert.match(catalogue, /id: 'connection_direction', label: 'Direction'/)
   assert.match(catalogue, /connection_direction: formatConnectionDirection\(conn\.connection_direction\)/)
 })

@@ -137,10 +137,10 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="Remote Files" name="remote-files">
-        <div v-loading="remoteFileConflictLoading" class="settings-tab-scroll">
+      <el-tab-pane label="Server Preferences" name="server-preferences">
+        <div v-loading="serverPreferencesLoading" class="settings-tab-scroll">
           <div class="remote-files-settings">
-            <div class="remote-files-settings-heading">File conflicts</div>
+            <div class="remote-files-settings-heading">File operations</div>
             <div class="remote-files-settings-row">
               <div class="remote-files-settings-copy">
                 <div class="remote-files-settings-title">Ask when a destination already exists</div>
@@ -148,7 +148,29 @@
                   Ask before copying, moving, extracting ZIPs, or uploading to an existing name. Applies to every device.
                 </div>
               </div>
-              <el-switch v-model="remoteFileConflictDraft.ask_on_conflict" aria-label="Ask on file conflict" />
+              <el-switch v-model="serverPreferencesDraft.ask_on_conflict" aria-label="Ask on file conflict" />
+            </div>
+            <div class="remote-files-settings-heading">Web preview & editor</div>
+            <div class="remote-files-settings-row">
+              <div class="remote-files-settings-copy">
+                <div class="remote-files-settings-title">Text preview/edit limit</div>
+                <div class="settings-note settings-note-inline">Maximum remote-file and Artifact text preview/edit size. Larger previews are truncated; Server Documents use the same edit limit.</div>
+              </div>
+              <div class="server-preference-number">
+                <el-input-number v-model="serverPreferencesDraft.preview_text_max_kib" :min="64" :max="8192" :step="64" size="small" aria-label="Text preview limit KiB" />
+                <span>KiB</span>
+              </div>
+            </div>
+            <div class="remote-files-settings-heading">Log Viewer</div>
+            <div class="remote-files-settings-row">
+              <div class="remote-files-settings-copy">
+                <div class="remote-files-settings-title">Maximum displayed log length</div>
+                <div class="settings-note settings-note-inline">Retain the newest characters in Log Viewer. Streaming and Follow still work normally.</div>
+              </div>
+              <div class="server-preference-number">
+                <el-input-number v-model="serverPreferencesDraft.log_viewer_max_kichars" :min="64" :max="8192" :step="64" size="small" aria-label="Log viewer maximum Ki characters" />
+                <span>Ki chars</span>
+              </div>
             </div>
           </div>
         </div>
@@ -329,7 +351,7 @@ import {
   normalizeConnectionContextPreferences,
 } from '../data/connectionContextFields.js'
 import { CONNECTION_CONTEXT_ICONS } from '../data/connectionContextIcons.js'
-import { loadRemoteFileConflictPreferences, saveRemoteFileConflictPreferences } from '../api/remoteFileConflictPreferencesApi.js'
+import { DEFAULT_SERVER_PREFERENCES, loadServerPreferences, saveServerPreferences } from '../api/serverPreferencesApi.js'
 import { getServerMaintenance, performServerMaintenance } from '../api/serverMaintenanceApi.js'
 import { getAuthorizationInfo } from '../api/authApi.js'
 import { getIdentities, initializeIdentities, issueClientIdentity, revokeClientIdentity, downloadClientIdentity, clientIdentityInstallCommand } from '../api/identitiesApi.js'
@@ -350,9 +372,9 @@ export default {
       identitiesLoading: false, identityBusy: false, newIdentityName: '', newIdentityDays: 365,
       maintenanceAction: '',
       maintenanceStatus: '',
-      remoteFileConflictLoading: false,
-      remoteFileConflictSaving: false,
-      remoteFileConflictDraft: { ask_on_conflict: false },
+      serverPreferencesLoading: false,
+      serverPreferencesSaving: false,
+      serverPreferencesDraft: { ask_on_conflict: false, preview_text_max_kib: 512, log_viewer_max_kichars: 512 },
 
       toolbarLoading: false,
       toolbarSaving: false,
@@ -373,13 +395,13 @@ export default {
 
   computed: {
     activeLoading() {
-      if (this.activeTab === 'remote-files') return this.remoteFileConflictLoading
+      if (this.activeTab === 'server-preferences') return this.serverPreferencesLoading
       if (this.activeTab === 'notifications') return this.notificationLoading
       if (this.activeTab === 'connection-context') return this.connectionContextLoading
       return this.toolbarLoading
     },
     activeSaving() {
-      if (this.activeTab === 'remote-files') return this.remoteFileConflictSaving
+      if (this.activeTab === 'server-preferences') return this.serverPreferencesSaving
       if (this.activeTab === 'notifications') return this.notificationSaving
       if (this.activeTab === 'connection-context') return this.connectionContextSaving
       return this.toolbarSaving
@@ -503,14 +525,14 @@ export default {
     },
     async open(tab = 'toolbar') {
       this.visible = true
-      this.activeTab = ['notifications', 'connection-context', 'remote-files', 'server', 'identities'].includes(tab) ? tab : 'toolbar'
+      this.activeTab = ['notifications', 'connection-context', 'server-preferences', 'server', 'identities'].includes(tab) ? tab : 'toolbar'
 
       await Promise.all([
         this.loadIdentities(),
         this.loadToolbarSettings(),
         this.loadNotificationSettings(),
         this.loadConnectionContextSettings(),
-        this.loadRemoteFileConflictSettings(),
+        this.loadServerPreferencesSettings(),
       ])
     },
 
@@ -658,32 +680,43 @@ export default {
       }
     },
 
-    async loadRemoteFileConflictSettings() {
-      this.remoteFileConflictLoading = true
-      try {
-        const saved = await loadRemoteFileConflictPreferences()
-        this.remoteFileConflictDraft = { ask_on_conflict: saved.ask_on_conflict === true }
-      } catch (error) {
-        ElMessage.error(error.message || 'Failed to load remote file settings')
-      } finally {
-        this.remoteFileConflictLoading = false
+    toServerPreferencesDraft(saved = DEFAULT_SERVER_PREFERENCES) {
+      return {
+        ask_on_conflict: saved.ask_on_conflict === true,
+        preview_text_max_kib: Math.round(saved.preview_text_max_bytes / 1024),
+        log_viewer_max_kichars: Math.round(saved.log_viewer_max_chars / 1024),
       }
     },
-    async saveRemoteFileConflictSettings() {
-      this.remoteFileConflictSaving = true
+    async loadServerPreferencesSettings() {
+      this.serverPreferencesLoading = true
       try {
-        const saved = await saveRemoteFileConflictPreferences(this.remoteFileConflictDraft)
-        this.remoteFileConflictDraft = { ask_on_conflict: saved.ask_on_conflict === true }
-        ElMessage.success('Remote file settings updated')
+        this.serverPreferencesDraft = this.toServerPreferencesDraft(await loadServerPreferences())
       } catch (error) {
-        ElMessage.error(error.message || 'Failed to save remote file settings')
+        ElMessage.error(error.message || 'Failed to load Server preferences')
       } finally {
-        this.remoteFileConflictSaving = false
+        this.serverPreferencesLoading = false
+      }
+    },
+    async saveServerPreferencesSettings() {
+      this.serverPreferencesSaving = true
+      try {
+        const draft = this.serverPreferencesDraft
+        const saved = await saveServerPreferences({
+          ask_on_conflict: draft.ask_on_conflict,
+          preview_text_max_bytes: draft.preview_text_max_kib * 1024,
+          log_viewer_max_chars: draft.log_viewer_max_kichars * 1024,
+        })
+        this.serverPreferencesDraft = this.toServerPreferencesDraft(saved)
+        ElMessage.success('Server preferences updated')
+      } catch (error) {
+        ElMessage.error(error.message || 'Failed to save Server preferences')
+      } finally {
+        this.serverPreferencesSaving = false
       }
     },
     resetActiveDefaults() {
-      if (this.activeTab === 'remote-files') {
-        this.remoteFileConflictDraft = { ask_on_conflict: false }
+      if (this.activeTab === 'server-preferences') {
+        this.serverPreferencesDraft = this.toServerPreferencesDraft()
         return
       }
       if (this.activeTab === 'notifications') {
@@ -697,7 +730,7 @@ export default {
       this.resetToolbarDefaults()
     },
     saveActiveSettings() {
-      if (this.activeTab === 'remote-files') return this.saveRemoteFileConflictSettings()
+      if (this.activeTab === 'server-preferences') return this.saveServerPreferencesSettings()
       if (this.activeTab === 'notifications') {
         return this.saveNotificationSettings()
       }
@@ -1235,6 +1268,12 @@ export default {
   .connection-context-settings-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.server-preference-number { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; white-space: nowrap; }
+.server-preference-number :deep(.el-input-number) { width: 148px; }
+@media (max-width: 640px) {
+  .remote-files-settings-row { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .server-preference-number { align-self: flex-start; }
 }
 </style>
 

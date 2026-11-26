@@ -1,7 +1,6 @@
 from flask import Blueprint, request
 
 from server.web.api_response import WebApiResponder
-from server.application.preferences.settings_store import SettingsStore
 from server.web.request_parsers import get_json_payload, get_optional_remote_path, get_optional_tab_id, parse_paging_args
 
 
@@ -10,25 +9,6 @@ def create_remote_files_blueprint(server_instance):
     web_service = server_instance.web_service
     remote_file_api = web_service.remote_file_api
     responder = WebApiResponder()
-    conflict_settings = SettingsStore(server_instance.database, 'remote_file_conflicts')
-
-    @blueprint.get('/api/remote-files/conflict-preferences')
-    def get_remote_file_conflict_preferences():
-        return responder.json_endpoint(lambda: {
-            'ask_on_conflict': conflict_settings.read().get('ask_on_conflict') is True,
-        })
-
-    @blueprint.put('/api/remote-files/conflict-preferences')
-    def save_remote_file_conflict_preferences():
-        def _save():
-            payload = get_json_payload()
-            if not isinstance(payload.get('ask_on_conflict'), bool):
-                raise ValueError('ask_on_conflict must be a boolean')
-            result = {'ask_on_conflict': payload['ask_on_conflict']}
-            conflict_settings.write(result)
-            return result
-        return responder.json_endpoint(_save)
-
 
     def activity_origin():
         return 'web_ui' if request.headers.get('X-RCH-Origin') == 'web_ui' else 'web_api'

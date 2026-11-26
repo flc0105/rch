@@ -3,14 +3,18 @@ from server.application.artifact.artifact_preview_service import ArtifactPreview
 from server.application.artifact.artifact_registry_service import ArtifactRegistryService
 from server.application.artifact.artifact_temp_file_service import ArtifactTempFileService
 from server.application.artifact.command_output_artifact_service import CommandOutputArtifactService
-from server.config.config import WEB_FILES_ROOT_DIR, WEB_PREVIEW_TEXT_MAX_BYTES
+from server.config.config import WEB_FILES_ROOT_DIR
+from server.application.preferences.server_preferences import ServerPreferences
 
 
 class WebArtifactService:
-    MAX_PREVIEW_TEXT_BYTES = WEB_PREVIEW_TEXT_MAX_BYTES
+    @property
+    def MAX_PREVIEW_TEXT_BYTES(self):
+        return self.server_preferences.read()['preview_text_max_bytes']
 
     def __init__(self, database):
         self.database = database
+        self.server_preferences = ServerPreferences(database)
         self.web_root_dir = WEB_FILES_ROOT_DIR
         self.artifacts_root_dir = os.path.join(self.web_root_dir, 'artifacts')
         self.upload_tmp_dir = os.path.join(self.artifacts_root_dir, 'upload_tmp')

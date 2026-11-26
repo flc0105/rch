@@ -26,7 +26,11 @@ class DocumentLibraryService:
             if not location.is_absolute():
                 raise ValueError("Document root paths must be absolute")
             self.roots[key] = {"path": location.resolve(), "label": str(entry.get("label") or key)}
-        self.max_bytes = max_bytes
+        self._max_bytes = max_bytes
+
+    @property
+    def max_bytes(self):
+        return self._max_bytes() if callable(self._max_bytes) else self._max_bytes
 
     def list_roots(self):
         return {"items": [

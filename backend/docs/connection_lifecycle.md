@@ -6,7 +6,7 @@ Server 负责建立和移除会话、发送心跳、计算 RTT、维护设备快
 
 ### Connection Direction 与 Bind 的 Web API 地址
 
-Connection Info 的 Base Info 和 Settings → Connection Context 可显示 **Connection Direction**，其 `reverse` / `bind` 值由 Server 的真实会话接入路径确定，Reverse 保留原有 Socket 和 Web 地址。
+Connection Info 的 Base Info 显示 **Connection Direction**，Settings → Connection Context 使用较短的 **Direction** 标签，其 `reverse` / `bind` 值由 Server 的真实会话接入路径确定，Reverse 保留原有 Socket 和 Web 地址。
 
 Bind Client 仅在本机监听，不预置 Server Web 地址。Server 完成 `info` 注册并发送 `client_session_token` 后，在发布上线事件之前下发一次 `session_config.server_web_base_url`。此值来自 Server 设置 `RCH_WEB_ADVERTISED_URL`，未设置时默认采用管理员当前访问 Web 管理界面的 HTTP origin。Connections → More → Connect to Client 自动加载默认值，并允许为本次连接单独覆盖。每次断开并重连时重新获取 URL；同一次会话内不进行热切换。公告地址必须是从 Client 端可达的 HTTP(S) origin，地址发现不改变两端网络可达性。
 
@@ -159,7 +159,7 @@ Web 不是单纯显示最后收到的一份 `connection_state`。它在本地以
 
 Terminal 输入栏下方可以显示一行连接上下文标签，用于快速查看当前设备的状态与基础信息。通过 **Settings → Connection Context** 搜索并选择 Basic Info 字段，调整展示顺序后保存；字段选择是 Server 全局偏好，对当前实例管理的所有设备生效。未选择字段时不显示标签行。
 
-标签值从当前连接快照读取，Connection Direction 显示 Bind / Reverse，并复用 Connection Info 的状态、最近响应时间、RTT、时间和启动模式格式化规则。可选字段包括 Status、Hostname、Address、Client ID、OS 信息、Manufacturer、Model、Integrity、Build Version、Client Revision、Machine ID、Fingerprint Basis、Last Seen、Connected At、Disconnected At、RTT、Working Directory、PID、Process Name、Launch Command、Launch Mode、Client Log、Username 和 Python Version。连接切换后，标签内容随当前连接更新。
+标签值从当前连接快照读取，Connection Direction 显示 Bind / Reverse，并复用 Connection Info 的状态、最近响应时间、RTT、时间和启动模式格式化规则。可选字段包括 Status、Hostname、Address、Client ID、OS 信息、Manufacturer、Model、Integrity、Build Version、Client Revision、Machine ID、Fingerprint Basis、Last Seen、Connected At、Disconnected At、RTT、Working Directory、PID、Process Name、Launch Command、Launch Mode、Client Log、Username 和 Python Version。连接切换后，标签内容随当前连接更新；Connection Context 中的 Direction 使用简短标签显示相同的 Bind / Reverse 值。
 
 可选 **Task** 显示当前 Client 前台执行状态：`Idle`、`Running`、`Cancelling`。该状态来自 Server 的执行槽，浏览器通过 WebSocket 事件更新，并在首次订阅、重新连接及切换设备时读取权威快照，因此重开标签页或刷新后仍可恢复；Basic Info 的 Task 字段采用相同状态。Terminal 在打开页面、刷新或首次选择某 Client 时，若首次权威快照发现既有任务，则以输出警告行显示一次 `[ Details ]` 链接；后续任务状态仍实时更新，但不再重复插入警告。该提示只存在于当前页面的临时通知状态，不作为历史命令输出存储；Terminal 历史恢复不会重新带回已结束任务的提示。详情展示执行信息和适用的取消操作。
 

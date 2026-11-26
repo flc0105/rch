@@ -33,6 +33,15 @@
             >
               <el-icon><Bell /></el-icon>
             </button>
+            <button
+              class="banner-icon-action banner-settings-action"
+              type="button"
+              title="Settings"
+              aria-label="Settings"
+              @click="openSettingsDialog"
+            >
+              <el-icon><Setting /></el-icon>
+            </button>
             <el-dropdown trigger="click" @command="handleBannerUtilityCommand">
               <button
                 class="banner-icon-action banner-utility-action"
@@ -50,7 +59,6 @@
                   <el-dropdown-item command="agent-outputs">Agent Outputs</el-dropdown-item>
                   <el-dropdown-item command="listeners">Listeners</el-dropdown-item>
                   <el-dropdown-item command="artifacts">Artifacts</el-dropdown-item>
-                  <el-dropdown-item command="settings">Settings</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -184,6 +192,7 @@
                   @run-quick-action-terminal="runPinnedQuickActionInTerminal"
                   @run-toolbox-script="runToolboxScript"
                   @open-settings="openSettingsDialog"
+                  @open-listeners="$refs.listenerManagerDialogRef?.open()"
                   @clear="clearOutput"
                   @clear-selection="clearSelectedConnection"
                   @bottom="scrollToBottom(true)"
@@ -655,7 +664,7 @@ import { getConnectionTask } from './api/connectionsApi.js'
 import { cancelTask } from './api/tasksApi.js'
 import { normalizeForegroundTask, foregroundTaskNoticeKey, shouldShowTaskNotice, formatTaskTime } from './utils/foregroundTask.js'
 
-import { ArrowDown, ArrowUp, Bell, Grid, Sort, User } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Bell, Grid, Setting, Sort, User } from '@element-plus/icons-vue'
 
 // Keep a single in-flight module per dialog, shared by idle warmup, hover and click.
 const optionalDialogLoaders = {
@@ -724,6 +733,7 @@ export default {
     ArrowUp,
     Bell,
     Grid,
+    Setting,
     Sort,
     User,
     TerminalJsonDialog,
@@ -1480,7 +1490,6 @@ export default {
       if (command === 'agent-outputs') return this.openAgentOutputsDialog()
       if (command === 'listeners') return this.$refs.listenerManagerDialogRef?.open()
       if (command === 'artifacts') return this.openServerArtifactsDialog()
-      if (command === 'settings') return this.openSettingsDialog()
     },
 
     openAgentBuilderDialog() {

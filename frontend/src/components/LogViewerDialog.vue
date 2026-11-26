@@ -15,9 +15,7 @@
         </div>
         <div class="log-viewer-actions-row">
           <div class="log-viewer-toggles">
-            <el-switch v-model="streaming" size="small" active-text="Streaming" @change="onStreamingChange" />
             <el-switch v-model="follow" size="small" active-text="Follow" />
-            <el-switch v-model="wrap" size="small" active-text="Wrap" />
           </div>
           <div class="log-viewer-tools">
             <el-button size="small" plain :disabled="!activeClientId" @click="pickerVisible = true">Browse</el-button>
@@ -26,7 +24,9 @@
               <el-button size="small" plain aria-label="Log actions">More</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="refresh" :disabled="!path || loading">Refresh</el-dropdown-item>
+                  <el-dropdown-item command="toggle-streaming">{{ streaming ? '✓ ' : '' }}Streaming</el-dropdown-item>
+                  <el-dropdown-item command="toggle-wrap">{{ wrap ? '✓ ' : '' }}Wrap</el-dropdown-item>
+                  <el-dropdown-item divided command="refresh" :disabled="!path || loading">Refresh</el-dropdown-item>
                   <el-dropdown-item command="clear">Clear View</el-dropdown-item>
                   <el-dropdown-item command="copy">Copy</el-dropdown-item>
                 </el-dropdown-menu>
@@ -47,7 +47,7 @@
       </div>
       <div class="log-viewer-status">
         <span>{{ statusLabel }}</span>
-        <span>UTF-8 · Up to 512 KiB displayed</span>
+        <span>UTF-8 · Up to {{ Math.round(displayMaxChars / 1024) }} Ki characters displayed</span>
       </div>
     </div>
     <RemoteFilePicker
@@ -64,8 +64,8 @@
 <script>
 import { ElMessage } from 'element-plus'
 import RemoteFilePicker from './RemoteFilePicker.vue'
+import { loadServerPreferences } from '../api/serverPreferencesApi.js'
 
-const MAX_DISPLAY_CHARS = 524288
 
 export default {
   name: 'LogViewerDialog',
@@ -83,6 +83,7 @@ export default {
       title: '',
       pickerVisible: false,
       streaming: true,
+      displayMaxChars: 512 * 1024,
       follow: true,
       wrap: true,
       search: '',
@@ -134,6 +135,7 @@ export default {
       this.path = String(source.path || '').trim()
       this.title = String(source.title || '').trim()
       this.streaming = true
+      void this.loadDisplayLimit()
       this.follow = true
       this.wrap = true
       this.search = ''
@@ -225,6 +227,17 @@ export default {
       this.fileExists = null
       await this.startSession(!this.streaming)
     },
+    async loadDisplayLimit() {
+      try {
+        const value = (await loadServerPreferences()).log_viewer_max_chars
+        if (Number.isInteger(value) && value >= 65536) {
+          this.displayMaxChars = value
+          this.content = this.content.slice(-value)
+        }
+      } catch (_) {
+        // The default limit remains usable when preferences are unavailable.
+      }
+    },
     onStreamingChange(enabled) {
       if (!enabled) {
         this.stopSession()
@@ -234,6 +247,14 @@ export default {
       this.refresh()
     },
     onMoreCommand(command) {
+      if (command === 'toggle-streaming') {
+        this.streaming = !this.streaming
+        return this.onStreamingChange(this.streaming)
+      }
+      if (command === 'toggle-wrap') {
+        this.wrap = !this.wrap
+        return
+      }
       if (command === 'refresh') return this.refresh()
       if (command === 'clear') return this.clearView()
       if (command === 'copy') return this.copyLogs()
@@ -259,9 +280,9 @@ export default {
       const data = payload.data || {}
       this.fileExists = data.exists !== false
       if (data.reset) this.content += '\n— Log file rotated or truncated —\n'
-      this.content = this.content.slice(-MAX_DISPLAY_CHARS)
+      this.content = this.content.slice(-this.displayMaxChars)
       if (data.content) {
-        this.content = (this.content + String(data.content)).slice(-MAX_DISPLAY_CHARS)
+        this.content = (this.content + String(data.content)).slice(-this.displayMaxChars)
         if (this.follow) this.$nextTick(() => this.scrollToBottom())
       }
       this.error = ''

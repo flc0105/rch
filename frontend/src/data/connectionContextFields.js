@@ -6,7 +6,7 @@ export const CONNECTION_CONTEXT_FIELD_CATALOG = Object.freeze([
   { id: 'task', label: 'Task', icon: 'Activity', description: 'Current foreground task state' },
   { id: 'hostname', label: 'Hostname', icon: 'Monitor', description: 'Device hostname' },
   { id: 'address', label: 'Address', icon: 'Network', description: 'Client network address' },
-  { id: 'connection_direction', label: 'Connection Direction', icon: 'Network', description: 'Bind or Reverse connection' },
+  { id: 'connection_direction', label: 'Direction', icon: 'Network', description: 'Bind or Reverse connection' },
   { id: 'client_id', label: 'Client ID', icon: 'Fingerprint', description: 'Current client instance' },
   { id: 'os_type', label: 'OS Type', icon: 'Monitor', description: 'Operating system type' },
   { id: 'platform', label: 'Platform', icon: 'Globe2', description: 'Platform description' },

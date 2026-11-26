@@ -1,6 +1,6 @@
 import { defineComponent, h, ref } from 'vue'
 import { ElMessageBox, ElOption, ElSelect } from 'element-plus'
-import { loadRemoteFileConflictPreferences } from '../api/remoteFileConflictPreferencesApi.js'
+import { loadServerPreferences } from '../api/serverPreferencesApi.js'
 import { pasteRemoteFiles, extractRemoteZip, inspectRemoteUpload } from '../api/remoteFilesApi.js'
 
 const labels = { stop: 'Stop', skip: 'Skip', replace: 'Replace', merge: 'Merge', keep_both: 'Keep Both' }
@@ -43,7 +43,7 @@ async function chooseConflict(conflict) {
 }
 
 export async function conflictsEnabled() {
-  const settings = await loadRemoteFileConflictPreferences()
+  const settings = await loadServerPreferences()
   return settings.ask_on_conflict === true
 }
 

@@ -28,6 +28,7 @@ from server.application.maintenance.server_cleanup_service import ServerCleanupS
 from server.application.keychains.keychain_store import KeychainStore
 from server.application.documents.document_library_service import DocumentLibraryService
 from server.application.pinned_paths.pinned_path_store import PinnedPathStore
+from server.application.preferences.server_preferences import ServerPreferences
 from server.application.preferences.toolbar_preference_store import ToolbarPreferenceStore
 from server.application.preferences.notification_preference_store import NotificationPreferenceStore
 from server.application.preferences.terminal_context_preference_store import TerminalContextPreferenceStore
@@ -78,7 +79,6 @@ from server.config.config import (
     SCRIPT_JOBS_PATH,
     SCRIPT_PATH,
     DOCUMENT_ROOTS,
-    WEB_PREVIEW_TEXT_MAX_BYTES,
 )
 from server.web.event_bus import WebEventBus
 
@@ -206,7 +206,9 @@ class ServerApplicationAssembly:
 
         self.pinned_path_store = PinnedPathStore(self.server.database)
         self.keychain_store = KeychainStore(self.server.database)
-        self.document_library_service = DocumentLibraryService(DOCUMENT_ROOTS, WEB_PREVIEW_TEXT_MAX_BYTES)
+        server_preferences = ServerPreferences(self.server.database)
+        self.document_library_service = DocumentLibraryService(
+            DOCUMENT_ROOTS, lambda: server_preferences.read()['preview_text_max_bytes'])
         self.agent_builder = AgentBuilder()
         self.agent_output_registry = AgentOutputRegistry(self.agent_builder.output_dir, self.server.database)
         self.agent_bootstrap_script_service = AgentBootstrapScriptService()

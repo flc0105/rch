@@ -91,7 +91,6 @@ COMMAND_HISTORY_MAX_RESULT_FIELD_BYTES = 256 * 1024
 
 # ------------------ web files ------------------ #
 WEB_FILES_ROOT_DIR = os.path.join(SERVER_RUNTIME_DIR, 'web_files')
-WEB_PREVIEW_TEXT_MAX_BYTES = 512 * 1024
 
 # Server-local Documents: JSON mapping of root IDs to absolute paths or {label, path}.
 # Defaults expose bundled RCH docs and a persistent Notes directory.

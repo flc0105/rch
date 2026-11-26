@@ -141,7 +141,7 @@ Browser 的 Copy、Cut 和 Paste 使用的是**界面内部的远程路径列表
 
 ### 文件冲突策略与全局设置
 
-在 **Settings → Remote Files** 中可切换 **Ask when a destination already exists**。这个设置由 Server 保存，全局应用于从 Web Remote Files 发起的复制、移动、**Extract Here**、ZIP 预览中的 **Extract to...**，Browser / Remote Folder Picker 上传，以及 Artifact Manager 的 **Send to Current Device**。默认 **关闭**：所有目标同名冲突均拒绝执行并报错，不覆盖、不合并、不自动改名。开启后，前端在目标冲突时提供选择；目标无冲突时直接执行。
+在 **Settings → Server Preferences** 中可切换 **Ask when a destination already exists**。这个设置由 Server 保存，全局应用于从 Web Remote Files 发起的复制、移动、**Extract Here**、ZIP 预览中的 **Extract to...**，Browser / Remote Folder Picker 上传，以及 Artifact Manager 的 **Send to Current Device**。默认 **关闭**：所有目标同名冲突均拒绝执行并报错，不覆盖、不合并、不自动改名。开启后，前端在目标冲突时提供选择；目标无冲突时直接执行。
 
 | 目标冲突 | 可选动作 | 执行效果 |
 |---|---|---|
@@ -283,7 +283,7 @@ Browser、Picker 的目录浏览共用 `/api/connections/{client_id}/remote-file
 | POST | `.../remote-files/preview` | 生成文件预览 |
 | POST | `.../remote-files/save` | 保存编辑后的文本文件 |
 | POST | `.../remote-files/inspect-upload` | 检查当前目标文件夹中待上传的文件是否存在同名冲突 |
-| GET / PUT | `/api/remote-files/conflict-preferences` | 读取或修改全局 `ask_on_conflict` 设置 |
+| GET / PUT | `/api/server/preferences` | 读取或修改 Server 全局偏好（包括文件冲突策略、文本预览长度和 Log Viewer 显示长度） |
 
 上述 `...` 省略的是相同前缀 `/api/connections/{client_id}`。Pinned Paths、系统路径 Quick Jump、Artifact 下载和文件 Transfer 另有对应接口，不应误认为都由目录浏览 API 负责。
 

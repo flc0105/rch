@@ -330,6 +330,7 @@ export default {
     'run-quick-action-terminal',
     'run-toolbox-script',
     'open-settings',
+    'open-listeners',
     'clear',
     'clear-selection',
     'bottom',
@@ -401,6 +402,7 @@ export default {
       const toolboxOnly = [
         { id: 'manage-pins', label: 'Pinned Paths', icon: 'bookmark', disabled: this.isActionDisabled('manage-pins') },
         { id: 'connection-history', label: 'Connection History', icon: 'clock', disabled: this.isActionDisabled('connection-history') },
+        { id: 'listeners', label: 'Listeners', icon: 'network', disabled: false },
       ]
       return [...base, ...toolboxOnly, ...shortcuts]
     },
@@ -713,15 +715,18 @@ export default {
     },
     launchToolboxAction(actionId, option = 'open') {
       if (!this.toolboxVisible) return
-      if (actionId !== 'settings' && (
+      if (!['settings', 'listeners'].includes(actionId) && (
         !TOOLBAR_ACTION_CATALOG.some((action) => action.id === actionId)
-        && !['manage-pins', 'connection-history'].includes(actionId)
+        && !['manage-pins', 'connection-history', 'listeners'].includes(actionId)
         || this.isActionDisabled(actionId)
       )) return
       // On phones the Toolbox fills the viewport, so dismiss it before opening another workspace.
       if (actionId === 'settings') {
         this.closeToolboxForMobileLaunch()
         this.$emit('open-settings')
+      } else if (actionId === 'listeners') {
+        this.closeToolboxForMobileLaunch()
+        this.$emit('open-listeners')
       } else if (option === 'open') {
         this.closeToolboxForMobileLaunch()
         this.runAction(actionId)

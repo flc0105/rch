@@ -4,6 +4,20 @@ Web Configuration 与 Server `config` 命令共享 Client 配置服务、类型/
 
 Client 的 `LOG_LEVEL` 默认 `INFO`，可通过现有 Runtime Configuration / `set` 命令切换为 `DEBUG`、`WARNING` 或 `ERROR`。变更对当前 Client 控制台及主日志文件即时生效；`DEBUG` 保留完整握手、协议收发与心跳诊断内容。启动时生效的 Runtime Configuration 覆盖项摘要按 `INFO` 记录。
 
+## Server Preferences（Web 全局偏好）
+
+**Settings → Server Preferences** 修改的是 RCH Server 持久化的 Web 行为偏好，不属于任一 Client 的 Runtime Configuration，也不会下发 `config set`。所有设备和浏览器共用同一套 Server 偏好；修改后，后续操作读取最新值。
+
+| 设置 | 默认 | 范围 / 行为 |
+| --- | --- | --- |
+| Ask when a destination already exists | 关闭 | 控制 Web Remote Files 等界面的文件冲突预检与选择 |
+| Text preview/edit limit | 512 KiB | 64 KiB～8 MiB；限制远端预览 Artifact、Server Artifact 和 Documents 文本读取与编辑，超出预览阈值的正文截断并只读 |
+| Maximum displayed log length | 512 Ki 字符 | 64～8192 Ki 字符；限制 Log Viewer 浏览器内存中保留的近期字符，不影响 Client 磁盘原始日志 |
+
+Web 使用 `GET /api/server/preferences` 读取，`PUT /api/server/preferences` 保存完整设置对象。设置存入 Server 的 SQLite `settings` 表；文件冲突行为在 Web 发起操作前读取，预览限制由 Server 实际读取时生效，Log Viewer 在打开时取得当前显示长度。Server 维护、监听器及其他服务管理仍使用各自的既有入口。
+
+图片预览压缩目前属于 **Client Runtime Configuration**（`PREVIEW_IMAGE_COMPRESS_ENABLED` / `PREVIEW_IMAGE_COMPRESS_QUALITY`）。该预处理发生在 Client 上传之前；Go Client 和 Python Client 的压缩实现不同，因此 Server Preferences 暂不提供统一压缩策略。
+
 ## `config` 命令与 Configuration
 
 RCH 为每台 Client 提供一套可以在线查询和调整的运行配置。它主要用于选择文件传输、Python 执行和 Screen View 的工作策略，以及调整超时、重连、预览与 Watchdog 等行为。
