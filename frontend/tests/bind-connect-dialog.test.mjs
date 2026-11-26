@@ -27,6 +27,17 @@ test('Device More emits Connect to Client and App opens the dialog', () => {
   assert.deepEqual(Array.from(events[0]), ['connect-to-client'])
 })
 
+test('Connect dialog labels required fields natively and leaves Name optional', () => {
+  assert.match(dialog, /<el-dialog[^>]*title="Connect"/)
+  assert.match(dialog, /<el-form-item label="Name">/)
+  assert.doesNotMatch(dialog, /Connection name \(optional\)|Name this connection/)
+  for (const label of ['Host', 'Port', 'Transport', 'Server Web URL']) {
+    assert.ok(dialog.includes(`<el-form-item label="${label}" required>`), `${label} is required`)
+  }
+  assert.match(dialog, /placeholder="Client IP or hostname"/)
+  assert.match(dialog, /margin-bottom: 7px; padding: 0;/)
+})
+
 test('Connect dialog passes a typed address and port to the connection API', async () => {
   assert.match(api, /api\/connections\/bind\/connect/)
   assert.match(api, /api\/connections\/\$\{encodeURIComponent\(clientId\)\}\/disconnect/)

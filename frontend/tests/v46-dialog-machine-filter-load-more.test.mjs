@@ -11,8 +11,8 @@ const notification = read('../src/components/NotificationCenterDrawer.vue')
 const loadMore = read('../src/components/HistoryLoadMore.vue')
 const app = read('../src/App.vue')
 
-test('Connect to Client form reduces label gap without changing fields', () => {
-  assert.match(connect, /\.bind-connect-form \.el-form-item__label \{[^}]*line-height: 20px;[^}]*margin-bottom: 4px;[^}]*padding: 0;/)
+test('Connect dialog uses a readable label gap and preserves fields', () => {
+  assert.match(connect, /\.bind-connect-form \.el-form-item__label \{[^}]*line-height: 20px;[^}]*margin-bottom: 7px;[^}]*padding: 0;/)
   assert.match(connect, /label="Server Web URL"/)
   assert.match(connect, /v-model="form\.serverWebBaseUrl"/)
 })

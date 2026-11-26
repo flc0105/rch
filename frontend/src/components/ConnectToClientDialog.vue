@@ -1,22 +1,22 @@
 <template>
-  <el-dialog v-model="visible" title="Connect to Client" width="560px" class="fixed-dialog bind-connect-dialog" append-to-body>
+  <el-dialog v-model="visible" title="Connect" width="560px" class="fixed-dialog bind-connect-dialog" append-to-body>
     <el-form :model="form" label-position="top" class="bind-connect-form" @submit.prevent="connect">
-      <el-form-item label="Connection name (optional)">
-        <el-input v-model="form.name" placeholder="Name this connection" autocomplete="off" />
+      <el-form-item label="Name">
+        <el-input v-model="form.name" placeholder="Connection name" autocomplete="off" />
       </el-form-item>
-      <el-form-item label="Host">
+      <el-form-item label="Host" required>
         <el-input v-model="form.host" placeholder="Client IP or hostname" autocomplete="off" />
       </el-form-item>
-      <el-form-item label="Port">
-        <el-input v-model.number="form.port" type="number" min="1" max="65535" />
+      <el-form-item label="Port" required>
+        <el-input v-model.number="form.port" placeholder="Client listen port" type="number" min="1" max="65535" />
       </el-form-item>
-      <el-form-item label="Transport">
+      <el-form-item label="Transport" required>
         <el-select v-model="form.transport" style="width:100%">
           <el-option label="TCP" value="tcp" />
           <el-option label="mTLS/TCP" value="mtls_tcp" />
         </el-select>
       </el-form-item>
-      <el-form-item label="Server Web URL">
+      <el-form-item label="Server Web URL" required>
         <el-input v-model="form.serverWebBaseUrl" placeholder="http://server:8085" autocomplete="off" />
       </el-form-item>
     </el-form>
@@ -122,7 +122,7 @@ export default {
 <style>
 .bind-connect-dialog .bind-connect-form { padding: 8px 4px 4px; }
 .bind-connect-dialog .bind-connect-form .el-form-item { margin-bottom: 16px; }
-.bind-connect-dialog .bind-connect-form .el-form-item__label { height: auto; line-height: 20px; margin-bottom: 4px; padding: 0; }
+.bind-connect-dialog .bind-connect-form .el-form-item__label { height: auto; line-height: 20px; margin-bottom: 7px; padding: 0; }
 .bind-connect-dialog.el-dialog { max-width: calc(100vw - 32px); }
 .bind-connect-dialog .el-form-item__label { white-space: nowrap; }
 @media (max-width: 960px) {
