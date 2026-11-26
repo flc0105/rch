@@ -5,7 +5,7 @@ from server.application.preferences.settings_store import SettingsStore
 DEFAULT_SERVER_PREFERENCES = {
     'ask_on_conflict': False,
     'preview_text_max_bytes': 512 * 1024,
-    'log_viewer_max_chars': 512 * 1024,
+    'log_viewer_max_bytes': 512 * 1024,
 }
 
 
@@ -27,7 +27,7 @@ class ServerPreferences:
                 raise ValueError('ask_on_conflict must be a boolean')
             return value
         if type(value) is not int or not (64 * 1024 <= value <= 8 * 1024 * 1024):
-            raise ValueError(f'{key} must be between 64 Ki and 8 Mi units')
+            raise ValueError(f'{key} must be between 64 KiB and 8 MiB')
         return value
 
     def save(self, payload):

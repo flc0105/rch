@@ -6,13 +6,15 @@ Client 的 `LOG_LEVEL` 默认 `INFO`，可通过现有 Runtime Configuration / `
 
 ## Server Preferences（Web 全局偏好）
 
-**Settings → Server Preferences** 修改的是 RCH Server 持久化的 Web 行为偏好，不属于任一 Client 的 Runtime Configuration，也不会下发 `config set`。所有设备和浏览器共用同一套 Server 偏好；修改后，后续操作读取最新值。
+**Settings → Preferences** 修改的是 RCH Server 持久化的 Web 行为偏好，不属于任一 Client 的 Runtime Configuration，也不会下发 `config set`。所有设备和浏览器共用同一套 Server 偏好；修改后，后续操作读取最新值。
 
 | 设置 | 默认 | 范围 / 行为 |
 | --- | --- | --- |
-| Ask when a destination already exists | 关闭 | 控制 Web Remote Files 等界面的文件冲突预检与选择 |
-| Text preview/edit limit | 512 KiB | 64 KiB～8 MiB；限制远端预览 Artifact、Server Artifact 和 Documents 文本读取与编辑，超出预览阈值的正文截断并只读 |
-| Maximum displayed log length | 512 Ki 字符 | 64～8192 Ki 字符；限制 Log Viewer 浏览器内存中保留的近期字符，不影响 Client 磁盘原始日志 |
+| File conflicts | 关闭 | 控制 Web Remote Files 等界面的文件冲突预检与选择 |
+| Text preview limit | 512 KiB | 64 KiB～8 MiB；限制远端预览 Artifact、Server Artifact 和 Documents 文本读取与编辑，超出预览阈值的正文截断并只读 |
+| Log display limit | 512 KiB | 64 KiB～8 MiB；限制 Log Viewer 保留的近期 UTF-8 日志文本大小，不改变 Client 磁盘日志 |
+
+两项文本上限均以 KiB（1024 字节）计。Log Viewer 按 UTF-8 字节大小保留最新的完整字符，避免截断多字节字符。
 
 Web 使用 `GET /api/server/preferences` 读取，`PUT /api/server/preferences` 保存完整设置对象。设置存入 Server 的 SQLite `settings` 表；文件冲突行为在 Web 发起操作前读取，预览限制由 Server 实际读取时生效，Log Viewer 在打开时取得当前显示长度。Server 维护、监听器及其他服务管理仍使用各自的既有入口。
 

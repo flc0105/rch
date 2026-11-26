@@ -35,7 +35,7 @@ test('Build and Bind connection dialogs expose distinct TCP and mTLS options', (
 test('Identity layout keeps status, creation, actions, and the shared fixed-height scroll contract', () => {
   const view = source('../src/components/SettingsDialog.vue')
   const identitiesTab = view.split('<el-tab-pane label="Identities" name="identities">')[1]
-    .split('<el-tab-pane label="Server" name="server">')[0]
+    .split('<el-tab-pane label="Maintenance" name="server">')[0]
   assert.ok(identitiesTab)
   assert.doesNotMatch(view, /settings-dialog--identities/)
   assert.match(view, /\.identity-panel\s*\{[^}]*flex:\s*0 0 auto\s*;/)

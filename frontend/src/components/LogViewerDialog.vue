@@ -47,7 +47,7 @@
       </div>
       <div class="log-viewer-status">
         <span>{{ statusLabel }}</span>
-        <span>UTF-8 · Up to {{ Math.round(displayMaxChars / 1024) }} Ki characters displayed</span>
+        <span>UTF-8 · Up to {{ Math.round(displayMaxBytes / 1024) }} KiB displayed</span>
       </div>
     </div>
     <RemoteFilePicker
@@ -65,6 +65,7 @@
 import { ElMessage } from 'element-plus'
 import RemoteFilePicker from './RemoteFilePicker.vue'
 import { loadServerPreferences } from '../api/serverPreferencesApi.js'
+import { retainRecentUtf8Bytes } from '../utils/utf8Text.js'
 
 
 export default {
@@ -83,7 +84,7 @@ export default {
       title: '',
       pickerVisible: false,
       streaming: true,
-      displayMaxChars: 512 * 1024,
+      displayMaxBytes: 512 * 1024,
       follow: true,
       wrap: true,
       search: '',
@@ -229,10 +230,10 @@ export default {
     },
     async loadDisplayLimit() {
       try {
-        const value = (await loadServerPreferences()).log_viewer_max_chars
+        const value = (await loadServerPreferences()).log_viewer_max_bytes
         if (Number.isInteger(value) && value >= 65536) {
-          this.displayMaxChars = value
-          this.content = this.content.slice(-value)
+          this.displayMaxBytes = value
+          this.content = retainRecentUtf8Bytes(this.content, value)
         }
       } catch (_) {
         // The default limit remains usable when preferences are unavailable.
@@ -280,9 +281,9 @@ export default {
       const data = payload.data || {}
       this.fileExists = data.exists !== false
       if (data.reset) this.content += '\n— Log file rotated or truncated —\n'
-      this.content = this.content.slice(-this.displayMaxChars)
+      this.content = retainRecentUtf8Bytes(this.content, this.displayMaxBytes)
       if (data.content) {
-        this.content = (this.content + String(data.content)).slice(-this.displayMaxChars)
+        this.content = retainRecentUtf8Bytes(this.content + String(data.content), this.displayMaxBytes)
         if (this.follow) this.$nextTick(() => this.scrollToBottom())
       }
       this.error = ''

@@ -18,7 +18,7 @@ def test_server_preference_defaults(preferences):
     assert preferences.read() == {
         'ask_on_conflict': False,
         'preview_text_max_bytes': 524288,
-        'log_viewer_max_chars': 524288,
+        'log_viewer_max_bytes': 524288,
     }
 
 
@@ -26,7 +26,7 @@ def test_server_preferences_persist_and_reload(preferences):
     expected = {
         'ask_on_conflict': True,
         'preview_text_max_bytes': 1024 * 1024,
-        'log_viewer_max_chars': 128 * 1024,
+        'log_viewer_max_bytes': 128 * 1024,
     }
     assert preferences.save(expected) == expected
     assert preferences.read() == expected
@@ -37,8 +37,8 @@ def test_server_preferences_persist_and_reload(preferences):
     {'ask_on_conflict': 'yes'},
     {'preview_text_max_bytes': 65535},
     {'preview_text_max_bytes': 8388609},
-    {'log_viewer_max_chars': 2.5},
-    {'log_viewer_max_chars': True},
+    {'log_viewer_max_bytes': 2.5},
+    {'log_viewer_max_bytes': True},
 ])
 def test_server_preferences_reject_invalid_types_and_ranges(preferences, invalid):
     payload = preferences.read()

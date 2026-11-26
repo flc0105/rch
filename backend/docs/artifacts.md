@@ -86,7 +86,7 @@ Job ↔ Artifact 的正式关联是 `background_job_files(job_id, artifact_id)`�
 | `/api/artifacts/command-output/save` | 用 `output_kind=command/script/job` 选择文件名，`output_format=text/json` 选择内容格式；Saved 的 `category` 由保存入口决定 |
 | `/api/artifacts/{id}/send-to-client` | 仅 Shared Files 可提交设备下发任务 |
 
-预览会使用文件签名识别图片、ZIP 和文本；文本查看默认有 512 KiB 预览上限（Settings → Server Preferences 可调整），大于上限时不允许直接编辑覆盖。ZIP 预览使用 `zip-peek`、`zip-entry` 读取结构和条目，不解压覆盖原文件。Remote Files 的 Preview 是独立的临时下载行为，在请求携带当前 `X-Tab-Id` 后，会显示在当前标签页的 Transfer Center Recent 中；这类普通预览仍不自动制造长期 Activity 下载记录。
+预览会使用文件签名识别图片、ZIP 和文本；文本查看默认有 512 KiB 预览上限（Settings → Preferences 可调整），大于上限时不允许直接编辑覆盖。ZIP 预览使用 `zip-peek`、`zip-entry` 读取结构和条目，不解压覆盖原文件。Remote Files 的 Preview 是独立的临时下载行为，在请求携带当前 `X-Tab-Id` 后，会显示在当前标签页的 Transfer Center Recent 中；这类普通预览仍不自动制造长期 Activity 下载记录。
 
 ## SDK 与来源分类
 
