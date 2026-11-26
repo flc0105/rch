@@ -891,7 +891,7 @@ import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } f
 import {ElMessage, ElMessageBox} from 'element-plus'
 import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
-import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
+import { formatTerminalCommandFinishedLine, TERMINAL_REMOTE_UPLOAD_PREFIX } from '../composables/terminalMarkers.js'
 import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
 import RemoteFilePicker from './RemoteFilePicker.vue'
@@ -899,8 +899,8 @@ import DragUploadDialog from './DragUploadDialog.vue'
 import { flattenUploadAttachments } from '../utils/browserFileEntries.js'
 import { promptCreateRemoteFolder } from '../utils/remoteFolderCreation.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
-import { uploadRemoteFileToClient, finalizeBrowserUploadBatch } from '../api/transferApi.js'
-import { preparePasteConflicts, prepareExtractConflict, prepareUploadConflict } from '../utils/remoteFileConflicts.js'
+import { uploadRemoteFileToClient, startBrowserUploadBatch, finalizeBrowserUploadBatch, isBrowserUploadBatchCancelled } from '../api/transferApi.js'
+import { conflictsEnabled, preparePasteConflicts, prepareExtractConflict, prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { sendCommand } from '../api/connectionsApi.js'
 
 
@@ -1300,56 +1300,103 @@ export default {
       }
       if (!plan.directories.length && !plan.files.length) return
 
+      // A lone file uses the original Upload workflow, not a Batch parent.
+      if (plan.directories.length === 0 && plan.files.length === 1) {
+        const uploaded = await this.handleUploadChange({ target: { files: [plan.files[0].file] } })
+        if (uploaded) {
+          this.dragUploadVisible = false
+          await this.refreshRemoteDirectory()
+        }
+        return
+      }
+
       const context = this.captureRemoteFilesContext()
       const root = this.remoteFilesCurrentPath
       if (!context.clientId || !root) return
       const stillActive = () => this.isRemoteFilesContextActive(context) && this.remoteFilesCurrentPath === root
-      const batchId = createTerminalOperation({ kind: 'transfer', action: 'upload_files',
-        clientId: context.clientId }).operation_id
+      const operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files',
+        clientId: context.clientId })
+      const batchId = operation.operation_id
       const headers = { ...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui',
         'X-RCH-Feature': 'remote_files' }
       let started = 0
       let batchError = ''
+      let batchStarted = false
+      let readyFolders = 0
+      let queue = []
       this.dragUploadLoading = true
       try {
-        for (const dir of plan.directories) {
+        if (plan.files.length > 1000 || plan.directories.length > 10000) throw new Error('Invalid upload batch size')
+        // Inspect existing destinations before creating folders or starting transfers.
+        const askOnConflict = await conflictsEnabled()
+        const existingDirectories = new Map()
+        for (const entry of plan.files) {
           if (!stillActive()) throw new Error('Remote upload context changed')
-          await this.ensureUploadRemoteDirectory(context.clientId, this.joinUploadRemotePath(root, dir))
-        }
-        for (const [index, { file, relativePath }] of plan.files.entries()) {
-          if (!stillActive()) throw new Error('Remote upload context changed')
-          const parent = relativePath.split('/').slice(0, -1).join('/')
+          const parent = entry.relativePath.split('/').slice(0, -1).join('/')
           const destinationDir = parent ? this.joinUploadRemotePath(root, parent) : root
-          const conflictPolicy = await prepareUploadConflict(context.clientId, destinationDir, file.name)
-          if (conflictPolicy === false) throw new Error(`Upload cancelled: ${relativePath}`)
-          const result = await uploadRemoteFileToClient({
+          if (parent && askOnConflict && !existingDirectories.has(destinationDir)) {
+            const response = await listRemoteDirectory(context.clientId, { path: destinationDir, page: 1, pageSize: 1 })
+            const result = await response.json()
+            existingDirectories.set(destinationDir, response.ok && result.code === 0)
+          }
+          const policy = parent && askOnConflict && !existingDirectories.get(destinationDir) ? 'stop'
+            : await prepareUploadConflict(context.clientId, destinationDir, entry.file.name, { allowSkip: true, promptEnabled: askOnConflict })
+          if (policy === false) throw new Error(`Upload stopped: ${entry.relativePath}`)
+          if (policy !== 'skip') queue.push({ file: entry.file, destinationDir, policy })
+        }
+        if (!queue.length && !plan.directories.length) {
+          if (stillActive()) {
+            this.dragUploadVisible = false
+            ElMessage.info(`Skipped ${plan.files.length} file(s)`)
+          }
+          return
+        }
+        await startBrowserUploadBatch({ clientId: context.clientId, batchId, destinationPath: root,
+          totalFiles: queue.length, folderCount: plan.directories.length }, headers)
+        batchStarted = true
+        this.$emit('append-output', context.clientId,
+          `> ${TERMINAL_REMOTE_UPLOAD_PREFIX} ${queue.length} file(s) -> ${root}`, 'command', { operation })
+        for (const dir of plan.directories) {
+          if (!stillActive() || isBrowserUploadBatchCancelled(batchId)) throw new Error('Remote upload stopped')
+          await this.ensureUploadRemoteDirectory(context.clientId, this.joinUploadRemotePath(root, dir))
+          readyFolders++
+        }
+        for (const [index, { file, destinationDir, policy }] of queue.entries()) {
+          if (isBrowserUploadBatchCancelled(batchId)) throw new Error('Browser upload was cancelled')
+          if (!stillActive()) throw new Error('Remote upload context changed')
+          await uploadRemoteFileToClient({
             file, clientId: context.clientId, destinationPath: destinationDir,
-            conflictPolicy, headers, batchId, batchTotal: plan.files.length, batchIndex: index,
+            conflictPolicy: policy, headers, batchId, batchTotal: queue.length, batchIndex: index,
             onStarted: () => {
               if (index === 0) showTransferStartedToast(
-                `Upload started: ${plan.files.length} file(s)`, this.openTransferCenterFromToast)
+                `Upload started: ${queue.length} file(s)`, this.openTransferCenterFromToast)
             },
           })
           started++
-          if (index === plan.files.length - 1) {
-            this.$emit('upload-started', { taskId: result.task_id || '', clientId: context.clientId,
-              path: destinationDir, source: 'remote_files_drag_upload' })
-          }
         }
         if (stillActive()) {
           this.dragUploadVisible = false
           await this.refreshRemoteDirectory()
-          ElMessage.success(`Started ${started} file transfer(s), ${plan.directories.length} folder(s) ready`)
+          ElMessage.success(`Started ${started} file transfer(s), ${readyFolders} folder(s) ready${plan.files.length > queue.length ? `, ${plan.files.length - queue.length} skipped` : ''}`)
         }
       } catch (error) {
         batchError = error.message || 'Upload failed'
-        if (stillActive()) ElMessage.error(`${error.message || 'Upload failed'} (${started}/${plan.files.length} started)`)
+        if (!batchStarted) {
+          const title = `${TERMINAL_REMOTE_UPLOAD_PREFIX} ${plan.files.length} file(s) -> ${root}`
+          this.$emit('append-output', context.clientId, `> ${title}`, 'command', { operation })
+          this.$emit('append-output', context.clientId,
+            formatTerminalCommandFinishedLine(title, `Failed: ${batchError}`), 'error', {
+              operation_id: operation.operation_id, event_type: 'completed',
+              execution_status: 'failed', execution_success: false,
+            })
+        }
+        if (stillActive()) ElMessage.error(`${batchError} (${started}/${queue.length || plan.files.length} started)`)
       } finally {
-        if (plan.files.length) {
+        if (batchStarted) {
           try {
             await finalizeBrowserUploadBatch({
-              clientId: context.clientId, batchId, folderCount: plan.directories.length,
-              error: batchError || (started < plan.files.length ? 'Incomplete upload batch' : ''),
+              clientId: context.clientId, batchId, folderCount: readyFolders,
+              error: batchError || (started < queue.length ? 'Incomplete upload batch' : ''),
             }, headers)
           } catch (error) {
             if (stillActive()) ElMessage.error(error.message || 'Failed to finalize upload batch')
@@ -1384,7 +1431,7 @@ export default {
         if (conflictPolicy === false || String(this.remoteFilesClientId || '') !== clientId || this.remoteFilesCurrentPath !== rootPath) return false
         operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
           invocation: { source: 'remote_files', filename: file.name, destination: targetPath }, replay: null })
-        this.$emit('append-output', clientId, `> [Remote Upload] ${file.name} -> ${targetPath}`,
+        this.$emit('append-output', clientId, `> ${TERMINAL_REMOTE_UPLOAD_PREFIX} ${file.name} -> ${targetPath}`,
           'command', { operation })
         const result = await uploadRemoteFileToClient({
           file, clientId, destinationPath: targetPath, conflictPolicy,
@@ -1417,7 +1464,7 @@ export default {
           return false
         }
         const failedDuringPreflight = !operation
-        const title = `[Remote Upload] ${file.name} -> ${targetPath}`
+        const title = `${TERMINAL_REMOTE_UPLOAD_PREFIX} ${file.name} -> ${targetPath}`
         if (failedDuringPreflight) {
           operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
             invocation: { source: 'remote_files', filename: file.name, destination: targetPath }, replay: null })

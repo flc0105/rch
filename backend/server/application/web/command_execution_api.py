@@ -1,3 +1,4 @@
+from server.application.execution.upload_execution_service import UploadExecutionService
 from core.protocol.control import ControlDomain, ConfigurationAction, WatchdogAction
 
 
@@ -122,6 +123,20 @@ class WebCommandExecutionApi:
     def cancel_web_task(self, task_id: str):
         return self.task_service.cancel_web_task(self._normalize_task_id(task_id))
 
+    def submit_web_upload_batch(self, batch):
+        batch_id = batch['batch_id']
+        display_name = f"{batch['total_files']} file(s) -> {batch['destination_path']}"
+        self.remote_execution_service.open_browser_upload_batch(batch_id)
+        try:
+            return self.task_service.submit_web_upload(
+                batch['client_id'], '', display_name, batch['destination_path'],
+                tab_id=batch['tab_id'], transfer_id=batch['transfer_id'],
+                operation_id=batch_id, batch_id=batch_id,
+                command=UploadExecutionService.format_display_command(display_name))
+        except Exception:
+            self.remote_execution_service.close_browser_upload_batch(batch_id)
+            raise
+
     def submit_web_upload(
         self,
         client_id: str,
@@ -132,8 +147,14 @@ class WebCommandExecutionApi:
         transfer_id: str = '',
         conflict_policy=None,
         operation_id: str = '',
+        batch_id: str = '',
     ):
         upload_payload = self._normalize_upload_payload(local_path, display_name, remote_path)
+        if batch_id:
+            return self.remote_execution_service.enqueue_browser_upload(
+                batch_id, self._normalize_client_id(client_id), upload_payload['local_path'],
+                display_name=upload_payload['display_name'], remote_path=upload_payload['remote_path'],
+                tab_id=tab_id, transfer_id=transfer_id, conflict_policy=conflict_policy)
         return self.task_service.submit_web_upload(
             self._normalize_client_id(client_id),
             upload_payload['local_path'],
@@ -143,4 +164,5 @@ class WebCommandExecutionApi:
             transfer_id=(transfer_id or '').strip(),
             conflict_policy=conflict_policy,
             operation_id=operation_id,
+            command=UploadExecutionService.format_display_command(upload_payload["display_name"]),
         )

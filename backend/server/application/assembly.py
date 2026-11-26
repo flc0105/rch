@@ -376,6 +376,7 @@ class ServerApplicationAssembly:
         self.transfer_api = WebTransferApi(
             transfer_service=self.transfer_service,
             server=self.server,
+            command_execution_api=self.command_execution_api,
         )
 
         self._wire_cross_dependencies()

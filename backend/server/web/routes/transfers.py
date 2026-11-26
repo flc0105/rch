@@ -42,6 +42,25 @@ def create_transfers_blueprint(server_instance):
 
         return responder.json_endpoint(_execute, default_error_status=500)
 
+    @blueprint.post('/api/transfers/browser-upload-batch/start')
+    def start_browser_upload_batch():
+        def _execute():
+            payload = get_json_payload()
+            return transfer_api.start_browser_upload_batch(
+                client_id=payload.get('client_id') or '',
+                batch_id=payload.get('batch_id') or '',
+                tab_id=get_optional_tab_id(),
+                destination_path=payload.get('destination_path') or '',
+                total_files=payload.get('total_files') or 0,
+                folder_count=payload.get('folder_count') or 0,
+            )
+        return responder.json_endpoint(_execute, default_error_status=500)
+
+    @blueprint.get('/api/transfers/batches/<batch_id>/items')
+    def get_batch_items(batch_id):
+        return responder.json_endpoint(lambda: transfer_api.get_batch_members(
+            batch_id, tab_id=get_optional_tab_id()), default_error_status=500)
+
     @blueprint.post('/api/transfers/browser-upload-batch/finalize')
     def finalize_browser_upload_batch():
         def _execute():

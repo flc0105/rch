@@ -75,6 +75,7 @@ ADDITIONAL_SCHEMA_STATEMENTS = (
                 ON keychain_entries(machine_id, name COLLATE NOCASE)""",
     """CREATE TABLE IF NOT EXISTS transfer_records (
                 transfer_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL DEFAULT '',
                 client_id TEXT NOT NULL DEFAULT '',
                 hostname TEXT NOT NULL DEFAULT '',
                 direction TEXT NOT NULL,
@@ -90,7 +91,22 @@ ADDITIONAL_SCHEMA_STATEMENTS = (
                 started_at TEXT NOT NULL,
                 completed_at TEXT NOT NULL DEFAULT ''
             )""",
+    """CREATE TABLE IF NOT EXISTS transfer_batches (
+                batch_id TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                tab_id TEXT NOT NULL,
+                destination_path TEXT NOT NULL DEFAULT '',
+                total_files INTEGER NOT NULL,
+                folder_count INTEGER NOT NULL DEFAULT 0,
+                state TEXT NOT NULL DEFAULT 'running',
+                submission_closed INTEGER NOT NULL DEFAULT 0,
+                error TEXT NOT NULL DEFAULT '',
+                started_at TEXT NOT NULL,
+                completed_at TEXT NOT NULL DEFAULT ''
+            )""",
     """CREATE INDEX IF NOT EXISTS idx_transfer_records_time ON transfer_records(started_at DESC, transfer_id DESC)""",
+    """CREATE INDEX IF NOT EXISTS idx_transfer_records_batch ON transfer_records(batch_id, started_at DESC)""",
+    """CREATE INDEX IF NOT EXISTS idx_transfer_batches_time ON transfer_batches(started_at DESC, batch_id DESC)""",
 )
 
 # Canonical persisted schema. Database initialization never rewrites existing records.

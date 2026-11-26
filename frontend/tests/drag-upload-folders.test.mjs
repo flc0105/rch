@@ -86,6 +86,12 @@ test('Shared Files submits one multipart batch for nested folders and 100 files'
 })
 
 function vueComponent(file, env = {}) {
+  env = { TERMINAL_REMOTE_UPLOAD_PREFIX: '[Remote Upload]',
+    formatTerminalCommandFinishedLine: (command, result) => `[Command finished] ${command} (${result})`,
+    conflictsEnabled: async () => true,
+    isBrowserUploadBatchCancelled: () => false,
+    listRemoteDirectory: async () => ({ ok: false, json: async () => ({ code: 1 }) }),
+    ...env }
   const script = read(`../src/components/${file}.vue`).match(/<script>([\s\S]*?)<\/script>/)[1]
   return vm.runInNewContext(`(${script.replace(/^import .*$/gm, '').replace('export default', '')})`, env)
 }
@@ -131,6 +137,7 @@ test('Remote drag upload submits every file to Windows/POSIX subpaths in one bat
     createTerminalOperation: () => ({ operation_id: 'one-batch' }),
     operationHeaders: (_op, headers) => headers,
     showTransferStartedToast: () => {},
+    startBrowserUploadBatch: async () => ({}),
     finalizeBrowserUploadBatch: async (args, headers) => { finalized.push({ ...plain(args), headers: plain(headers) }) },
     makeRemoteDirectory: async (_, path) => { created.push(path); return { ok: true, json: async () => ({ code: 0 }) } },
     prepareUploadConflict: async () => 'stop',
@@ -153,7 +160,8 @@ test('Remote drag upload submits every file to Windows/POSIX subpaths in one bat
     await ui.handleDragUpload([{ kind: 'directory', name: 'docs', directories: ['docs', 'docs/inner'], files: items }])
     assert.equal(ui.dragUploadVisible, false)
     assert.equal(ui.dragUploadLoading, false)
-    assert.equal(events.filter(x => x[0] === 'upload-started').length, 1)
+    assert.equal(events.filter(x => x[0] === 'append-output').length, 1)
+    assert.match(events.find(x => x[0] === 'append-output')?.[2] || '', /\[Remote Upload\] 100 file\(s\)/)
   }
   assert.deepEqual(created, ['/root/docs', '/root/docs/inner', 'C:\\root\\docs', 'C:\\root\\docs\\inner'])
   assert.equal(transferred.length, 200)
@@ -177,6 +185,7 @@ test('Remote directory reuse validates existing path; a failed batch leaves sele
     listRemoteDirectory: async (_, req) => { calls.push(req.path); return { ok: true, json: async () => ({ code: 0, data: { current_path: req.path } }) } },
     prepareUploadConflict: async () => 'stop',
     uploadRemoteFileToClient: async () => { throw Error('Network failed') },
+    startBrowserUploadBatch: async () => ({}),
     finalizeBrowserUploadBatch: async (args) => { finalized.push(plain(args)) },
     ElMessage: { success() {}, warning() {}, error(error) { errors.push(error) } },
   })
@@ -187,7 +196,7 @@ test('Remote directory reuse validates existing path; a failed batch leaves sele
   await ui.handleDragUpload([{ kind: 'directory', name: 'existing', directories: ['existing'], files: [
     { relativePath: 'existing/file', file: { name: 'file' } },
   ] }])
-  assert.deepEqual(calls, ['/root/existing'])
+  assert.deepEqual(calls, ['/root/existing', '/root/existing'])
   assert.equal(ui.dragUploadVisible, true)
   assert.equal(ui.dragUploadLoading, false)
   assert.match(errors[0], /Network failed/)
@@ -238,7 +247,7 @@ test('Remote batch stages all 100 browser uploads through the real Transfer API 
     flattenUploadAttachments, createTerminalOperation: () => ({ operation_id: 'real-transfer-batch' }),
     makeRemoteDirectory: async () => ({ ok: true, json: async () => ({ code: 0 }) }),
     prepareUploadConflict: async () => 'stop', uploadRemoteFileToClient: api.uploadRemoteFileToClient,
-    finalizeBrowserUploadBatch: async () => {},
+    startBrowserUploadBatch: async () => ({}),
     showTransferStartedToast: () => {}, finalizeBrowserUploadBatch: async () => {},
     ElMessage: { success() {}, warning() {}, error(e) { throw Error(e) } },
   })
@@ -275,4 +284,104 @@ test('batch finalization uses one server call carrying the tab and batch identit
     headers: { 'Content-Type': 'application/json', 'X-Tab-Id': 'tab-1' },
     body: { client_id: 'client-1', batch_id: 'batch-123', folder_count: 2, error: '' },
   }])
+})
+
+test('dragging a single loose file uses the original Upload handler without a Batch', async () => {
+  const events = []
+  const c = vueComponent('RemoteFilesDialog', {
+    RemotePinsDialog: {}, RemoteFilePicker: {}, DragUploadDialog: {}, MoreFilled: {}, OPEN_TRANSFER_CENTER_KEY: 'x',
+    flattenUploadAttachments,
+    startBrowserUploadBatch: () => { throw Error('Single file must not create a Batch') },
+    ElMessage: { warning() {}, error(e) { throw Error(e) } },
+  })
+  const ui = instance(c, {
+    visible: true, dragUploadVisible: true, remoteFilesClientId: 'client',
+    remoteFilesCurrentPath: '/target',
+    async handleUploadChange(input) {
+      events.push(['upload', input.target.files[0].name]); return true
+    },
+    async refreshRemoteDirectory() { events.push(['refresh']) },
+  })
+  await ui.handleDragUpload([{ kind: 'file', name: 'one.png', file: { name: 'one.png' } }])
+  assert.deepEqual(events, [['upload', 'one.png'], ['refresh']])
+  assert.equal(ui.dragUploadVisible, false)
+})
+
+test('batch conflicts reuse Skip, Keep Both and Stop decisions before creating transfers', async () => {
+  const order = []
+  const c = vueComponent('RemoteFilesDialog', {
+    RemotePinsDialog: {}, RemoteFilePicker: {}, DragUploadDialog: {}, MoreFilled: {}, OPEN_TRANSFER_CENTER_KEY: 'x',
+    flattenUploadAttachments, createTerminalOperation: () => ({ operation_id: 'conflict-batch' }),
+    startBrowserUploadBatch: async args => order.push(['start', args.totalFiles]),
+    finalizeBrowserUploadBatch: async args => order.push(['finalize', args.error]),
+    prepareUploadConflict: async (_client, _target, name, options) => {
+      assert.equal(options.allowSkip, true)
+      return name === 'skip.txt' ? 'skip' : name === 'copy.txt' ? 'keep_both' : 'stop'
+    },
+    uploadRemoteFileToClient: async args => order.push(['file', args.file.name, args.conflictPolicy]),
+    showTransferStartedToast: () => {},
+    ElMessage: { success() {}, warning() {}, error(e) { throw Error(e) } },
+  })
+  const ui = instance(c, {
+    visible: true, remoteFilesClientId: 'client', remoteFilesCurrentPath: '/root', dragUploadVisible: true,
+    getTabScopedHeaders: () => ({ 'X-Tab-Id': 'tab' }), $emit: () => {},
+    async refreshRemoteDirectory() {},
+  })
+  const files = ['skip.txt', 'copy.txt', 'new.txt'].map(name => ({ file: { name }, relativePath: name }))
+  await ui.handleDragUpload(files.map(({ file }) => ({ kind: 'file', name: file.name, file })))
+  assert.deepEqual(order, [
+    ['start', 2], ['file', 'copy.txt', 'keep_both'], ['file', 'new.txt', 'stop'], ['finalize', ''],
+  ])
+
+  order.length = 0
+  const stopUi = instance(c, {
+    visible: true, remoteFilesClientId: 'client', remoteFilesCurrentPath: '/root', dragUploadVisible: true,
+    getTabScopedHeaders: () => ({ 'X-Tab-Id': 'tab' }), $emit: () => {},
+    async refreshRemoteDirectory() {},
+  })
+  // A cancelled or Stop decision aborts the entire submission before any transfer starts.
+  const stopErrors = []
+  const stopOutput = []
+  const stopComponent = vueComponent('RemoteFilesDialog', {
+    RemotePinsDialog: {}, RemoteFilePicker: {}, DragUploadDialog: {}, MoreFilled: {}, OPEN_TRANSFER_CENTER_KEY: 'x',
+    flattenUploadAttachments, createTerminalOperation: () => ({ operation_id: 'stop-batch' }),
+    prepareUploadConflict: async () => false,
+    startBrowserUploadBatch: () => { throw Error('should not create a batch') },
+    ElMessage: { success() {}, warning() {}, error(e) { stopErrors.push(e) } },
+  })
+  for (const [key, fn] of Object.entries(stopComponent.methods)) stopUi[key] = fn.bind(stopUi)
+  stopUi.$emit = (event, ...args) => stopOutput.push([event, ...args])
+  await stopUi.handleDragUpload(files.map(({ file }) => ({ kind: 'file', name: file.name, file })))
+  assert.equal(order.length, 0)
+  assert.match(stopErrors[0], /Upload stopped/)
+  assert.equal(stopOutput.filter(row => row[0] === 'append-output').length, 2)
+  assert.match(stopOutput[1][2], /Failed: Upload stopped/)
+  assert.equal(stopOutput[1][4].execution_status, 'failed')
+})
+
+test('shared conflict policy resolver retains Skip for batches and Stop for cancellation', async () => {
+  const source = read('../src/utils/remoteFileConflicts.js')
+  const expectData = source.match(/async function expectData\(response, label\) \{[\s\S]*?\n\}/)?.[0]
+  const prepareUpload = source.match(/export async function prepareUploadConflict\([\s\S]*?\n\}/)?.[0]
+  assert.ok(expectData && prepareUpload)
+  let answer = 'skip'
+  let inspectCount = 0
+  const resolve = vm.runInNewContext(`(() => { ${expectData}\n${prepareUpload.replace('export ', '')}\nreturn prepareUploadConflict })()`, {
+    conflictsEnabled: async () => true,
+    isBrowserUploadBatchCancelled: () => false,
+    listRemoteDirectory: async () => ({ ok: false, json: async () => ({ code: 1 }) }),
+    inspectRemoteUpload: async () => {
+      inspectCount++
+      return { ok: true, json: async () => ({ code: 0, data: { conflicts: [{ target: '/dest/file', allowed_actions: ['stop', 'skip', 'keep_both'] }] } }) }
+    },
+    chooseConflict: async () => answer,
+  })
+  assert.equal(await resolve('client', '/dest', 'file', { allowSkip: true }), 'skip')
+  assert.equal(await resolve('client', '/dest', 'file'), false)
+  answer = 'keep_both'
+  assert.equal(await resolve('client', '/dest', 'file', { allowSkip: true }), 'keep_both')
+  answer = 'stop'
+  assert.equal(await resolve('client', '/dest', 'file', { allowSkip: true }), false)
+  assert.equal(await resolve('client', '/dest', 'file', { promptEnabled: false }), 'stop')
+  assert.equal(inspectCount, 4)
 })

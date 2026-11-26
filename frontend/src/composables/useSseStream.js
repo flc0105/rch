@@ -107,6 +107,7 @@ export default {
 
         upsertTransferItem(transfer) {
             if (!transfer || typeof transfer !== 'object' || !transfer.transfer_id) return;
+            if (transfer.batch_id && !transfer.is_batch) return;
             const matchesMachine = !this.transferMachineId || (this.connections || []).some(item =>
                 item?.machine_id === this.transferMachineId && item?.client_id === transfer.client_id);
             const current = Array.isArray(this.transferItems) ? this.transferItems : [];
@@ -229,6 +230,8 @@ export default {
             es.addEventListener('open', () => {
                 if (this.sseDisconnected) {
                     ElNotification({ title: 'Realtime connected', type: 'success', duration: 2500 });
+                    void this.loadTransferItems();
+                    void this.$refs.transferCenterDrawerRef?.refreshBatchDetails?.();
                 }
                 this.sseDisconnected = false;
                 this.sseReady = true;
@@ -311,6 +314,11 @@ export default {
             es.addEventListener('transfer_updated', (event) => {
                 const payload = JSON.parse(event.data || '{}');
                 this.upsertTransferItem(payload);
+                this.$refs.transferCenterDrawerRef?.handleTransferChildUpdate?.(payload);
+            });
+
+            es.addEventListener('transfer_batch_updated', (event) => {
+                this.upsertTransferItem(JSON.parse(event.data || '{}'));
             });
 
             es.addEventListener('connection_online', (event) => {

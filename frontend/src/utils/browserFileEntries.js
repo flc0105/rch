@@ -80,5 +80,12 @@ export function flattenUploadAttachments(attachments) {
       files.push({ file: item.file, relativePath: parts[0] })
     }
   }
+  const filePaths = new Set()
+  for (const { file, relativePath } of files) {
+    if (file.name !== relativePath.split('/').at(-1) || filePaths.has(relativePath) || directories.has(relativePath)) {
+      throw new Error('Invalid or duplicate upload path')
+    }
+    filePaths.add(relativePath)
+  }
   return { directories: [...directories].sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b)), files }
 }

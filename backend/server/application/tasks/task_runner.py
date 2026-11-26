@@ -1,6 +1,4 @@
 import logging
-import os
-import shutil
 import threading
 from datetime import datetime
 
@@ -355,51 +353,11 @@ class WebTaskRunner:
             tab_id=self._get_task_tab_id(context),
             transfer_id=context.metadata.get('transfer_id') or '',
             conflict_policy=context.metadata.get('conflict_policy'),
+            batch_id=context.metadata.get('batch_id') or '',
         )
 
     def _release_task(self, context: TaskExecutionContext) -> None:
         context.session.release_foreground_task(task_id=context.task_id, command=context.command)
-
-    # def _cleanup_upload_local_temp(self, context: TaskExecutionContext):
-    #     local_path = context.metadata.get('local_path') or ''
-    #     upload_tmp_dir = context.metadata.get('upload_tmp_dir') or ''
-    #
-    #     try:
-    #         if os.path.exists(local_path):
-    #             os.remove(local_path)
-    #         parent_dir = os.path.dirname(local_path)
-    #         if upload_tmp_dir and parent_dir.startswith(upload_tmp_dir) and os.path.isdir(parent_dir):
-    #             shutil.rmtree(parent_dir, ignore_errors=True)
-    #     except Exception:
-    #         pass
-
-    def _is_under_directory(self, path: str, directory: str) -> bool:
-        if not path or not directory:
-            return False
-
-        try:
-            abs_path = os.path.abspath(path)
-            abs_dir = os.path.abspath(directory)
-            return os.path.commonpath([abs_path, abs_dir]) == abs_dir
-        except Exception:
-            return False
-
-    def _cleanup_upload_local_temp(self, context: TaskExecutionContext):
-        local_path = context.metadata.get('local_path') or ''
-        upload_tmp_dir = context.metadata.get('upload_tmp_dir') or ''
-
-        # 只清理浏览器上传暂存区，避免误删 shared_files 等永久文件。
-        if not self._is_under_directory(local_path, upload_tmp_dir):
-            return
-
-        try:
-            if os.path.exists(local_path):
-                os.remove(local_path)
-            parent_dir = os.path.dirname(local_path)
-            if self._is_under_directory(parent_dir, upload_tmp_dir) and os.path.isdir(parent_dir):
-                shutil.rmtree(parent_dir, ignore_errors=True)
-        except Exception:
-            pass
 
     def run_command_task(self, context: TaskExecutionContext):
         try:
@@ -414,8 +372,4 @@ class WebTaskRunner:
             self._release_task(context)
 
     def run_upload_task(self, context: TaskExecutionContext):
-        try:
-            self._run_task_events(context, self._iter_upload_events(context))
-        finally:
-            # Web upload 已迁到 Client TransferManager，不占 foreground task。
-            self._cleanup_upload_local_temp(context)
+        self._run_task_events(context, self._iter_upload_events(context))

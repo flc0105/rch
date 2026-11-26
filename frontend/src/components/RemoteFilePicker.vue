@@ -221,7 +221,7 @@ import { listRemoteDirectory, getRemoteSystemPaths } from '../api/remoteFilesApi
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
-import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
+import { formatTerminalCommandFinishedLine, TERMINAL_REMOTE_UPLOAD_PREFIX } from '../composables/terminalMarkers.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import { uploadRemoteFileToClient } from '../api/transferApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
@@ -598,7 +598,7 @@ export default {
         if (conflictPolicy === false || String(this.selectedId || '') !== clientId || this.remoteFilesCurrentPath !== destinationPath) return
         operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
           invocation: { source: 'remote_file_picker', filename: file.name, destination: destinationPath }, replay: null })
-        this.$emit('append-output', clientId, `> [Remote Upload] ${file.name} -> ${destinationPath}`,
+        this.$emit('append-output', clientId, `> ${TERMINAL_REMOTE_UPLOAD_PREFIX} ${file.name} -> ${destinationPath}`,
           'command', { operation })
         const result = await uploadRemoteFileToClient({
           file, clientId, destinationPath, conflictPolicy,
@@ -623,7 +623,7 @@ export default {
           return
         }
         const failedDuringPreflight = !operation
-        const title = `[Remote Upload] ${file.name} -> ${destinationPath}`
+        const title = `${TERMINAL_REMOTE_UPLOAD_PREFIX} ${file.name} -> ${destinationPath}`
         if (failedDuringPreflight) {
           operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
             invocation: { source: 'remote_file_picker', filename: file.name, destination: destinationPath }, replay: null })

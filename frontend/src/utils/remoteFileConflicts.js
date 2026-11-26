@@ -73,11 +73,11 @@ export async function prepareExtractConflict(clientId, request) {
   return { conflict_policy: answer }
 }
 
-export async function prepareUploadConflict(clientId, destinationDir, filename) {
-  if (!await conflictsEnabled()) return 'stop'
+export async function prepareUploadConflict(clientId, destinationDir, filename, { allowSkip = false, promptEnabled = null } = {}) {
+  if (!(promptEnabled === null ? await conflictsEnabled() : promptEnabled)) return 'stop'
   const preview = await expectData(await inspectRemoteUpload(clientId, destinationDir, filename), 'Upload conflict inspection')
   const conflicts = preview.conflicts || []
   if (!conflicts.length) return 'stop'
   const answer = await chooseConflict(conflicts[0])
-  return !answer || answer === 'stop' || answer === 'skip' ? false : answer
+  return !answer || answer === 'stop' ? false : (answer === 'skip' && !allowSkip ? false : answer)
 }

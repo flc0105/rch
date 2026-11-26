@@ -2,16 +2,16 @@ import hmac
 import secrets
 import threading
 
-from core.protocol.message_types import MSG_TYPE_TRANSFER_CANCEL
 
 
 class WebTransferApi:
-    def __init__(self, transfer_service, server=None):
+    def __init__(self, transfer_service, server=None, *, command_execution_api=None):
         self.transfer_service = transfer_service
         self.server = server
+        self.command_execution_api = command_execution_api
         self._browser_upload_grant_lock = threading.RLock()
         self._browser_upload_grants = {}
-        self._browser_upload_cancel_events = {}
+        self.transfer_service.terminal_callback = self.clear_browser_upload_runtime
 
     def list_transfers(self, tab_id: str = '', *, limit: int = 20, offset: int = 0,
                        machine_id: str = ''):
@@ -71,7 +71,6 @@ class WebTransferApi:
         transfer_id = str(transfer.get('transfer_id') or '').strip()
         upload_token = secrets.token_urlsafe(32)
         with self._browser_upload_grant_lock:
-            self._browser_upload_cancel_events[transfer_id] = threading.Event()
             self._browser_upload_grants[transfer_id] = {
                 'token': upload_token,
                 'client_id': normalized_client_id,
@@ -80,15 +79,48 @@ class WebTransferApi:
                 'destination_path': str(destination_path or '').strip(),
                 'conflict_policy': conflict_policy if conflict_policy is not None else 'stop',
                 'operation_id': operation_id,
+                'batch_id': batch_id,
                 'tab_id': normalized_tab_id,
             }
 
+        if self.is_browser_upload_cancel_requested(transfer_id):
+            self.clear_browser_upload_runtime(transfer_id)
+            raise ValueError("Upload is no longer active")
         return {
             **transfer,
             'browser_upload_path': f'/api/transfers/browser-upload/{transfer_id}/content',
             'browser_upload_token': upload_token,
             **({'operation_id': operation_id} if operation_id else {}),
         }
+
+    def start_browser_upload_batch(self, *, client_id, batch_id, tab_id,
+                                   destination_path, total_files, folder_count):
+        client_id = str(client_id or '').strip()
+        batch_id = str(batch_id or '').strip()
+        if not client_id or not tab_id or not batch_id or len(batch_id) > 128 or not batch_id.isascii():
+            raise ValueError('Invalid upload batch')
+        total_files = int(total_files)
+        folder_count = int(folder_count)
+        if not (0 <= total_files <= 1000 and 0 <= folder_count <= 10000) or not (total_files or folder_count):
+            raise ValueError('Invalid upload batch size')
+        if self.command_execution_api is None:
+            raise RuntimeError('Upload execution is unavailable')
+        batch = self.transfer_service.start_batch(
+            batch_id=batch_id, client_id=client_id, tab_id=tab_id,
+            destination_path=str(destination_path or '').strip(),
+            total_files=total_files, folder_count=folder_count)
+        try:
+            task = self.command_execution_api.submit_web_upload_batch(batch)
+            if task.get('task_id'):
+                self.transfer_service.bind_batch_task(batch_id, task['task_id'])
+        except Exception as exc:
+            self.transfer_service.finalize_batch(batch_id=batch_id, client_id=client_id,
+                tab_id=tab_id, folder_count=0, error=str(exc))
+            raise
+        return {**batch, **task}
+
+    def get_batch_members(self, batch_id, tab_id=''):
+        return {'items': self.transfer_service.list_batch_members(batch_id, tab_id=tab_id)}
 
     def finalize_browser_upload_batch(self, *, client_id: str, batch_id: str,
                                       tab_id: str, folder_count=0, error: str = ''):
@@ -99,11 +131,9 @@ class WebTransferApi:
         folder_count = int(folder_count)
         if folder_count < 0 or folder_count > 10000:
             raise ValueError('Invalid folder count')
-        self.transfer_service.event_bus.publish('file_transfer_batch_finalized', {
-            'client_id': client_id, 'batch_id': batch_id, 'folder_count': folder_count,
-            'error': str(error or '')[:256],
-        }, target_tab_id=tab_id)
-        return {'batch_id': batch_id}
+        return self.transfer_service.finalize_batch(
+            client_id=client_id, batch_id=batch_id, tab_id=tab_id,
+            folder_count=folder_count, error=str(error or '')[:256])
 
     def consume_browser_upload_grant(self, transfer_id: str, token: str) -> dict | None:
         normalized_id = str(transfer_id or '').strip()
@@ -135,64 +165,20 @@ class WebTransferApi:
             self._browser_upload_grants.pop(normalized_id, None)
 
     def is_browser_upload_cancel_requested(self, transfer_id: str) -> bool:
-        normalized_id = str(transfer_id or '').strip()
-        with self._browser_upload_grant_lock:
-            event = self._browser_upload_cancel_events.get(normalized_id)
-        return bool(event and event.is_set())
+        current = self.transfer_service.get_transfer(transfer_id)
+        return not current or current['state'] != 'running' or current['stage'] == 'cancelling'
 
     def clear_browser_upload_runtime(self, transfer_id: str):
-        normalized_id = str(transfer_id or '').strip()
-        if not normalized_id:
-            return
-        with self._browser_upload_grant_lock:
-            self._browser_upload_grants.pop(normalized_id, None)
-            self._browser_upload_cancel_events.pop(normalized_id, None)
+        self.revoke_browser_upload_grant(transfer_id)
 
     def handle_client_disconnected(self, client_id: str):
-        normalized_client_id = str(client_id or '').strip()
-        if not normalized_client_id:
-            return 0
-
-        active = self.transfer_service.list_active_transfers_for_client(normalized_client_id)
-        with self._browser_upload_grant_lock:
-            for item in active:
-                transfer_id = str(item.get('transfer_id') or '').strip()
-                if not transfer_id:
-                    continue
-                self._browser_upload_grants.pop(transfer_id, None)
-                event = self._browser_upload_cancel_events.get(transfer_id)
-                if event is not None:
-                    event.set()
-
         return self.transfer_service.fail_active_transfers_for_client(
-            normalized_client_id,
-            'Client disconnected during file transfer',
-        )
+            str(client_id or '').strip(), 'Client disconnected during file transfer')
 
     def cancel_transfer(self, transfer_id: str, *, tab_id: str = ''):
-        normalized_id = str(transfer_id or '').strip()
-        normalized_tab_id = str(tab_id or '').strip()
-        current, dispatch = self.transfer_service.request_cancellation(
-            normalized_id, tab_id=normalized_tab_id,
-        )
-        if not dispatch:
-            if current['state'] == 'cancelled':
-                with self._browser_upload_grant_lock:
-                    event = self._browser_upload_cancel_events.get(normalized_id)
-                    if event is not None:
-                        event.set()
-            return current
-
-        if self.server is None:
-            raise RuntimeError('server is not available for transfer cancellation')
-
-        client_id = str(current.get('client_id') or '').strip()
-        session = self.server.get_target_connection_by_client_id(client_id)
-        session.send({
-            'type': MSG_TYPE_TRANSFER_CANCEL,
-            'transfer_id': normalized_id,
-        })
-        return self.transfer_service.get_transfer(normalized_id, tab_id=normalized_tab_id) or current
+        return self.transfer_service.cancel_operation(
+            str(transfer_id or '').strip(), tab_id=str(tab_id or '').strip(),
+            connection_lookup=self.server.get_target_connection_by_client_id if self.server else None)
 
     def delete_recent_transfer(self, transfer_id: str, *, tab_id: str = ''):
         deleted = self.transfer_service.delete_recent_transfer(

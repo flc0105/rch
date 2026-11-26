@@ -81,6 +81,7 @@ for (const componentName of ['RemoteFilesDialog', 'RemoteFilePicker']) {
     const { methodName, snippet } = getUploadMethod(componentName)
     const handler = vm.runInNewContext(`({ ${snippet} }).${methodName}`, {
       prepareUploadConflict: async () => 'stop',
+      TERMINAL_REMOTE_UPLOAD_PREFIX: '[Remote Upload]',
       createTerminalOperation: () => ({ operation_id: 'op-1' }),
       operationHeaders: (operation, headers) => headers,
       uploadRemoteFileToClient: api.uploadRemoteFileToClient,

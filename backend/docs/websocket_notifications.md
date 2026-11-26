@@ -74,7 +74,7 @@ WebEventBus 发布时生成一份临时事件对象：
 
 ## Remote Files 批量上传通知
 
-Remote Files 的 Drag Upload 使用独立的文件 Transfer 记录，每个文件继续发送实时 `transfer_updated` 和 `file_transfer_lifecycle` 事件，Transfer Center 可分别跟踪进度、失败和取消。Server 在浏览器结束本批提交、并且本批所有已创建的 Transfer 到达终态后，生成一条 **File Upload Completed** 或 **File Upload Incomplete** 通知，展示完成数及 Open Transfers 入口。批次通知使用独立的 `file_transfer_batch_finished` 偏好（默认启用）；普通单文件 Transfer 的通知开关和默认值不变。Shared Files 的 Batch Upload 继续通过 `artifact_batch_uploaded` 生成一次 Files Ready 通知。
+Remote Files 的 Drag Upload 持久化一个 `transfer_batches` 父记录，并用 `transfer_records.batch_id` 关联各文件 Transfer。每个文件继续发送实时 `transfer_updated` 和 `file_transfer_lifecycle`，不丢失进度与取消能力；`transfer_batch_updated` 推送父级计数和状态。Transfer Center 按父批次合并为一条 Active/Recent，Details 可读取成员文件进度；SQL 历史分页也按父批次计数。Server 在全部预期文件进入终态，或提交已经关闭且已创建成员全部进入终态后，发 `file_transfer_batch_finished` 并生成一条 **File Upload Completed** 或 **File Upload Incomplete** 通知，展示完成数及 Open Transfers 入口。批次通知使用独立的 `file_transfer_batch_finished` 偏好（默认启用）；普通单文件 Transfer 的通知开关和默认值不变。Shared Files 的 Batch Upload 通过 `artifact_batch_uploaded` 生成一次汇总通知；部分写入失败时保留已成功保存的文件和目录，报告 Shared Upload Incomplete。
 
 ## 独立 Client 启动日志通知
 

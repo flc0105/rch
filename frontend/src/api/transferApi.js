@@ -1,5 +1,8 @@
 // Only browser-to-Server uploads have an active XHR in this tab.
 const activeBrowserUploads = new Map()
+const cancelledBatches = new Set()
+const submittingBatches = new Set()
+export function isBrowserUploadBatchCancelled(batchId) { return cancelledBatches.has(batchId) }
 
 function normalizeHeaders(headers = {}) {
   return {...(headers || {})}
@@ -36,13 +39,33 @@ export async function createBrowserUploadTransfer(payload = {}, headers = {}) {
   return parseApiResponse(res, 'Failed to initialize upload transfer')
 }
 
+export async function startBrowserUploadBatch({ clientId, batchId, destinationPath,
+  totalFiles, folderCount = 0 }, headers = {}) {
+  const res = await fetch('/api/transfers/browser-upload-batch/start', {
+    method: 'POST',
+    headers: normalizeHeaders({ 'Content-Type': 'application/json', ...headers }),
+    body: JSON.stringify({ client_id: clientId, batch_id: batchId,
+      destination_path: destinationPath, total_files: totalFiles, folder_count: folderCount }),
+  })
+  const result = await parseApiResponse(res, 'Failed to initialize upload batch')
+  submittingBatches.add(batchId)
+  return result
+}
+
+export async function loadBatchTransfers(batchId, tabId = '') {
+  const headers = buildTabHeaders(tabId)
+  const res = await fetch(`/api/transfers/batches/${encodeURIComponent(batchId)}/items`, { headers })
+  return parseApiResponse(res, 'Failed to load batch transfers')
+}
+
 export async function finalizeBrowserUploadBatch({ clientId, batchId, folderCount = 0, error = '' }, headers = {}) {
   const res = await fetch('/api/transfers/browser-upload-batch/finalize', {
     method: 'POST',
     headers: normalizeHeaders({ 'Content-Type': 'application/json', ...headers }),
     body: JSON.stringify({ client_id: clientId, batch_id: batchId, folder_count: folderCount, error }),
   })
-  return parseApiResponse(res, 'Failed to finalize upload batch')
+  try { return await parseApiResponse(res, 'Failed to finalize upload batch') }
+  finally { cancelledBatches.delete(batchId); submittingBatches.delete(batchId) }
 }
 
 export function buildBrowserUploadContentUrl(transfer = {}) {
@@ -77,7 +100,7 @@ export async function uploadRemoteFileToClient({file, clientId, destinationPath,
     const response = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       uploadXhr = xhr
-      activeBrowserUploads.set(transferId, xhr)
+      activeBrowserUploads.set(transferId, { xhr, batchId })
       xhr.open('POST', url, true)
       xhr.setRequestHeader('Content-Type', 'application/octet-stream')
       xhr.setRequestHeader('X-RCH-Transfer-Token', token)
@@ -117,7 +140,7 @@ export async function uploadRemoteFileToClient({file, clientId, destinationPath,
     }
     throw error
   } finally {
-    if (activeBrowserUploads.get(transferId) === uploadXhr) {
+    if (activeBrowserUploads.get(transferId)?.xhr === uploadXhr) {
       activeBrowserUploads.delete(transferId)
     }
   }
@@ -158,7 +181,14 @@ export async function cancelTransfer(transferId, tabId = '') {
   const result = await parseApiResponse(res, 'Failed to cancel transfer')
   // The Server has accepted cancellation; also stop this tab's browser upload
   // so the caller's pending promise can settle and its Upload button unlocks.
-  activeBrowserUploads.get(normalizedTransferId)?.abort()
+  activeBrowserUploads.get(normalizedTransferId)?.xhr.abort()
+  if (normalizedTransferId.startsWith('batch:')) {
+    const batchId = normalizedTransferId.slice(6)
+    if (submittingBatches.has(batchId)) cancelledBatches.add(batchId)
+    for (const upload of activeBrowserUploads.values()) {
+      if (upload.batchId === batchId) upload.xhr.abort()
+    }
+  }
   return result
 }
 

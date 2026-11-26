@@ -104,3 +104,22 @@ def test_shared_batch_rejects_invalid_selection_without_writes(service, paths, d
         api.upload_shared_batch(files=files, paths=paths, directories=dirs)
     assert catalog.list(artifact_type='shared') == []
     assert events.items == []
+
+
+def test_partial_shared_batch_reports_actual_committed_files(service, monkeypatch):
+    api, catalog, events = service
+    original = api.save_http_uploaded_file
+    def save(upload, **kwargs):
+        if upload.filename == 'b.txt':
+            raise OSError('Disk full')
+        return original(upload, **kwargs)
+    monkeypatch.setattr(api, 'save_http_uploaded_file', save)
+    with pytest.raises(ValueError, match='1/2'):
+        api.upload_shared_batch(files=[UploadFile('a.txt'), UploadFile('b.txt')],
+                                paths=['docs/a.txt', 'docs/b.txt'], directories=['docs'])
+    assert len(catalog.list(artifact_type='shared')) == 1
+    kind, payload = events.items[0]
+    assert kind == 'artifact_batch_uploaded' and payload['file_count'] == 1
+    assert payload['total_files'] == 2 and payload['error'] == 'Disk full'
+    notification = NotificationEventProjector(history_store=None, server=None)._build_artifact_batch_uploaded(payload)
+    assert notification['title'] == 'Shared Upload Incomplete'

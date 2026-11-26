@@ -1,7 +1,6 @@
 import threading
 import shlex
 
-from core.protocol.message_types import MSG_TYPE_TRANSFER_CANCEL
 from core.protocol.control import ControlRequest
 from server.application.connection.control_command_store import HTTP_CONTROL_COMMANDS
 from dataclasses import dataclass, field
@@ -280,13 +279,9 @@ class WebTaskService:
                 raise ValueError('current transfer mode does not support cancellation')
 
             client_id = task.get('client_id') or transfer.get('client_id') or ''
-            conn = self.server.get_target_connection_by_client_id(client_id)
             self.task_store.request_cancel(task_id)
-            self.transfer_service.mark_cancelling(transfer.get('transfer_id') or '')
-            conn.send({
-                'type': MSG_TYPE_TRANSFER_CANCEL,
-                'transfer_id': transfer.get('transfer_id') or '',
-            })
+            self.transfer_service.cancel_operation(transfer['transfer_id'], tab_id=task.get('tab_id', ''),
+                connection_lookup=self.server.get_target_connection_by_client_id)
             return {
                 'task_id': task_id,
                 'client_id': client_id,
@@ -322,8 +317,11 @@ class WebTaskService:
         transfer_id: str = '',
         conflict_policy=None,
         operation_id: str = '',
+        command: str = '',
+        batch_id: str = '',
     ):
-        command = f'upload {display_name}'
+        if not command:
+            raise ValueError('Upload task command is required')
         return self._submit_request(
             WebExecutionTaskRequest(
                 client_id=client_id,
@@ -336,10 +334,10 @@ class WebTaskService:
                     'local_path': local_path,
                     'display_name': display_name,
                     'remote_path': remote_path,
-                    'upload_tmp_dir': getattr(self.file_service, 'upload_tmp_dir', ''),
                     'transfer_id': (transfer_id or '').strip(),
                     'conflict_policy': conflict_policy,
                     'operation_id': operation_id,
+                    **({'batch_id': batch_id} if batch_id else {}),
                 },
                 use_foreground_guard=False,
             )

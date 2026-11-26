@@ -3,8 +3,10 @@ import time
 import uuid
 
 from server.application.transfers.transfer_history_store import TransferHistoryStore
+from server.application.transfers.transfer_batch_store import TransferBatchStore
 from datetime import datetime
 from core.transfer_settings import FileTransferMode
+from core.protocol.message_types import MSG_TYPE_TRANSFER_CANCEL
 
 
 class TransferService:
@@ -23,9 +25,103 @@ class TransferService:
         self._changed = threading.Condition(self._lock)
         self._items = {}
         self._recent_ids = []
+        self._batch_tasks = {}
         self.lifecycle_adapter = None
+        self.terminal_callback = None
         self.tcp_transport = None
         self.history = TransferHistoryStore(database)
+        self.batches = TransferBatchStore(database, self.history)
+
+    def start_batch(self, *, batch_id, client_id, tab_id, destination_path, total_files, folder_count):
+        if not (total_files or folder_count):
+            raise ValueError("Empty upload batch")
+        with self._changed:
+            batch = self.batches.start(batch_id=batch_id, client_id=client_id,
+                                       tab_id=tab_id, destination_path=destination_path,
+                                       total_files=total_files, folder_count=folder_count)
+            self._publish_batch(batch)
+        return batch
+
+    def finalize_batch(self, *, batch_id, client_id, tab_id, folder_count, error):
+        with self._changed:
+            before = self.batches.get(batch_id)
+            batch = self.batches.finalize(batch_id, client_id=client_id, tab_id=tab_id,
+                                          folder_count=folder_count, error=error)
+            self._publish_batch_transition(before, batch)
+            return batch
+
+    def _refresh_batch(self, batch_id):
+        with self._changed:
+            before = self.batches.get(batch_id)
+            batch = self.batches.refresh(batch_id)
+            self._publish_batch_transition(before, batch)
+
+    def _publish_batch_transition(self, before, batch):
+        if not batch:
+            return
+        self._publish_batch(batch)
+        if before and before['state'] == 'running' and batch['state'] != 'running':
+            self._batch_tasks.pop(batch['batch_id'], None)
+            self._publish_batch_complete(batch)
+        self._changed.notify_all()
+
+    def get_batch(self, batch_id):
+        with self._lock:
+            return self.batches.get(batch_id)
+
+    def bind_batch_task(self, batch_id, task_id):
+        with self._lock:
+            batch = self.batches.get(batch_id)
+            if batch and batch['state'] == 'running':
+                self._batch_tasks[batch_id] = task_id
+
+    def request_batch_cancellation(self, batch_id, *, tab_id=''):
+        with self._changed:
+            before = self.batches.get(batch_id)
+            if not before or not tab_id or before['tab_id'] != tab_id:
+                raise ValueError('Upload batch not found')
+            batch = self.batches.request_cancel(batch_id)
+            self._publish_batch_transition(before, batch)
+            return batch, self.list_batch_members(batch_id, tab_id)
+
+    def expire_idle_batch(self, batch_id, timeout=300):
+        """Close abandoned submissions; active transfers keep their native lifecycle."""
+        with self._changed:
+            batch = self.batches.get(batch_id)
+            if not batch or batch['state'] != 'running':
+                return batch
+            members = self.list_batch_members(batch_id)
+            now = datetime.now()
+            def idle(item):
+                return (now - datetime.fromisoformat(item.get('updated_at') or item['started_at'])).total_seconds() >= timeout
+            expired = [member for member in members if member['state'] == 'running'
+                       and member['stage'] in ('uploading_to_server', 'preparing') and idle(member)]
+            abandoned = not batch['active_files'] and not batch['submission_closed'] and all(idle(x) for x in [batch, *members])
+            if expired or abandoned:
+                error = 'Browser upload submission timed out'
+                self.finalize_batch(batch_id=batch_id, client_id=batch['client_id'], tab_id=batch['tab_id'],
+                                    folder_count=batch['folder_count'], error=error)
+                for member in expired:
+                    self.fail_transfer(member['transfer_id'], error)
+                return self.batches.get(batch_id)
+            return batch
+
+    def _publish_batch(self, batch):
+        self.event_bus.publish('transfer_batch_updated', {k: v for k, v in batch.items() if k != 'tab_id'},
+                               target_tab_id=batch['tab_id'])
+
+    def _publish_batch_complete(self, batch):
+        self.event_bus.publish('file_transfer_batch_finished', {k: v for k, v in batch.items() if k != 'tab_id'},
+                               target_tab_id=batch['tab_id'])
+
+    def list_batch_members(self, batch_id, tab_id=''):
+        with self._lock:
+            batch = self.batches.get(str(batch_id or '').strip())
+            if not batch or (tab_id and batch['tab_id'] != tab_id and batch['state'] == 'running'):
+                raise ValueError('Upload batch not found')
+            return [self._public_item(self._items[row['transfer_id']])
+                    if row['transfer_id'] in self._items else row
+                    for row in self.batches.members(batch_id)]
 
     def create_transfer(
         self,
@@ -50,6 +146,7 @@ class TransferService:
 
         item = {
             'transfer_id': transfer_id,
+            'batch_id': str((metadata or {}).get('batch_id') or ''),
             'client_id': str(client_id or '').strip(),
             'direction': str(direction or '').strip(),
             'filename': str(filename or '').strip(),
@@ -79,12 +176,18 @@ class TransferService:
         self._refresh_derived_fields(item)
 
         with self._changed:
+            if item['batch_id']:
+                self.batches.validate_member(item['batch_id'], client_id=item['client_id'],
+                                             tab_id=item['tab_id'],
+                                             total_files=int(item['metadata']['batch_total']),
+                                             batch_index=int(item['metadata']['batch_index']))
             self.history.record_started(item)
             self._items[transfer_id] = item
             self._changed.notify_all()
-
-        self._publish(item)
-        self._publish_lifecycle(item, 'started')
+            self._publish(item)
+            self._publish_lifecycle(item, 'started')
+            if item['batch_id']:
+                self._publish_batch(self.batches.get(item['batch_id']))
         return self._public_item(item)
 
     def update_transfer(
@@ -143,8 +246,12 @@ class TransferService:
                 lifecycle = 'error' if next_state == 'failed' else 'stopped'
             self._changed.notify_all()
 
-        self._publish(item)
+            self._publish(item)
+            if lifecycle and item['batch_id']:
+                self._refresh_batch(item['batch_id'])
         if lifecycle:
+            if self.terminal_callback is not None:
+                self.terminal_callback(normalized_id)
             self._publish_lifecycle(item, lifecycle)
             if self.lifecycle_adapter is not None:
                 self.lifecycle_adapter.transfer_updated(snapshot)
@@ -200,7 +307,7 @@ class TransferService:
             snapshot = self._public_item(item)
             self._changed.notify_all()
 
-        self._publish(item)
+            self._publish(item)
         return snapshot
 
     def reset_progress(
@@ -255,7 +362,7 @@ class TransferService:
             snapshot = self._public_item(item)
             self._changed.notify_all()
 
-        self._publish(item)
+            self._publish(item)
         return snapshot
 
     def wait_for_tcp_transfer(self, transfer_id, client_id, timeout=5):
@@ -343,6 +450,9 @@ class TransferService:
         if not normalized_task_id:
             return None
         with self._lock:
+            for batch_id, bound_task in self._batch_tasks.items():
+                if bound_task == task_id:
+                    return self.batches.get(batch_id)
             for item in self._items.values():
                 metadata = item.get('metadata') if isinstance(item.get('metadata'), dict) else {}
                 if item.get('state') == 'running' and str(metadata.get('task_id') or '').strip() == normalized_task_id:
@@ -362,18 +472,54 @@ class TransferService:
             ]
 
     def fail_active_transfers_for_client(self, client_id: str, error: str = 'Client disconnected') -> int:
-        active = self.list_active_transfers_for_client(client_id)
-        failed = 0
-        for item in active:
-            transfer_id = item.get('transfer_id') or ''
-            updated = self.fail_transfer(
-                transfer_id,
-                str(error or 'Client disconnected'),
-                client_id=str(client_id or '').strip(),
-            )
-            if updated and updated.get('state') == 'failed':
-                failed += 1
-        return failed
+        with self._changed:
+            for batch in self.batches.active(''):
+                if batch['client_id'] == client_id:
+                    self.finalize_batch(batch_id=batch['batch_id'], client_id=client_id,
+                        tab_id=batch['tab_id'], folder_count=batch['folder_count'], error=error)
+            active = self.list_active_transfers_for_client(client_id)
+            failed = 0
+            for item in active:
+                updated = self.fail_transfer(item['transfer_id'], error, client_id=client_id)
+                failed += bool(updated and updated['state'] == 'failed')
+            return failed
+
+    def cancel_operation(self, transfer_id, *, tab_id='', connection_lookup=None):
+        if transfer_id.startswith('batch:'):
+            batch, members = self.request_batch_cancellation(transfer_id[6:], tab_id=tab_id)
+            dispatch = []
+            for member in members:
+                if member['state'] != 'running' or member.get('cancel_supported') is False:
+                    continue
+                try:
+                    current, remote = self.request_cancellation(member['transfer_id'], tab_id=tab_id)
+                except ValueError:
+                    current = self.get_transfer(member['transfer_id'])
+                    if current and current['state'] == 'running':
+                        raise
+                    continue
+                if remote:
+                    dispatch.append(current)
+            errors = []
+            for member in dispatch:
+                try:
+                    if connection_lookup is None:
+                        raise RuntimeError('server is not available for transfer cancellation')
+                    connection_lookup(member['client_id']).send({
+                        'type': MSG_TYPE_TRANSFER_CANCEL, 'transfer_id': member['transfer_id']})
+                except Exception as exc:
+                    # A failed cancel send is not evidence that the Client stopped.
+                    errors.append(str(exc))
+            if errors:
+                raise RuntimeError('Cancellation delivery failed: ' + '; '.join(errors))
+            return self.get_batch(batch['batch_id'])
+        current, dispatch = self.request_cancellation(transfer_id, tab_id=tab_id)
+        if dispatch:
+            if connection_lookup is None:
+                raise RuntimeError('server is not available for transfer cancellation')
+            connection_lookup(current['client_id']).send({
+                'type': MSG_TYPE_TRANSFER_CANCEL, 'transfer_id': transfer_id})
+        return self.get_transfer(transfer_id, tab_id=tab_id) or current
 
     def get_transfer(self, transfer_id: str, *, tab_id: str = '') -> dict | None:
         normalized_id = str(transfer_id or '').strip()
@@ -467,8 +613,16 @@ class TransferService:
             item = self._items.get(normalized_id)
             if item and item.get('state') not in self.TERMINAL_STATES:
                 raise ValueError('active transfer cannot be deleted; cancel it first')
-            removed = self.history.delete(normalized_id)
+            removed = (self.batches.delete(normalized_id[6:]) if normalized_id.startswith('batch:')
+                       else self.history.delete(normalized_id))
             if removed:
+                if normalized_id.startswith('batch:'):
+                    batch_id = normalized_id.removeprefix('batch:')
+                    for tid, cached in list(self._items.items()):
+                        if cached.get('batch_id') == batch_id and cached.get('state') in self.TERMINAL_STATES:
+                            self._items.pop(tid, None)
+                            if tid in self._recent_ids:
+                                self._recent_ids.remove(tid)
                 self._items.pop(normalized_id, None)
                 if normalized_id in self._recent_ids:
                     self._recent_ids.remove(normalized_id)
@@ -493,11 +647,11 @@ class TransferService:
         machine_id = str(machine_id or '').strip()
         with self._lock:
             active = [self._public_item(item) for item in self._items.values()
-                      if item.get('state') == 'running' and
+                      if item.get('state') == 'running' and not item.get('batch_id') and
                       (not normalized_tab_id or item.get('tab_id') == normalized_tab_id)]
             # Keep browser-tab scoping for live transfers, not durable history.
-            recent = self.history.list_recent(limit=limit, offset=offset, machine_id=machine_id)
-            recent_total = self.history.count_recent(machine_id)
+            active += self.batches.active(normalized_tab_id)
+            recent, recent_total = self.history.list_recent(limit=limit, offset=offset, machine_id=machine_id, batch_lookup=self.batches.get)
         active.sort(key=lambda item: item.get('started_at') or '', reverse=True)
         return {'active': active, 'recent': recent, 'recent_total': recent_total,
                 'items': active + recent}

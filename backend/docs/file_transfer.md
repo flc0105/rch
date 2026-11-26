@@ -64,7 +64,9 @@ Remote Files 上传到设备
 | 服务 | 接口 | 用途 |
 | --- | --- | --- |
 | 8085 | `GET /api/transfers?limit=20&offset=0&machine_id=...` | 查询 Active 和 SQL 分页 Recent；`machine_id` 可选，通过会话历史匹配；返回 `recent_total` |
-| 8085 | `POST /api/transfers/browser-upload` | 创建浏览器上传任务并返回 Token、8085 同源目标地址 |
+| 8085 | `POST /api/transfers/browser-upload` | 创建独立文件 Transfer，返回 Token、8085 同源目标地址；批次成员可携带 `batch_id` |
+| 8085 | `POST /api/transfers/browser-upload-batch/start`、`/finalize` | Drag Upload 批次父记录的创建与提交结束；不改变单文件上传接口 |
+| 8085 | `GET /api/transfers/batches/{batch_id}/items` | 按 Batch 查看子文件原生进度与错误 |
 | 8085 | `POST /api/transfers/{transfer_id}/cancel` | 请求取消 |
 | 8085 | `PATCH /api/transfers/{transfer_id}/browser-upload` | 浏览器阶段异常或进度更新 |
 | 8085 | `DELETE /api/transfers/{transfer_id}`、`DELETE /api/transfers/recent?machine_id=...` | 删除单条历史；按可选机器筛选条件清理终态记录，省略筛选则清理全部 |
@@ -122,6 +124,16 @@ HTTP Simple 上传与下载使用内部固定的 Requests 网络超时：连接�
 Web 远程文件下载、预览、压缩下载和受管理的下发任务通过 Socket 发送 `transfer_start`，由 Client 的独立 `ClientTransferManager` 启动 Worker。该 Worker 具有独立执行上下文、HTTP 策略和取消处理，不绑定普通 `command_id`，因此**不需要占用 Shell-like 命令的前台执行槽直到文件传完**。Server 根据 `transfer_id` 等待任务最终状态，而不是从终端输出文本中猜测上传是否成功或解析 Artifact ID。
 
 内置文件命令和 Clipboard Control 在原执行上下文内通过 `transfer_register` 登记文件传输，Server 确认请求仍有效后才允许搬运文件。它们不另开一个命令 Worker，保留命令输出、Activity 和原有剪贴板操作的生命周期。Transfer Center 记录每次文件搬运；取消该传输会请求取消所属命令或 Control。Clipboard Send 多文件逐项传输，全部成功后才进行原生剪贴板写入；单文件传输完成不代表整个剪贴板操作已完成。普通 Client API、Script 和 Job 的上传仍有自己的执行入口。
+
+### 批次上传的持久化与终端呈现
+
+Remote Files 单文件 **Upload** 保持原有任务和传输链路，任务显示为 `[Remote Upload] filename`，不再使用貌似命令的 `upload filename`。**Drag Upload** 选中一个普通文件时使用同一单文件上传链路；多文件或包含目录时采用独立的 Web 批次编排：Server 创建 `transfer_batches` 父记录，成员仍调用原有浏览器上传 Transfer API，并在 `transfer_records.batch_id` 持久化归属。父级记录批次身份、目标位置、预期文件数、提交结束和最终状态，并对应一次 Upload Task；每个文件仍有自己的 Transfer ID、SSE 进度、失败和取消能力。**不新增 Client 上传命令或数据协议**。
+
+单文件和批次共用 Upload Task 生命周期；一次批次由一个 Task 调度，逐个执行原生 Transfer，并最多缓存一个待下发文件。Terminal 使用任务原生完成事件。全部预期成员结束时自动关闭，部分提交或纯目录批次显式结束提交；客户端断开、取消或浏览器提交超时也会关闭未完成批次。父级结束必须等待已提交文件全部进入终态，只有这个结果会触发一条 `file_transfer_batch_finished` 汇总通知。`transfer_updated` 和 `file_transfer_lifecycle` 仍按文件发出，不会因批次汇总而丢失传输进度。
+
+Transfer Center 的 Active / Recent 以单文件或 Batch 父级为行；Recent 的 SQL 分页按父记录计数，重启后仍能从 SQLite 还原批次。Batch 的 Details 列出子文件的状态与进度，支持批次整体取消与成员原有取消入口。当前批次总体百分比按**已完成文件数量**计算，不能把 Browser→Server 和 Server→Client 两段重置的字节进度简单相加。即使某些文件未成功提交，父级也会保留不完整状态和已经完成的成员信息。
+
+**数据库更新：**旧 `rch.db` 须在关闭 Server 后显式升级：为 `transfer_records` 新增 `batch_id` 字段，并新建 `transfer_batches` 及对应索引；Server 不在启动时自动修改既有表结构。具体 SQL 与字段以 `server/persistence/rch_database.py` 的当前规范 Schema 为准。运行在远端设备上的 `pyexec` 不能代替 Server 本地数据库迁移。
 
 ### 浏览器到远程设备的两段搬运
 

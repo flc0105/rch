@@ -224,6 +224,15 @@ class RemoteExecutionService:
             return status, result
         return status, '\n'.join(progress).strip()
 
+    def open_browser_upload_batch(self, batch_id):
+        self.upload_execution_service.open_browser_batch(batch_id)
+
+    def close_browser_upload_batch(self, batch_id):
+        self.upload_execution_service.close_browser_batch(batch_id)
+
+    def enqueue_browser_upload(self, batch_id, target, local_path, **options):
+        return self.upload_execution_service.enqueue_browser_upload(batch_id, target, local_path, **options)
+
     def iter_upload_events(
         self,
         target,
@@ -238,10 +247,12 @@ class RemoteExecutionService:
         tab_id: str = '',
         transfer_id: str = '',
         conflict_policy=None,
+        batch_id: str = '',
     ):
-        return self.upload_execution_service.iter_upload_events(
+        return self.upload_execution_service.iter_upload_operation(
             target,
             local_path,
+            batch_id=batch_id,
             remote_path=remote_path,
             display_name=display_name,
             history_entry_id=history_entry_id,

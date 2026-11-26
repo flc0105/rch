@@ -202,12 +202,15 @@ class WebArtifactApi:
             parts = path.split('/')
             for i in range(1, len(parts)):
                 explicit_dirs.add('/'.join(parts[:i]))
-        if explicit_dirs.intersection(file_paths):
+        if len(explicit_dirs) > 2000 or len({p.casefold() for p in explicit_dirs}) != len(explicit_dirs):
+            raise ValueError('Invalid or ambiguous Shared folder paths')
+        if {p.casefold() for p in explicit_dirs}.intersection(p.casefold() for p in file_paths):
             raise ValueError('File and folder share the same path')
         directory_paths = sorted(explicit_dirs, key=lambda value: (value.count('/'), value))
         catalog = self.artifact_service.registry_service.catalog
         if parent_folder_id:
-            catalog.get_folder(parent_folder_id)
+            if catalog.get_folder(parent_folder_id)['artifact_type'] != 'shared':
+                raise ValueError('Folder does not belong to Shared Files')
         folders = catalog.list_folders(artifact_type='shared')
         known = {(row.get('parent_id') or '', row['name'].casefold()): row['folder_id'] for row in folders}
         created = 0
@@ -233,7 +236,11 @@ class WebArtifactApi:
                 )
                 saved += 1
         except Exception as exc:
-            raise ValueError(f'Shared upload stopped after {saved} file(s): {exc}') from exc
+            self.event_bus.publish('artifact_batch_uploaded', {
+                'artifact_type': 'shared', 'file_count': saved, 'folder_count': created,
+                'error': str(exc)[:256], 'total_files': len(files),
+            })
+            raise ValueError(f'Shared upload stopped after {saved}/{len(files)} file(s), {created} folder(s) created: {exc}') from exc
         self.event_bus.publish('artifact_batch_uploaded', {
             'artifact_type': 'shared', 'file_count': saved, 'folder_count': created,
         })

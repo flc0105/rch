@@ -103,8 +103,7 @@ def create_browser_upload_blueprint(server_instance):
                 )
                 transfer_api.clear_browser_upload_runtime(transfer_id)
 
-                current_transfer = transfer_api.transfer_service.get_transfer(transfer_id, tab_id=tab_id)
-                if not current_transfer or current_transfer.get('state') != 'running':
+                if transfer_api.is_browser_upload_cancel_requested(transfer_id):
                     raise RuntimeError('Browser upload cancelled')
 
                 return command_execution_api.submit_web_upload(
@@ -116,6 +115,7 @@ def create_browser_upload_blueprint(server_instance):
                     transfer_id=transfer_id,
                     conflict_policy=grant.get('conflict_policy'),
                     operation_id=grant.get('operation_id') or '',
+                    batch_id=grant.get('batch_id') or '',
                 )
             except Exception as exc:
                 transfer_api.clear_browser_upload_runtime(transfer_id)

@@ -185,5 +185,8 @@ class WebArtifactService:
     def build_upload_temp_download_relative_url(self, temp_path: str) -> str:
         return self.temp_file_service.build_temp_download_relative_url(temp_path)
 
+    def is_upload_temp_file(self, path: str) -> bool:
+        return self.temp_file_service.is_temp_file(path)
+
     def cleanup_upload_temp_file(self, temp_path: str):
         self.temp_file_service.cleanup_temp_file(temp_path)

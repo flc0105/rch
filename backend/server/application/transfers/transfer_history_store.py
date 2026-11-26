@@ -5,7 +5,7 @@ from datetime import datetime
 
 class TransferHistoryStore:
     COLUMNS = (
-        'transfer_id', 'client_id', 'hostname', 'direction', 'filename',
+        'transfer_id', 'batch_id', 'client_id', 'hostname', 'direction', 'filename',
         'source_path', 'destination_path', 'state', 'stage', 'total_bytes',
         'transferred_bytes', 'artifact_id', 'error', 'started_at', 'completed_at',
     )
@@ -61,28 +61,10 @@ class TransferHistoryStore:
         })
         return item
 
-    @staticmethod
-    def _recent_where(machine_id: str) -> tuple[str, tuple]:
-        where = "state != 'running'"
-        if machine_id:
-            where += (' AND EXISTS (SELECT 1 FROM connection_sessions cs '
-                      'WHERE cs.client_id = transfer_records.client_id AND cs.machine_id = ?)')
-        return where, (machine_id,) if machine_id else ()
-
-    def count_recent(self, machine_id: str = '') -> int:
-        where, params = self._recent_where(machine_id)
-        row = self.database.connection().execute(
-            f'SELECT COUNT(*) FROM transfer_records WHERE {where}', params,
-        ).fetchone()
-        return int(row[0])
-
-    def list_recent(self, *, limit: int = 20, offset: int = 0, machine_id: str = '') -> list[dict]:
-        where, params = self._recent_where(machine_id)
+    def list_batch_members(self, batch_id: str) -> list[dict]:
         rows = self.database.connection().execute(
-            f'SELECT * FROM transfer_records WHERE {where} '
-            'ORDER BY started_at DESC, transfer_id DESC LIMIT ? OFFSET ?',
-            (*params, limit, offset),
-        ).fetchall()
+            'SELECT * FROM transfer_records WHERE batch_id = ? ORDER BY started_at, transfer_id',
+            (batch_id,)).fetchall()
         return [self._public_row(row) for row in rows]
 
     def get(self, transfer_id: str) -> dict | None:
@@ -94,11 +76,42 @@ class TransferHistoryStore:
     def delete(self, transfer_id: str) -> bool:
         with self.database.transaction() as conn:
             result = conn.execute('''DELETE FROM transfer_records
-                WHERE transfer_id = ? AND state != 'running' ''', (transfer_id,))
+                WHERE transfer_id = ? AND state != 'running' AND batch_id = '' ''', (transfer_id,))
             return result.rowcount > 0
 
-    def clear_recent(self, machine_id: str = '') -> int:
-        where, params = self._recent_where(str(machine_id or '').strip())
+    @staticmethod
+    def _filter(machine_id, alias):
+        if not machine_id:
+            return '', ()
+        return (f" AND EXISTS (SELECT 1 FROM connection_sessions cs WHERE "
+                f"cs.client_id = {alias}.client_id AND cs.machine_id = ?)", (machine_id,))
+
+    def list_recent(self, *, limit, offset, machine_id, batch_lookup):
+        cond, params = self._filter(machine_id, 'rows')
+        sql = ("SELECT transfer_id, is_batch FROM ("
+               "SELECT transfer_id, client_id, started_at, 0 AS is_batch "
+               "FROM transfer_records WHERE state != 'running' AND batch_id = '' "
+               "UNION ALL SELECT batch_id AS transfer_id, client_id, started_at, 1 AS is_batch "
+               "FROM transfer_batches WHERE state != 'running') AS rows WHERE 1=1" + cond)
+        db = self.database.connection()
+        count = db.execute('SELECT COUNT(*) FROM (' + sql + ')', params).fetchone()[0]
+        rows = db.execute(sql + ' ORDER BY started_at DESC, transfer_id DESC LIMIT ? OFFSET ?',
+                          (*params, limit, offset)).fetchall()
+        recent = [batch_lookup(row['transfer_id']) if row['is_batch'] else self.get(row['transfer_id'])
+                  for row in rows]
+        return recent, count
+
+    def clear_recent(self, machine_id):
+        cond, params = self._filter(machine_id, 'transfer_batches')
         with self.database.transaction() as conn:
-            result = conn.execute(f'DELETE FROM transfer_records WHERE {where}', params)
-            return result.rowcount
+            rows = conn.execute("SELECT batch_id FROM transfer_batches WHERE state != 'running'" + cond,
+                                params).fetchall()
+            for row in rows:
+                conn.execute("DELETE FROM transfer_records WHERE batch_id = ? AND state != 'running'",
+                             (row['batch_id'],))
+            parents = conn.execute("DELETE FROM transfer_batches WHERE state != 'running'" + cond,
+                                   params).rowcount
+            cond, params = self._filter(machine_id, 'transfer_records')
+            singles = conn.execute("DELETE FROM transfer_records WHERE state != 'running' AND batch_id = ''" + cond,
+                                   params).rowcount
+            return parents + singles

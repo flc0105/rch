@@ -97,11 +97,19 @@ class ArtifactTempFileService:
         filename = parts[-1]
         return f'/api/upload-tmp/{temp_id}/{filename}'
 
+    def is_temp_file(self, path: str) -> bool:
+        if not path:
+            return False
+        base = os.path.realpath(self.artifact_service.upload_tmp_dir)
+        target = os.path.realpath(path)
+        # Temporary uploads always have a dedicated directory below upload_tmp.
+        return os.path.dirname(os.path.dirname(target)) == base
+
     def cleanup_temp_file(self, temp_path: str):
         """
         清理单个临时文件及其上层临时目录
         """
-        if not temp_path:
+        if not self.is_temp_file(temp_path):
             return
 
         try:

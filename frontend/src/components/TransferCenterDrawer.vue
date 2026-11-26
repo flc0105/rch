@@ -58,7 +58,10 @@
 
           <div class="transfer-card-status-row">
             <span>{{ stageLabel(transfer) }}</span>
-            <span v-if="hasProgress(transfer)">
+            <span v-if="transfer.is_batch">
+              {{ transfer.completed_files }} / {{ transfer.total_files }} files
+            </span>
+            <span v-else-if="hasProgress(transfer)">
               {{ formatBytes(transfer.transferred_bytes) }} / {{ formatBytes(transfer.total_bytes) }}
             </span>
           </div>
@@ -78,10 +81,12 @@
           </div>
 
           <div class="transfer-card-actions">
+            <button v-if="transfer.is_batch" class="transfer-text-action" type="button"
+              @click="openBatchDetails(transfer)">Details</button>
             <button
               class="transfer-text-action is-danger"
               type="button"
-              :disabled="transfer.cancel_supported === false || transfer.stage === 'cancelling'"
+              :disabled="transfer.cancel_supported === false || (!transfer.is_batch && transfer.stage === 'cancelling')"
               @click="cancelActiveTransfer(transfer)"
             >
               {{ transfer.stage === 'cancelling' ? 'Cancelling…' : 'Cancel' }}
@@ -174,11 +179,13 @@
 
   <el-dialog v-model="infoVisible" title="Transfer Info" width="min(540px, 94vw)" append-to-body>
     <el-descriptions v-if="infoTransfer" :column="1" border size="small" class="transfer-info">
-      <el-descriptions-item label="File">{{ displayName(infoTransfer) }}</el-descriptions-item>
+      <el-descriptions-item :label="infoTransfer.is_batch ? 'Batch' : 'File'">{{ displayName(infoTransfer) }}</el-descriptions-item>
       <el-descriptions-item label="Direction">{{ transferSubtitle(infoTransfer) }}</el-descriptions-item>
       <el-descriptions-item label="Status">{{ recentStateLabel(infoTransfer) }}</el-descriptions-item>
-      <el-descriptions-item label="Size">{{ formatInfoBytes(infoTransfer.total_bytes) }}</el-descriptions-item>
-      <el-descriptions-item label="Transferred">{{ formatInfoBytes(infoTransfer.transferred_bytes) }}</el-descriptions-item>
+      <template v-if="!infoTransfer.is_batch">
+        <el-descriptions-item label="Size">{{ formatInfoBytes(infoTransfer.total_bytes) }}</el-descriptions-item>
+        <el-descriptions-item label="Transferred">{{ formatInfoBytes(infoTransfer.transferred_bytes) }}</el-descriptions-item>
+      </template>
       <el-descriptions-item label="Started">{{ formatDate(infoTransfer.started_at) }}</el-descriptions-item>
       <el-descriptions-item label="Finished">{{ formatDate(infoTransfer.completed_at) }}</el-descriptions-item>
       <el-descriptions-item v-if="infoTransfer.source_path" label="Source Path">
@@ -189,7 +196,18 @@
       </el-descriptions-item>
       <el-descriptions-item v-if="infoTransfer.error" label="Error">{{ infoTransfer.error }}</el-descriptions-item>
       <el-descriptions-item v-if="infoTransfer.artifact_id" label="Artifact ID">{{ infoTransfer.artifact_id }}</el-descriptions-item>
+      <el-descriptions-item v-if="infoTransfer.is_batch" label="Files">{{ infoTransfer.completed_files }} / {{ infoTransfer.total_files }} completed</el-descriptions-item>
+      <el-descriptions-item v-if="infoTransfer.is_batch" label="Outcome">{{ infoTransfer.failed_files }} failed · {{ infoTransfer.cancelled_files }} cancelled · {{ infoTransfer.interrupted_files }} interrupted · {{ infoTransfer.unsubmitted_files }} not submitted</el-descriptions-item>
     </el-descriptions>
+    <div v-if="infoTransfer?.is_batch" class="transfer-batch-members">
+      <div v-if="batchMembersLoading" class="transfer-card-detail">Loading files…</div>
+      <div v-for="file in batchMembers" :key="file.transfer_id" class="transfer-batch-member">
+        <span class="transfer-batch-member-name" :title="file.destination_path || file.filename">{{ file.filename }}</span>
+        <span class="transfer-batch-member-state" :title="file.error || ''">{{ file.error || (file.state === 'running' ? (file.percent == null ? stageLabel(file) : formatPercent(file.percent)) : recentStateLabel(file)) }}</span>
+        <button v-if="file.state === 'running' && file.cancel_supported !== false"
+          class="transfer-text-action" type="button" @click="cancelActiveTransfer(file)">Cancel</button>
+      </div>
+    </div>
   </el-dialog>
 </template>
 
@@ -206,6 +224,7 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   cancelTransfer,
+  loadBatchTransfers,
   clearRecentTransfers,
   deleteRecentTransfer,
 } from '../api/transferApi.js'
@@ -239,6 +258,8 @@ export default {
       visible: false,
       infoVisible: false,
       infoTransfer: null,
+      batchMembers: [],
+      batchMembersLoading: false,
     }
   },
 
@@ -279,6 +300,13 @@ export default {
     },
   },
 
+  watch: {
+    transfers(items) {
+      const current = items.find(item => item.transfer_id === this.infoTransfer?.transfer_id)
+      if (current) this.infoTransfer = current
+    },
+  },
+
   methods: {
     open() {
       this.visible = true
@@ -294,6 +322,7 @@ export default {
 
     handleRecentAction(command, transfer) {
       if (command === 'info') {
+        if (transfer.is_batch) return this.openBatchDetails(transfer)
         this.infoTransfer = transfer
         this.infoVisible = true
       } else if (command === 'delete') {
@@ -311,6 +340,36 @@ export default {
           link.remove()
         }
       }
+    },
+
+    refreshBatchDetails() {
+      if (this.infoVisible && this.infoTransfer?.is_batch) return this.openBatchDetails(this.infoTransfer)
+    },
+
+    async openBatchDetails(transfer) {
+      this.infoTransfer = transfer
+      this.infoVisible = true
+      this.batchMembers = []
+      this.batchMembersLoading = true
+      try {
+        const result = await loadBatchTransfers(transfer.batch_id, this.tabId)
+        if (this.infoTransfer?.batch_id === transfer.batch_id) {
+          const merged = new Map((result.items || []).map(item => [item.transfer_id, item]))
+          for (const item of this.batchMembers) merged.set(item.transfer_id, item)
+          this.batchMembers = [...merged.values()]
+        }
+      } catch (error) {
+        ElMessage.error(error.message || 'Failed to load batch files')
+      } finally {
+        if (this.infoTransfer?.batch_id === transfer.batch_id) this.batchMembersLoading = false
+      }
+    },
+
+    handleTransferChildUpdate(file) {
+      if (!file.batch_id || this.infoTransfer?.batch_id !== file.batch_id) return
+      const index = this.batchMembers.findIndex(item => item.transfer_id === file.transfer_id)
+      if (index >= 0) this.batchMembers.splice(index, 1, file)
+      else this.batchMembers.push(file)
     },
 
     formatDate(value) {
@@ -367,6 +426,7 @@ export default {
     },
 
     recentStateLabel(transfer) {
+      if (transfer?.state === 'running') return this.stageLabel(transfer)
       if (transfer?.state === 'failed') return 'Failed'
       if (transfer?.state === 'cancelled') return 'Cancelled'
       if (transfer?.state === 'interrupted') return 'Interrupted'
@@ -376,7 +436,7 @@ export default {
     hasProgress(transfer) {
       return transfer?.progress_supported !== false
         && Number.isFinite(Number(transfer?.percent))
-        && Number(transfer?.total_bytes) > 0
+        && Number(transfer?.is_batch ? transfer.total_files : transfer?.total_bytes) > 0
     },
 
     normalizedPercent(value) {
@@ -396,7 +456,8 @@ export default {
     },
 
     transferSubtitle(transfer) {
-      const device = String(transfer?.hostname || transfer?.client_id || 'Device').trim() || 'Device'
+      const known = (this.machines || []).find(item => item.client_id === transfer?.client_id)
+      const device = String(transfer?.hostname || known?.hostname || transfer?.client_id || 'Device').trim() || 'Device'
       const stage = String(transfer?.stage || '').toLowerCase()
       if (stage === 'uploading_to_server') {
         return `Browser → Server · for ${device}`
@@ -752,4 +813,10 @@ export default {
 <style>
 .transfer-info .el-descriptions__content { overflow-wrap: anywhere; }
 .transfer-info-path { overflow-wrap: anywhere; white-space: pre-wrap; }
+.transfer-batch-members { max-height: 320px; overflow-y: auto; margin-top: 12px; }
+.transfer-batch-member { display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; min-height: 38px; border-bottom: 1px solid var(--el-border-color-extra-light);
+  font-size: 12px; }
+.transfer-batch-member-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.transfer-batch-member-state { max-width: 50%; overflow-wrap: anywhere; text-align: right; }
 </style>
