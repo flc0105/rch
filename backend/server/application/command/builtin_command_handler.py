@@ -189,7 +189,7 @@ class BuiltinCommandHandler:
         manifest = getattr(getattr(self.conn, 'session_info', None), 'command_manifest', None) or []
         grouped = {}
         for item in manifest:
-            if not isinstance(item, dict) or item.get('suggest', True) is False:
+            if not isinstance(item, dict):
                 continue
             name = str(item.get('name') or '').strip()
             if not name:

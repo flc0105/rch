@@ -115,4 +115,15 @@ func TestHandshakeFieldsAndCapabilities(t *testing.T) {
 	if got := payload["command_manifest"].([]interface{}); len(got) == 0 {
 		t.Fatal("existing command manifest must be preserved")
 	}
+	if _, exists := payload["file_transfer_mode"]; exists {
+		t.Fatal("runtime configuration must not be embedded in handshake")
+	}
+	for _, command := range payload["command_manifest"].([]interface{}) {
+		fields := command.(map[string]interface{})
+		for _, excluded := range []string{"source", "suggest", "may_interact", "timeout", "interaction", "output"} {
+			if _, exists := fields[excluded]; exists {
+				t.Fatalf("unexpected command manifest key %s in %#v", excluded, fields)
+			}
+		}
+	}
 }

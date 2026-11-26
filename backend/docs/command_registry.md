@@ -64,13 +64,12 @@ class ShellDiagnosticsCommands:
 
 这是新增扩展的示意代码。可把方法写入已有的 `shell/common/` 分组类，或者将独立文件中的函数挂载到对应分组类。当前运行时宿主需实际继承该分组类，Client 重启加载后才会生效。
 
-`@shell_command(description, group='general', suggest=True, *, output='collect', may_interact=False, completion=None, platforms=None)` 将元数据挂在方法上：
+`@shell_command(description, group='general', *, output='collect', may_interact=False, completion=None, platforms=None)` 将元数据挂在方法上：
 
 - `help`：导出识别和帮助描述。**缺少 `@shell_command` 的普通方法不会作为普通 Client 命令被 ShellCommandRunner 分派**，哪怕它恰好是 public method。
 - `group`：Server `help client` 分组及 Command Manifest 的分类；不会单独决定权限或平台。
 - `platforms`：允许的 Client 平台（`mac` / `win` / `linux` / `ios`），缺省支持全部平台；不支持的平台不会导出或执行。
-- `suggest`：控制是否出现在默认帮助/候选展示中。`suggest=False` 不会禁止执行，Manifest 中仍可能包含该项，由展示层过滤。
-- `may_interact`：标记通常可能请求 Web 前台交互，用于 Manifest 提示，不控制命令执行权限。
+- `may_interact`：声明命令可能发起前台交互，实际交互由运行时 Interaction Broker 处理。
 - `completion`：可选的最小 `CompletionSpec(provider, kinds)`，声明命令参数由哪个 Client Completion Provider 处理及允许的候选类别；不复制命令名、参数位置或运行时路径。
 
 普通 Runner 的调用约定是：先通过项目解析器分离首个命令名称及其余文本；然后以方法签名决定调用 `handler()` 还是 `handler(arg)`。因此普通命令更适合无参或**单段原始参数文本**；多值、可验证的选项建议使用 ACMD。命令返回一般为 `(status, result)`，其中 `1` 表示成功、`0` 表示失败；其他输出约定需与执行链保持一致。中间流式结果应复用执行 Scope 的 `emit_chunk(message)`、`emit_progress(message, level=None)`；仅在直接管理终态的流式方法中调用 `emit_completed(status="success"|"error"|...)`。一次性函数继续返回 `(status, result)`，由执行入口生成唯一 completed；禁止主动发完 completed 又返回新的结果导致重复终态。显式 progress.level 支持 info/success/warning/error，由 Server 公共 Renderer 投影标记；不得在 Client 字符串里预先拼 Marker，也不得自行创建 Web WebSocket 事件。
@@ -131,7 +130,7 @@ Server Builtin 在 Manifest 使用 `group=server`，其子命令、参数和补�
 
 新增主命令在 Server Registry 声明 `name/description/handler`；固定子命令可在 `SubcommandSpec.subcommands` 继续声明下一层。Registry 使用共享 `CommandLineResolver` 沿已声明路径逐层匹配到叶子，再按该叶子的 `ArgumentCommandSpec` 校验参数。Resolver 保留 Token 原文 Span，使 RawTail 与 fallback 叶子收到原有参数文本。`xt instance status`、`xt package install` 等动作以及静态 Help/补全都来自此注册定义；`xt exec run <exec-name> ...` 是正式 RawTail 叶子；`xt exec <exec-name> ...` 通过同组声明的 fallback_subcommand=run 作为简写，原生参数不进入管理命令的选项解析。Job、Script 和 XT Instance 统一使用 `-- --key value` 传递业务参数；位置参数和对应长选项使用同一字段。Alias 模板等真正需要保留原文的命令继续使用 RawTail，业务执行仍由所属 Support / Service 处理。
 
-Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选。命令节点和 RawTail 叶子可使用 `CompletionSpec(provider, kinds)` 声明补全来源；结构化参数在 `ArgumentOptionSpec.completion` 声明，`_option()` 及子命令辅助构造函数原样透传。Server 本机文件系统补全使用声明的 `filesystem` Provider 与文件/目录类别，XT 的静态路径和 Help 目标通过同一递归树生成，动态候选由 Schema 指向的命名 Provider 查询；Server Registry 先确定叶子路径、当前参数和原文 Span，`CommandLineResolver` 处理位置参数、命名选项及 RawTail 边界，Provider 不再解析业务命令文字。`configuration` / `jobs` / `scripts` / `xt` 分别负责自己的实时数据查询；Script Catalog 统一扫描磁盘，XT Catalog 提供公开平台/架构筛选，Job 采用既有活跃状态定义。Info → Commands 保留原有的单列命令卡片；在 Command List 标题处切换 Client / Server，并可在当前来源内按命令名称或描述搜索。Client 模式先按 Group 名称（不区分大小写），同组再按命令名称排序；Server 模式只显示一级 Builtin，不展示冗余的 Group 行，子命令不伪装成独立顶层命令。Server `help` 聚合已注册的 Server 主命令与当前 Client Manifest，并按 Group 显示标题的字母顺序（组内命令名也按字母顺序）列出 Client 的 `[Shell]`、`[File]`、`[Session]`、`[Acmd]` 等分组及说明。它**不会展开动态 Alias 名称和命令内容**；`help alias` 只解释 `alias` 管理命令的用法。`help server/client/alias/script` 可查询对应命令帮助。需要动态内容时使用既有补全 Provider，例如 `script exec <path>` 与 `job start <name>`；不重复手写另一份静态菜单。普通 Client 命令 Manifest 的 `@shell_command` 与 `suggest` 行为保持原样。
+Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选。命令节点和 RawTail 叶子可使用 `CompletionSpec(provider, kinds)` 声明补全来源；结构化参数在 `ArgumentOptionSpec.completion` 声明，`_option()` 及子命令辅助构造函数原样透传。Server 本机文件系统补全使用声明的 `filesystem` Provider 与文件/目录类别，XT 的静态路径和 Help 目标通过同一递归树生成，动态候选由 Schema 指向的命名 Provider 查询；Server Registry 先确定叶子路径、当前参数和原文 Span，`CommandLineResolver` 处理位置参数、命名选项及 RawTail 边界，Provider 不再解析业务命令文字。`configuration` / `jobs` / `scripts` / `xt` 分别负责自己的实时数据查询；Script Catalog 统一扫描磁盘，XT Catalog 提供公开平台/架构筛选，Job 采用既有活跃状态定义。Info → Commands 保留原有的单列命令卡片；在 Command List 标题处切换 Client / Server，并可在当前来源内按命令名称或描述搜索。Client 模式先按 Group 名称（不区分大小写），同组再按命令名称排序；Server 模式只显示一级 Builtin，不展示冗余的 Group 行，子命令不伪装成独立顶层命令。Server `help` 聚合已注册的 Server 主命令与当前 Client Manifest，并按 Group 显示标题的字母顺序（组内命令名也按字母顺序）列出 Client 的 `[Shell]`、`[File]`、`[Session]`、`[Acmd]` 等分组及说明。它**不会展开动态 Alias 名称和命令内容**；`help alias` 只解释 `alias` 管理命令的用法。`help server/client/alias/script` 可查询对应命令帮助。需要动态内容时使用既有补全 Provider，例如 `script exec <path>` 与 `job start <name>`；不重复手写另一份静态菜单。普通 Client 命令的导出与执行共用当前平台注册定义。
 
 `alias` 的 `list/set/unset` 与其他 Server Builtin 一样使用类型化 Invocation、注册表参数校验及统一 Result Envelope；`set` 的首个 `=` 只用于分隔不透明模板正文，由 Alias 业务层处理，不将模板里的选项当成 Builtin 参数。
 
@@ -139,21 +138,21 @@ Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选。
 
 交互确认由 Interaction Broker 提供，Script SDK 与需要确认的业务命令共用该接口。
 
-Client 的 `CommandCatalog` 通过 `inspect.getmembers()` 收集当前平台命令对象中带 `help` 属性的方法，生成 `command_manifest`（含 `name/help/group/suggest`），并附加 `ArgumentCommandRegistry.get_manifest_payload()` 的 ACMD 条目。Manifest 在 Client 构造 `info` 握手时提交，Server 的 `SessionInfo` 保存该连接的快照；**不是 Web 打开命令面板时实时从 Client 重新扫描 Python 方法**。
+Client 的 `CommandCatalog` 通过 `inspect.getmembers()` 收集当前平台命令对象中带 `help` 属性的方法，生成 `command_manifest`（含 `name/help/group/kind/cancel_policy`），并附加 `ArgumentCommandRegistry.get_manifest_payload()` 的 ACMD 条目。Manifest 在 Client 构造 `info` 握手时提交，Server 的 `SessionInfo` 保存该连接的快照；**不是 Web 打开命令面板时实时从 Client 重新扫描 Python 方法**。
 
-Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，`WebCommandCatalogApi` 汇合当前 Client 的 Manifest 与 Server Builtin/Alias 命令，按候选插入文本 `name` 去重，再进行排序。用户能在候选列表里看见一个名称，只能说明它出现在此清单，不能替代执行权限、平台可用性或参数合法性的验证；反过来，`suggest=False` 的命令可以执行但不作为普通提示展示。
+Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，`WebCommandCatalogApi` 汇合当前 Client 的 Manifest 与 Server Builtin/Alias 命令，按候选插入文本 `name` 去重，再进行排序。用户能在候选列表里看见一个名称，只能说明它出现在此清单，不能替代执行权限、平台可用性或参数合法性的验证；候选合并与去重在 Server 端完成。
 
 上下文自动补全又是独立机制：`POST /api/connections/{client_id}/command-completions` 由 Server `ServerCommandCompletionService` 的 Provider Registry 响应；需要 Client 文件系统等数据时，Server 通过独立 `type: completion` 消息请求 Client，并使用现有 PendingResults 按 request ID 关联 Result Envelope。该请求不走命令执行、Control、Foreground、Activity 或 History 路径。Client 命令的 CompletionSpec 通过 `command_manifest` 握手传递；Shell-like 使用 `@shell_command(..., completion=...)`，ACMD 在 `ArgumentOptionSpec.completion` 声明。**新增普通命令不等于自动获得参数补全**：静态 Server 子命令仍来自 Registry，动态参数需要显式 CompletionSpec 或相应 Server Provider。输入框选中候选后只是填充命令，不代表执行。详细规则请参阅 [Autocomplete](autocomplete.md)。
 
 开发者可依次检查三个现象：
 
-- `help client` 是否显示：取决于平台方法是否存在、`@shell_command` 是否导出，以及 `suggest`。
+- `help client` 是否显示：取决于当前 Client 平台命令是否导出及握手命令目录。
 - 命令候选 API 是否返回：取决于连接握手里的 Client Manifest 是否更新，以及 Server Registry 是否声明。
 - 输入参数时是否继续提示：取决于独立的 Completion Provider 和前端路由，而不是 `help` 描述本身。
 
 ## 六、受保护能力与执行策略如何接入
 
-普通 Client 命令和 ACMD 均可在当前 Web Task 中使用 Interaction Broker，使用连接建立时发放的会话凭证，不需要逐命令声明 Scope。`@confirm` 仍负责命令确认，`--no-confirm` 跳过该确认；`@shell_command(..., may_interact=True)` 只用于 Manifest 显示提示，不参与访问权限判断。
+普通 Client 命令和 ACMD 均可在当前 Web Task 中使用 Interaction Broker，使用连接建立时发放的会话凭证，不需要逐命令声明 Scope。`@confirm` 仍负责命令确认，`--no-confirm` 跳过该确认；`@shell_command(..., may_interact=True)` 是运行时交互声明，不参与访问权限判断。
 
 涉及 `CommandInteractions`、预览、Secret 输入、批准/拒绝时，详细使用和应答边界参阅 [Interaction Broker](interaction_broker.md)；Script SDK 的 Client API 路由由 [Client Session API](client_session_api.md) 说明；Command、ACMD 和 Script 共用 Client Session Token。
 
@@ -175,7 +174,7 @@ Web 通过 `GET /api/connections/{client_id}/command-candidates` 获取候选，
 | 现象 | 优先检查 |
 |---|---|
 | 方法存在但输入后落到 Shell | 方法是否实际属于加载的命令类；是否有 `@shell_command` 生成的 `help` 元数据；输入的命令名称是否正确 |
-| 终端 `help` 有命令，Web 下拉看不到 | `suggest` 是否为 `False`；握手快照是否更新；前端是否过滤；候选模板是否有效 |
+| 终端 `help` 有命令，Web 下拉看不到 | Client 当前平台是否导出该命令；握手快照是否更新；候选模板是否有效 |
 | ACMD 显示“not supported on this platform” | `@argument_command` 是否被实际平台继承；名称与注册表是否一致；Registry 是否已构建 |
 | ACMD 报缺参、未知选项或类型错误 | `ArgumentCommandSpec` / Validator；不要去修改 Server Shell 解析器绕过校验 |
 | Server Builtin 看起来变成远程命令 | `BuiltinCommandHandler` 上是否存在同名可调用方法；是否只配置了候选模板 |
@@ -242,6 +241,6 @@ The viewer's Clear View clears browser display only. External Tools' existing
 
 ## 命令 Manifest 元数据
 
-Client 普通命令的 `@shell_command` 可以声明 `output='collect'|'stream'`、`may_interact=True|False`，并保留 `help/group/suggest`。取消能力由现有 `@cancel_policy('none'|'cooperative'|'process')` 声明，命令执行时仍可根据具体执行模式更新当前取消策略。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器导出 `name/kind/source/help/group/suggest/cancel_policy/may_interact` 和按需存在的 `confirmation/completion`；超时、输出模式及交互执行逻辑继续留在运行时。ACMD 注册表使用相同的命令候选约定。每个可补全的 ACMD 条目使用真实插入文本作为 `name`，隐藏命令不加入握手清单。
+Client 普通命令的 `@shell_command` 可以声明 `output='collect'|'stream'`、`may_interact=True|False`，并保留 `help/group`。取消能力由现有 `@cancel_policy('none'|'cooperative'|'process')` 声明，命令执行时仍可根据具体执行模式更新当前取消策略。`@cancel_policy`、`@timeout`、`@confirm` 仍各自定义实际执行行为。命令扫描器导出 `name/kind/help/group/cancel_policy` 和按需存在的 `confirmation/completion`；超时、输出模式及交互执行逻辑继续留在运行时。ACMD 注册表使用相同的命令候选约定。每个可补全的 ACMD 条目使用真实插入文本作为 `name`。
 
-Manifest 中的取消策略是命令提示信息，Timeout 由执行上下文与命令注解确定；实际执行中的取消策略以运行态为准。带有 `confirmation: true` 的命令由 `@confirm` 请求 Interaction Broker 确认；所有这类命令均接受 `--no-confirm`。`may_interact` 是当前命令声明的“可能请求前台交互”提示，不表示每次执行都会产生弹窗。
+Manifest 中的取消策略是命令提示信息，Timeout 由执行上下文与命令注解确定；实际执行中的取消策略以运行态为准。带有 `confirmation: true` 的命令由 `@confirm` 请求 Interaction Broker 确认；所有这类命令均接受 `--no-confirm`。`may_interact` 保留在命令处理器的运行时声明中，不作为握手候选元数据。

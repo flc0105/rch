@@ -15,7 +15,7 @@ func TestDetachedCommandManifest(t *testing.T) {
 	if _, legacy := LookupCommand("run_detached"); legacy {
 		t.Fatal("legacy run_detached command must not be registered")
 	}
-	if !ok || !spec.Suggest || spec.Group != "execution" || spec.CancelPolicy != "none" || spec.Runner == nil {
+	if !ok || spec.Group != "execution" || spec.CancelPolicy != "none" || spec.Runner == nil {
 		t.Fatalf("unexpected detached command registration: %#v, %v", spec, ok)
 	}
 }

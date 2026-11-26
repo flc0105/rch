@@ -52,7 +52,6 @@ class CommandSpec:
     handler: str
     subcommands: tuple[SubcommandSpec, ...] = ()
     default: str = ''
-    suggest: bool = True
     group: str = 'server'
     expects_arguments: bool = False
     argument_spec: ArgumentCommandSpec | None = None
@@ -69,7 +68,7 @@ def command(name, description, handler=None, children=(), default='', group='ser
     return CommandSpec(name, description, handler or name,
                        tuple(item if isinstance(item, SubcommandSpec) else SubcommandSpec(*item)
                              for item in children),
-                       default, True, group, expects_arguments,
+                       default, group, expects_arguments,
                        argument_spec, raw_tail, fallback_subcommand, independent, completion)
 
 
@@ -532,7 +531,6 @@ class ServerCommandRegistry:
     def candidates(self):
         return [dict(name=spec.name + (' ' if spec.subcommands or spec.expects_arguments else ''),
                      help=spec.description, source='server', group=spec.group,
-                     suggest=spec.suggest,
                      subcommands=[dict(name=child.name, usage=child.usage,
                                        description=child.description)
                                   for child in spec.subcommands if child.visibility == 'public'])

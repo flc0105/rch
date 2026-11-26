@@ -24,7 +24,6 @@ type CommandSpec struct {
 	Usage        string
 	Help         string
 	Group        string
-	Suggest      bool
 	CancelPolicy string
 	Output       string
 	Completion   *CompletionSpec
@@ -197,12 +196,6 @@ func CancelPolicy(value string) CommandOption {
 	}
 }
 
-func Suggest() CommandOption {
-	return func(spec *CommandSpec) {
-		spec.Suggest = true
-	}
-}
-
 func LookupCommand(name string) (CommandSpec, bool) {
 	commandRegistryMu.RLock()
 	defer commandRegistryMu.RUnlock()
@@ -239,9 +232,7 @@ func CommandManifest() []interface{} {
 			"usage":         defaultUsage(cmd),
 			"help":          cmd.Help,
 			"group":         cmd.Group,
-			"suggest":       cmd.Suggest,
 			"cancel_policy": cmd.CancelPolicy,
-			"may_interact":  false,
 		}
 		if cmd.Completion != nil {
 			entry["completion"] = map[string]interface{}{

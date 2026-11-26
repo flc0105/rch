@@ -90,8 +90,7 @@ class ArgumentCommandRegistry:
             'name': 'acmd help',
             'help': 'List all registered structured commands',
             'group': 'acmd',
-            'suggest': True,
-            **command_metadata(None, kind='acmd'),
+                        **command_metadata(None, kind='acmd'),
         }]
         for item in self.list_command_entries():
             command_name = item['name'].strip()
@@ -116,8 +115,7 @@ class ArgumentCommandRegistry:
                 'name': f'acmd {command_name}',
                 'help': item['description'],
                 'group': 'acmd',
-                'suggest': True,
-                **metadata,
+                                **metadata,
                 **({'completion': completion_specs} if completion_specs else {}),
             })
         return payload

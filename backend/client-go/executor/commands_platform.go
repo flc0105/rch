@@ -17,7 +17,7 @@ var (
 		Usage("getinfo"),
 		Help("Get system information"),
 		Group("platform"),
-		Suggest(),
+
 		cmdGetinfo,
 	)
 
@@ -26,7 +26,7 @@ var (
 		Usage("screenshot"),
 		Help("Capture screenshot and upload"),
 		Group("platform"),
-		Suggest(),
+
 		cmdScreenshot,
 	)
 
@@ -35,7 +35,7 @@ var (
 		Usage("download <file>"),
 		Help("Upload a local file to server"),
 		Group("file"),
-		Suggest(),
+
 		CompletionProvider("filesystem", "file", "directory"),
 		cmdDownload,
 	)

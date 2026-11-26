@@ -127,7 +127,6 @@ func (c *Client) buildHandshake(cwd string) map[string]interface{} {
 		"cwd":                       cwd,
 		"integrity":                 executor.DetectHandshakeIntegrity(),
 		"build_version":             config.CLIENT_BUILD_VERSION,
-		"file_transfer_mode":        config.Runtime().FileTransferMode(),
 		"go_version":                runtime.Version(),
 		"process_id":                os.Getpid(),
 		"username":                  username,

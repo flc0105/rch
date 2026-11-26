@@ -1136,7 +1136,7 @@ export default {
         .filter(item => item && item.source === 'server')
         .map(item => this.normalizeConnectionInfoCommand(item))
       this.connectionInfoClientCommands = (Array.isArray(json.data) ? json.data : [])
-        .filter(item => item && item.source === 'client' && item.suggest !== false)
+        .filter(item => item && item.source === 'client')
         .map(item => this.normalizeConnectionInfoCommand(item))
     },
 

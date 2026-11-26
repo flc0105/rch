@@ -181,9 +181,6 @@ class WebConnectionService:
             'client_log_path': info.get_extra('client_log_path') or '',
             'username': info.get_extra('username'),
             'process_name': info.get_extra('process_name'),
-            'file_transfer_mode': info.get_extra('file_transfer_mode'),
-            'script_default_execution_mode': info.get_extra('script_default_execution_mode'),
-            'script_default_output_mode': info.get_extra('script_default_output_mode'),
             'feature_manifest': dict(info.get_extra('feature_manifest') or {}),
         }
 
@@ -261,9 +258,6 @@ class WebConnectionService:
                 'launch_source': item.get('launch_source') or '',
                 'username': item.get('username') or '',
                 'process_name': item.get('process_name') or '',
-                'file_transfer_mode': item.get('file_transfer_mode') or '',
-                'script_default_execution_mode': item.get('script_default_execution_mode') or '',
-                'script_default_output_mode': item.get('script_default_output_mode') or '',
                 'recent_cached': True,
             }
             results.append(self._decorate_connection_with_device_view_prefs(offline_item))

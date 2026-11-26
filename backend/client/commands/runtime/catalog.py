@@ -104,11 +104,9 @@ class CommandCatalog:
                 'name': name,
                 'help': method.help,
                 'group': getattr(method, 'group', 'general'),
-                'suggest': getattr(method, 'suggest', True),
                 **command_metadata(method, platform=platform),
             }
             for name, method in self.get_exported_shell_commands().items()
-            if getattr(method, 'suggest', True)
         ]
         payload.extend(self.get_argument_command_registry().get_manifest_payload())
         payload.sort(key=lambda item: (item.get('group', 'general'), item.get('name', '').lower()))

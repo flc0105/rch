@@ -13,7 +13,7 @@ import (
 var _ = Register(
 	"run_bg", Usage("run_bg <program> [args...]"),
 	Help("Start an independent program in a new session"),
-	Group("execution"), Suggest(), CancelPolicy("none"), CommandRunner(cmdRunBg),
+	Group("execution"), CancelPolicy("none"), CommandRunner(cmdRunBg),
 )
 
 func cmdRunBg(_ context.Context, s *Session, raw string, _ func(int, string)) (int, string) {

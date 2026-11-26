@@ -15,11 +15,11 @@ import (
 var (
 	_ = Register(
 		"shell", Usage("shell <command>"), Help("Run a shell command"),
-		Group("execution"), Suggest(), CancelPolicy("process"), CommandRunner(cmdShell),
+		Group("execution"), CancelPolicy("process"), CommandRunner(cmdShell),
 	)
 	_ = Register(
 		"shell_stream", Usage("shell_stream <command>"), Help("Run a command with live output"),
-		Group("execution"), Suggest(), CancelPolicy("process"), Output("stream"), CommandRunner(cmdShellStream),
+		Group("execution"), CancelPolicy("process"), Output("stream"), CommandRunner(cmdShellStream),
 	)
 )
 

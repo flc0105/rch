@@ -13,7 +13,7 @@ var (
 		Usage("help"),
 		Help("Show available commands"),
 		Group("session"),
-		Suggest(),
+
 		cmdHelp,
 	)
 
@@ -22,7 +22,7 @@ var (
 		Usage("kill_instance"),
 		Help("Terminate current session"),
 		Group("session"),
-		Suggest(),
+
 		cmdKillInstance,
 	)
 
@@ -31,7 +31,7 @@ var (
 		Usage("relaunch_instance [--no-confirm]"),
 		Help("Restart this client in a new process"),
 		Group("session"),
-		Suggest(),
+
 		cmdRelaunchInstance,
 	)
 
@@ -40,7 +40,7 @@ var (
 		Usage("spawn_instance"),
 		Help("Start another client process"),
 		Group("session"),
-		Suggest(),
+
 		cmdSpawnInstance,
 	)
 
@@ -49,7 +49,7 @@ var (
 		Usage("cd <path>"),
 		Help("Change current working directory"),
 		Group("session"),
-		Suggest(),
+
 		CompletionProvider("filesystem", "directory"),
 		cmdCd,
 	)
@@ -59,7 +59,7 @@ var (
 		Usage("pwd"),
 		Help("Print current working directory"),
 		Group("session"),
-		Suggest(),
+
 		cmdPwd,
 	)
 )

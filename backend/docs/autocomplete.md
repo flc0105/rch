@@ -24,9 +24,9 @@ Web Terminal 输入内容
                                        + 前端常用操作候选 + 已固定的命令历史
 ```
 
-**基础命令候选**来自 `GET /api/connections/{client_id}/command-candidates`。Client 在建立连接时通过 `command_manifest` 上报导出的 Shell-like 命令和结构化 `acmd` 命令；Server 再合并 Built-in 和当前生效的 Alias。前端只显示允许建议的条目（`suggest !== false`），另外加入少量常用操作和当前设备已经 Pin 的命令历史。Web Terminal 另外加入 **Frontend** 类别的本地 `edit`（用 Monaco 编辑远程文本）和 `clear`（清空终端输出）；这两个操作直接在浏览器处理，候选不会发往 Client。若远端清单恰好有相同名称，本地入口优先。按候选模板文本去重后，**空输入**时按固定分组顺序、组内按命令名称字母顺序展示：`shell → execution → session → system → network → privilege → media → file → automation → transfer → runtime → maintenance → python → acmd → common_ops → frontend → server → alias → Pin Command`。`common_ops` 使用现有命令分组名称，已 Pin 的 History 位于末尾。已输入文字后的匹配及上下文补全仍沿用各自的排序逻辑。
+**基础命令候选**来自 `GET /api/connections/{client_id}/command-candidates`。Client 在建立连接时通过 `command_manifest` 上报导出的 Shell-like 命令和结构化 `acmd` 命令；Server 再合并 Built-in 和当前生效的 Alias。前端展示当前 Client、Server、Alias 的有效命令条目，并加入少量 Common Ops 和当前设备已 Pin 的命令历史。Web Terminal 另外加入 **Frontend** 类别的本地 `edit`（用 Monaco 编辑远程文本）和 `clear`（清空终端输出）；这两个操作直接在浏览器处理，候选不会发往 Client。若远端清单恰好有相同名称，本地入口优先。按候选模板文本去重后，**空输入**时按固定分组顺序、组内按命令名称字母顺序展示：`shell → execution → session → system → network → privilege → media → file → automation → transfer → runtime → maintenance → python → acmd → common_ops → frontend → server → alias → Pin Command`。`common_ops` 使用现有命令分组名称，已 Pin 的 History 位于末尾。已输入文字后的匹配及上下文补全仍沿用各自的排序逻辑。
 
-命令 Manifest 由 Client 当前平台支持的命令注册信息生成。`@shell_command(..., suggest=False)` 可以让内部命令保持可执行、却不进入普通命令发现列表；`acmd` 项来自结构化命令注册表。输入 `acmd` 或尚未完成的子命令前缀（例如 `acmd im`）时，候选直接匹配握手 Manifest 中的完整 ACMD 名称；完整子命令名后输入空格，才进入该命令的参数级补全。Manifest 属于**握手快照**：Client 本地命令注册内容变化后，不能假定已连接浏览器会自动看到更新的 Manifest。顶层列表的别名则来源于 Server 内存中的当前生效定义，而不是一个永久写死在前端的名称列表。
+命令 Manifest 由 Client 当前平台支持的导出命令生成；`acmd` 项来自结构化命令注册表。输入 `acmd` 或尚未完成的子命令前缀（例如 `acmd im`）时，候选直接匹配握手 Manifest 中的完整 ACMD 名称；完整子命令名后输入空格，才进入该命令的参数级补全。Manifest 属于**握手快照**：Client 本地命令注册内容变化后，不能假定已连接浏览器会自动看到更新的 Manifest。顶层列表的别名则来源于 Server 内存中的当前生效定义，而不是一个永久写死在前端的名称列表。
 
 **上下文补全**使用 `POST /api/connections/{client_id}/command-completions`。Server 根据原始输入和当前 Client 的握手 Manifest 决定是否存在 Client 补全声明；需要 Client 动态数据时，通过独立 `type: completion` 消息传递原始输入、光标位置和可选的 CompletionSpec override。Client 返回标准 Result Envelope，`data.items` 使用统一 Candidate 结构。该请求不经过 `command` / `control` 执行路径。
 

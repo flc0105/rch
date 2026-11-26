@@ -9,8 +9,8 @@ RCH 的 Client 与 Server 建立 TCP 连接后，需要完成一件比“上线�
 Python Client 初始化时先创建 `Client` 对象，为这个进程实例生成 `client_id`，初始化连接对象及其执行环境。随后 `connect()` 按顺序执行：
 
 1. 根据 Client Profile 中的 `server_host`、`server_port` 连接 Server Socket；连接失败则按重连间隔重试，并重建连接对象。
-2. TCP 建立后，由 `ClientInfoBuilder` 收集本地身份、当前平台的命令清单、变量提示、系统路径、构建信息与运行配置。
-3. 通过 Client 的 `console_logger` 记录完整 `info` 握手 JSON（同时输出到控制台和已启用的主日志文件），再通过 Socket 协议发送；消息的 `id` 为当前 Client 实例的 `client_id`。每次建立新连接并发送握手时都会输出。
+2. TCP 建立后，由 `ClientInfoBuilder` 收集本地身份、当前平台的命令清单、系统路径及构建信息。
+3. 以 `DEBUG` 级别记录完整 `info` 握手 JSON，再通过 Socket 协议发送；消息的 `id` 为当前 Client 实例的 `client_id`。控制台和主日志文件遵循当前 `LOG_LEVEL`。
 4. Client 本地将连接标记为已连接，再启动接收工作线程。这里的 `mark_connected()` 是本地状态更新，**不是收到 Server 的独立握手确认帧**。
 5. Server 的监听线程读取新 Socket 的第一条消息，建立 `ClientSession` 并放入活动连接管理器，记录设备/连接历史，发布 `connection_online`；随后另启线程持续接收该连接的消息。
 
@@ -30,7 +30,6 @@ Python Client 的握手不只是操作系统名称。`ClientInfoBuilder.build()`
 | 系统和硬件 | `os_type`、`os_alias`、`os_full`、`os_name`、`os_ver`、`arch`、`manufacturer`、`model`、`chassis_type` | 展示平台、架构和机箱分类等设备资料，供 UI 判断或呈现 |
 | 进程与权限 | `process_id`、`launch_command`、`launch_mode`、`launch_source`、`username`、`process_name`、`integrity`、`cwd`、`python_ver` | 说明 Client 进程当时如何运行、具有何种权限及初始工作目录 |
 | 构建与源码身份 | `build_version`、`client_revision` | 标记构建产物，比较 Client 与 Server 的源码内容 |
-| 运行能力与配置快照 | `file_transfer_mode`、`script_default_execution_mode`、`script_default_output_mode` | 表示 Client 握手时采用的传输与执行模式；Watchdog 运行状态通过 `watchdog --json` 实时读取 |
 | 提示与路径 | `command_manifest`、`system_paths` | 提供命令候选和 Client 端已知路径；变量清单在使用时查询 |
 
 `id` 是每个 Python `Client` 对象初始化时创建的 UUID v4；它代表 Client 进程实例，不是主机名或 `machine_id`。同一个对象因网络异常重连会继续使用原 `client_id`，进程重新启动则通常产生新值。`machine_id` 来自规范化机器特征的 SHA-256 指纹，特征不变时可以跨进程重启复现；它不会随着 `client_id` 每次重建而重新随机分配。`chassis_type` 按设备固件和系统可提供的机箱信息分类（如 `laptop`、`desktop`、`server`、`phone`、`tablet`）；没有有效类型时使用 `unknown`。Linux 读取 DMI `chassis_type`，其中 `1`（Other）为 `unknown`，不依据发行版或云厂商名称猜测类型。Windows 采用原有脚本验证过的 `Win32_SystemEnclosure` 机箱编码检测，PowerShell 读取限时 3 秒；macOS 优先读取 `hw.model`，无法判定时限时查询 `system_profiler`。结果在 Client 进程内缓存，重连无需重复探测；不参与 `machine_id` 指纹。完整的字段采集、指纹算法与设备库存归属见 [Device Identity & Inventory](./device_identity.md)。
@@ -41,7 +40,7 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
 
 `launch_mode` 描述 Client 的外部运行形态，取值为 `terminal`、`terminal_background`、`ide`、`detached`、`user_service`、`system_service`、`scheduled` 或 `unknown`。`launch_source` 保存该形态下可识别的具体环境，例如 `zsh`、`powershell`、`pycharm`、`launchagent`、`launchdaemon`、`cron` 或 `schtasks`。判定在 Client 进程生命周期内只采集一次，网络重连继续沿用同一结果；由 Client 自身重新创建出的独立后台进程按其实际进程形态记录为 `detached`。macOS 对 LaunchAgent/LaunchDaemon 通过 launchd 的运行作业与当前 PID 双重核对；Detached 则依靠 session/控制终端状态，不依赖启动器环境标记。无法可靠识别的环境使用 `unknown`。完整分类表、判定优先级与跨平台实机测试命令见 [Client Launch Mode](launch_mode.md)。
 
-`integrity` 由 Client 权限探测逻辑计算：Go 与 Python Client 在 Windows 上均从当前进程 Token 的 `TokenIntegrityLevel` SID 读取完整性 RID，映射为 `Untrusted`、`Low`、`Medium`、`Medium High`、`High`、`System`、`Protected` 或 `Unknown`；POSIX 则依据 effective UID 区分 `User`、`Root` 和 `Root (via sudo)`。Go Client 同样在进程启动时采集 `launch_mode` / `launch_source`，重连时保持快照。`script_default_execution_mode`、`script_default_output_mode` 和传输模式表示 Client 当前配置，不构成“此 Client 支持所有 Web 功能”的通用能力证明。界面如需展示某个实时可执行状态，应调用相应的运行时 API，而不是反复读取握手快照。
+`integrity` 由 Client 权限探测逻辑计算：Go 与 Python Client 在 Windows 上均从当前进程 Token 的 `TokenIntegrityLevel` SID 读取完整性 RID，映射为 `Untrusted`、`Low`、`Medium`、`Medium High`、`High`、`System`、`Protected` 或 `Unknown`；POSIX 则依据 effective UID 区分 `User`、`Root` 和 `Root (via sudo)`。Go Client 同样在进程启动时采集 `launch_mode` / `launch_source`，重连时保持快照。文件传输模式、Script 默认执行与输出模式通过运行时配置查询，界面需要当前值时使用 Configuration API。
 
 ### 消息结构示意
 
@@ -62,7 +61,7 @@ Client 主进程尝试将 Python Logging 同步镜像到 Client temp root 的 `c
   "build_version": "dev",
   "client_revision": "<source-revision>",
   "command_manifest": [
-    {"name": "example", "help": "Illustrative entry", "group": "general", "suggest": true}
+    {"name": "example", "help": "Illustrative entry", "group": "general", "kind": "command"}
   ],
   "system_paths": {"home": "/home/demo", "temp": "/tmp"}
 }
@@ -93,10 +92,10 @@ Client 先取得当前平台的命令对象，然后检查拥有 `help` 装饰�
 | `name` | 可补全的命令文本，包括 `acmd` 前缀；Server 候选 API 将其映射为插入模板 |
 | `help` | 简短帮助文本 |
 | `group` | 用于命令候选的展示分组，缺省为 `general` |
-| `suggest` | 是否建议在通常的帮助/提示 UI 中显示 |
-| `source` | 可选的候选来源；Server 在缺省时按 Client 来源处理 |
+| `kind` | 命令类别，普通命令为 `command`，结构化 ACMD 为 `acmd` |
+| `cancel_policy` | 命令声明的取消策略 |
 
-结构化参数命令通过注册表添加可补全的 `acmd` 命令名称。最终命令 Manifest 会按 `group`、`name` 排序。普通命令中设置 `suggest=False` 的条目**不会因此失去执行能力**；它是提示/展示属性，而不是 Server 对该命令作出的权限授权决定。
+结构化参数命令通过注册表添加可补全的 `acmd` 命令名称。最终命令 Manifest 按 `group`、`name` 排序。Server 组合候选时统一为 Client 条目标注 `source=client`。
 
 `command_manifest` 是当前 Client 声明出来的**候选描述数据**。它不包含执行命令所需的一切状态，也不保证所有后续调用都会成功：执行器仍须完成真正的命令解析、参数验证、平台判断和权限/交互流程。完整的命令候选合并、参数级补全和前端接收行为见 [Terminal Autocomplete](./autocomplete.md)；命令执行方式见 [Shell-like Commands](./shell_like_commands.md) 与 [ACMD](./acmd.md)。
 
@@ -207,7 +206,7 @@ Go Client 的连接、身份、目录管理、Remote Files 上传／下载／预
 
 ## Capability Metadata 与启动 Feature
 
-Client 在原有 `info.command_manifest` 每个条目中上报命令描述：`name`、`kind`、`source`、`help`、`group`、`suggest`、`cancel_policy`、`may_interact`、`confirmation`，以及可选的 `completion`。`completion` 是最小 CompletionSpec：只有 `provider` 和 `kinds`。Shell-like 命令由 `@shell_command(..., completion=CompletionSpec(...))` 声明；ACMD 在对应参数的 `ArgumentOptionSpec.completion` 声明，握手条目只携带去重后的 `{provider,kinds}` 列表，不重复传参数名/位置，具体参数绑定继续由 Client 本地 ACMD Schema 解析。当前实现 `filesystem` Provider，`kinds` 为 `file` 和/或 `directory`。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。`may_interact=true` 表示命令可能请求前台交互，属于平铺的提示字段。
+Client 在 `info.command_manifest` 中上报 `name`、`kind`、`help`、`group`、`cancel_policy`，以及按需存在的 `confirmation`、`completion`。`completion` 是最小 CompletionSpec：只有 `provider` 和 `kinds`。Shell-like 命令由 `@shell_command(..., completion=CompletionSpec(...))` 声明；ACMD 在对应参数的 `ArgumentOptionSpec.completion` 声明，握手条目只携带去重后的 `{provider,kinds}` 列表，不重复传参数名/位置，具体参数绑定继续由 Client 本地 ACMD Schema 解析。当前实现 `filesystem` Provider，`kinds` 为 `file` 和/或 `directory`。带 `@confirm` 的命令默认请求执行确认，显式 `--no-confirm` 跳过确认。前台交互、超时和输出模式由执行器的运行时声明控制，不作为握手命令目录字段。
 
 这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。命令实际的超时预算和输出模式仍由运行时声明及执行上下文决定，不需要在握手的命令候选中复制。
 

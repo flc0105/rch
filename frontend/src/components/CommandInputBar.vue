@@ -1710,7 +1710,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
           merged.push(normalized)
         }
 
-        const visibleSystemCandidates = systemCandidates.filter(item => item.suggest !== false)
+        const visibleSystemCandidates = systemCandidates
 
         const clientCandidates = visibleSystemCandidates.filter(
           item => item.source === 'client' && item.group !== 'acmd',
@@ -1785,7 +1785,7 @@ const pinnedHistoryItems = historyItems.filter(item => item && item.is_pinned)
 
     buildCommonOpsCandidates() {
       return Object.entries(this.getCommonOpsConfig())
-        .filter(([, definition]) => definition?.suggest === true)
+        .filter(([, definition]) => Boolean(definition?.help))
         .map(([name, definition]) => {
           const insertText = `${name}${definition.trailingSpace ? ' ' : ''}`
           return {

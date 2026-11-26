@@ -8,7 +8,7 @@ from core.platform.normalization import normalize_platform_alias
 _VALID_PLATFORMS = frozenset({'mac', 'win', 'linux', 'ios'})
 
 
-def shell_command(description, group='general', suggest=True, *, output='collect',
+def shell_command(description, group='general', *, output='collect',
                   may_interact=False, completion=None, platforms=None):
     """Mark an ordinary Client command; platforms=None enables all platforms.
 
@@ -39,7 +39,6 @@ def shell_command(description, group='general', suggest=True, *, output='collect
             func.command_completion = completion
         func.help = description
         func.group = group
-        func.suggest = suggest
         func.command_platforms = supported
         return func
     return decorator

@@ -11,7 +11,7 @@ import (
 	"client-go/protocol"
 )
 
-var _ = Register("set", Usage("set [--json | --reset KEY | KEY value]"), Help("View or update runtime configuration"), Group("runtime"), Suggest(), CommandRunner(cmdRuntimeSet))
+var _ = Register("set", Usage("set [--json | --reset KEY | KEY value]"), Help("View or update runtime configuration"), Group("runtime"), CommandRunner(cmdRuntimeSet))
 
 // splitRuntimeArgs accepts Server-generated POSIX shell quotes while keeping
 // Windows backslashes literal (including paths containing spaces).

@@ -1,19 +1,15 @@
 {
   "whoami": {
-    "suggest": true,
     "help": "Show the current user"
   },
   "hostname": {
-    "suggest": true,
     "help": "Show the host name"
   },
   "mkdir": {
-    "suggest": true,
     "trailingSpace": true,
     "help": "Create a directory"
   },
   "rmdir": {
-    "suggest": true,
     "trailingSpace": true,
     "help": "Remove an empty directory",
     "completion": {

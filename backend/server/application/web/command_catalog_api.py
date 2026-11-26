@@ -32,14 +32,10 @@ class WebCommandCatalogApi:
                 'name': name,
                 'help': item.get('help', ''),
                 'group': item.get('group', 'general'),
-                'suggest': item.get('suggest', True),
-                'source': item.get('source', 'client'),
+                'source': 'client',
                 'kind': item.get('kind', 'command'),
                 'cancel_policy': item.get('cancel_policy', 'none'),
-                'timeout': item.get('timeout'),
                 **({'confirmation': True} if item.get('confirmation') else {}),
-                'interaction': item.get('interaction') or {'may_request': False},
-                'output': item.get('output', 'collect'),
                 **({'completion': item.get('completion')} if item.get('completion') else {}),
             })
 

@@ -4,7 +4,6 @@ from client.config.config import (
     CLIENT_BUILD_VERSION,
     CLIENT_SOURCE_REVISION,
 )
-from client.config import runtime_config
 from core.client_revision import build_client_revision_manifest
 from client.app.logging import get_client_log_path
 from core.device.local_identity import get_local_identity
@@ -94,10 +93,6 @@ class ClientInfoBuilder:
             'integrity': check_privilege(),
             'cwd': reported_current_directory(),
             'python_ver': platform.python_version(),
-
-            'file_transfer_mode': runtime_config.FILE_TRANSFER_MODE,
-            'script_default_execution_mode': runtime_config.SCRIPT_DEFAULT_EXECUTION_MODE,
-            'script_default_output_mode': runtime_config.SCRIPT_DEFAULT_OUTPUT_MODE,
 
             'command_manifest': self._build_command_manifest(),
             'feature_manifest': dict(features),

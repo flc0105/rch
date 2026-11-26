@@ -36,4 +36,4 @@ def log_runtime_config_overrides_if_any():
             f'(default={format_runtime_config_value(default_value)})'
         )
 
-    logger.warning('\n'.join(lines))
+    logger.info('\n'.join(lines))
