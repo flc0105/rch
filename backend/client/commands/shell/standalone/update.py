@@ -187,8 +187,7 @@ def update(self, arg=''):
             self.emit_completed(
                 status='error',
                 message=f'Failed to update Client bundle: {exc}. Original Client remains online.',
-                references=[log_file_reference(observe_log, title='Client update'),
-                            session_action_reference('kill_instance')],
+                references=[log_file_reference(observe_log, title='Client update')],
             )
         else:
             self.emit_completed(status='error', message=f'Failed to update Client bundle: {exc}')

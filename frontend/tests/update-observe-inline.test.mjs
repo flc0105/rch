@@ -83,12 +83,17 @@ test('completed success and failure both expose the shared Result action list', 
     const finished = {kind: state === 'Success' ? 'success' : 'error',
       text: `[Command finished] update --observe (${state})`,
       meta: {operation_id: 'op-1', event_type: 'completed'}}
-    const lines = [command, result, finished]
+    const resultLine = state === 'Success' ? result : {
+      ...result,
+      kind: 'error',
+      meta: {...result.meta, resultReferences: [result.meta.resultReferences[0]]},
+    }
+    const lines = [command, resultLine, finished]
     const ctx = { ...methods, selectedId: 'other-client',
       getTerminalBlockArtifactActions: () => [],
       buildTerminalJsonCommandInfo: () => ({}), }
     const actions = methods.getTerminalTailActionItems.call(ctx, lines, 2)
-    assert.deepEqual(actions.map(item => item.type), ['log', 'kill_instance'])
+    assert.deepEqual(actions.map(item => item.type), state === 'Success' ? ['log', 'kill_instance'] : ['log'])
   }
 })
 

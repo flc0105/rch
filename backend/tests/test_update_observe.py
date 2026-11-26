@@ -113,7 +113,7 @@ def test_observe_failure_carries_log_while_original_survives(monkeypatch, tmp_pa
     assert result['status'] == 'error'
     assert 'Original Client remains online' in result['message']
     assert result['references'][0] == {'type': 'log_file', 'path': str(log), 'title': 'Client update'}
-    assert result['references'][1] == session_action_reference('kill_instance')
+    assert result['references'] == [{'type': 'log_file', 'path': str(log), 'title': 'Client update'}]
 
 
 def test_default_update_still_schedules_exit_without_new_log(monkeypatch, tmp_path):
@@ -157,3 +157,50 @@ def test_candidate_stdout_and_startup_traceback_survive_failed_process(tmp_path)
     log = log_path.read_text(encoding='utf-8')
     assert 'candidate startup' in log
     assert 'ModuleNotFoundError: missing_dependency' in log
+
+
+def test_candidate_can_exit_after_readiness_has_been_accepted(tmp_path):
+    """A successful handoff is a point-in-time check, not a continuous monitor."""
+    from client.runtime.client_util import spawn_detached_python_script
+    from client.update.signals import SignalListener, candidate_environment
+
+    script = tmp_path / 'late_exit_candidate.py'
+    script.write_text(
+        'import json, os, socket, sys, time\n'
+        'with socket.create_connection(("127.0.0.1", int(os.environ["RCH_UPDATE_SIGNAL_PORT"]))) as sock:\n'
+        '    sock.sendall((json.dumps({"secret": os.environ["RCH_UPDATE_SIGNAL_SECRET"], '
+        '"attempt_id": os.environ["RCH_UPDATE_ATTEMPT"], "pid": os.getpid(), '
+        '"client_id": "new-test-client", "client_revision": "rev-late", '
+        '"mode": "reverse"}) + "\\n").encode())\n'
+        '    response = bytearray()\n'
+        '    while b"\\n" not in response:\n'
+        '        chunk = sock.recv(4096)\n'
+        '        if not chunk: raise RuntimeError("Readiness confirmation missing")\n'
+        '        response.extend(chunk)\n'
+        '    assert json.loads(response.decode())["accepted"] is True\n'
+        'print("ready accepted", flush=True)\n'
+        'time.sleep(1.0)\n'
+        'print("late candidate crash", file=sys.stderr, flush=True)\n'
+        'sys.exit(23)\n',
+        encoding='utf-8',
+    )
+    log_path = tmp_path / 'late_exit.log'
+    with SignalListener() as signal:
+        process = spawn_detached_python_script(
+            str(script), output_path=str(log_path),
+            env_overrides=candidate_environment(signal.port, signal.secret, 'late-test'),
+        )
+        try:
+            packet = signal.accept(attempt_id='late-test', process=process,
+                                   revision='rev-late', mode='reverse',
+                                   timeout=4, stable_seconds=.15)
+            assert packet['client_id'] == 'new-test-client'
+            assert process.poll() is None  # Update would now finalize its old session.
+            assert process.wait(timeout=5) == 23  # The candidate exits later.
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+    text = log_path.read_text(encoding='utf-8')
+    assert 'ready accepted' in text
+    assert 'late candidate crash' in text
