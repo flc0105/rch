@@ -6,6 +6,7 @@ import pytest
 
 from client.app.client import Client
 from client.connection.lifecycle import ClientConnectionLifecycle
+from client.connection.errors import ConnectionAuthenticationError
 
 
 def test_client_reconnection_exponential_delay_and_reset(monkeypatch, caplog):
@@ -17,9 +18,9 @@ def test_client_reconnection_exponential_delay_and_reset(monkeypatch, caplog):
         connect=Mock(),
     )
     for expected in (5,10,20,30,30):
-        Client._recover_from_connection_error(fake,ConnectionError('Client mTLS identity not authorized or revoked'))
+        Client._recover_from_connection_error(fake,ConnectionError('connection reset'))
         assert sleeps[-1]==expected
-    assert 'Client mTLS identity not authorized or revoked' in caplog.text
+    assert 'connection reset' in caplog.text
     fake.server.client_session_token='accepted-session'
     Client._recover_from_connection_error(fake,ConnectionError('closed'))
     assert sleeps[-1]==5
@@ -30,15 +31,17 @@ def test_bind_reconnection_only_immediate_once_before_admission(monkeypatch):
     monkeypatch.setattr('client.app.client.time.sleep',sleeps.append)
     fake=SimpleNamespace(
         server=SimpleNamespace(client_session_token=''),
-        connection_lifecycle=SimpleNamespace(is_paused=False,is_bind_mode=True,reset_connection=Mock()),
+        connection_lifecycle=SimpleNamespace(is_paused=False,is_bind_mode=True,reset_connection=Mock(),
+                                             close_current_connection=Mock()),
         connect=Mock(),
     )
     Client._recover_from_connection_error(fake,ConnectionError('closed'))
     assert not sleeps  # Existing fast reaccept remains.
-    Client._recover_from_connection_error(fake,ConnectionError('Client mTLS identity not authorized or revoked'))
+    Client._recover_from_connection_error(fake,ConnectionAuthenticationError('Client mTLS identity not authorized or revoked'))
     assert sleeps==[5]
-    Client._recover_from_connection_error(fake,ConnectionError('Client mTLS identity not authorized or revoked'))
+    Client._recover_from_connection_error(fake,ConnectionAuthenticationError('Client mTLS identity not authorized or revoked'))
     assert sleeps==[5,10]
+    assert fake.connection_lifecycle.close_current_connection.call_count == 2
     fake.server.client_session_token='accepted-session'
     Client._recover_from_connection_error(fake,ConnectionError('closed'))
     assert sleeps==[5,10]

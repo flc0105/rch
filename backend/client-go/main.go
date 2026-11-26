@@ -1,7 +1,12 @@
 package main
 
-import "client-go/connection"
+import (
+	"client-go/connection"
+	"log"
+)
 
 func main() {
-	connection.New().Run()
+	if err := connection.New().Run(); err != nil {
+		log.Fatalf("Connection stopped; check configuration or identity: %v", err)
+	}
 }

@@ -3,6 +3,7 @@ import socket
 import time
 import uuid
 
+from client.connection.errors import ConnectionConfigurationError, terminal_connection_error
 from client.connection.lifecycle import ClientConnectionLifecycle, next_reconnect_delay
 from client.connection.receiver_worker import ClientReceiverWorker
 from client.config import runtime_config
@@ -71,6 +72,8 @@ class Client:
         try:
             self.connect()
         except OSError as error:
+            if isinstance(error, ConnectionConfigurationError):
+                raise
             if not self.connection_lifecycle.is_bind_mode:
                 raise
             from client.update.signals import is_update_candidate
@@ -88,10 +91,20 @@ class Client:
         logger.warning('Connection lost: %s', error)
         first_attempt = True
         while True:
+            terminal = terminal_connection_error(error)
+            if terminal is not None:
+                # Refuse the current connection immediately, including Bind.
+                # Do not release Bind admission before its existing recovery limit.
+                self.connection_lifecycle.close_current_connection()
+                if (isinstance(terminal, ConnectionConfigurationError)
+                        or not self.connection_lifecycle.is_bind_mode):
+                    if terminal is error:
+                        raise terminal
+                    raise terminal from error
             if self.connection_lifecycle.is_paused is True:
                 return
             # An established Bind session may release and reaccept immediately once.
-            # Repeated unadmitted sessions (including revoked identities) back off.
+            # Keep the existing limit on repeated unadmitted Bind sessions.
             immediate = (first_attempt and self.connection_lifecycle.is_bind_mode
                          and not getattr(self, '_bind_immediate_retry_used', False))
             if immediate:

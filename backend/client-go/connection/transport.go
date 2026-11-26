@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"client-go/config"
@@ -70,7 +72,7 @@ func identityTLSConfig(forBind bool) (*tls.Config, error) {
 	}
 	verifyServer := func(state tls.ConnectionState) error {
 		if len(state.PeerCertificates) == 0 {
-			return errors.New("Server mTLS certificate missing")
+			return authenticationFailure(errors.New("Server mTLS certificate missing"))
 		}
 		intermediates := x509.NewCertPool()
 		for _, cert := range state.PeerCertificates[1:] {
@@ -81,7 +83,7 @@ func identityTLSConfig(forBind bool) (*tls.Config, error) {
 			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		})
 		if err != nil {
-			return fmt.Errorf("Server mTLS identity not trusted: %w", err)
+			return authenticationFailure(fmt.Errorf("Server mTLS identity not trusted: %w", err))
 		}
 		return nil
 	}
@@ -102,13 +104,18 @@ func identityTLSConfig(forBind bool) (*tls.Config, error) {
 }
 
 func dialServer() (net.Conn, error) {
+	host, port, err := net.SplitHostPort(config.SERVER_ADDR)
+	n, portErr := strconv.Atoi(port)
+	if err != nil || strings.TrimSpace(host) == "" || portErr != nil || n < 1 || n > 65535 {
+		return nil, configurationFailure(errors.New("invalid Reverse server host or port"))
+	}
 	switch config.SERVER_TRANSPORT {
 	case "tcp":
 		return net.DialTimeout("tcp", config.SERVER_ADDR, 10*time.Second)
 	case "mtls_tcp":
 		tlsConfig, err := identityTLSConfig(false)
 		if err != nil {
-			return nil, err
+			return nil, configurationFailure(err)
 		}
 		raw, err := net.DialTimeout("tcp", config.SERVER_ADDR, 10*time.Second)
 		if err != nil {
@@ -126,11 +133,14 @@ func dialServer() (net.Conn, error) {
 		}
 		return secure, nil
 	default:
-		return nil, fmt.Errorf("unsupported server transport: %s", config.SERVER_TRANSPORT)
+		return nil, configurationFailure(fmt.Errorf("unsupported server transport: %s", config.SERVER_TRANSPORT))
 	}
 }
 
 func listenBind() (net.Listener, error) {
+	if strings.TrimSpace(config.BIND_HOST) == "" {
+		return nil, errors.New("invalid Bind listen host")
+	}
 	addr := net.JoinHostPort(config.BIND_HOST, fmt.Sprint(config.BIND_PORT))
 	if config.BIND_PORT < 1 || config.BIND_PORT > 65535 {
 		return nil, errors.New("invalid Bind listen port")

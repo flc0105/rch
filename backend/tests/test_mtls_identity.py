@@ -10,6 +10,7 @@ import zipfile
 
 import pytest
 
+from client.connection.errors import ConnectionAuthenticationError
 from client.connection.mtls import create_context
 from client.connection.transport_connectors import get_connector
 from server.runtime.identity_store import IdentityStore
@@ -267,7 +268,7 @@ def test_revoked_rejection_is_received_by_client_on_reverse(provisioned):
                 framed.socket.close()
                 framed.socket=secured
                 payload=framed.recv()
-                with pytest.raises(ConnectionError, match='Client mTLS identity not authorized or revoked'):
+                with pytest.raises(ConnectionAuthenticationError, match='Client mTLS identity not authorized or revoked'):
                     ServerConnection.recv_message(SimpleNamespace(recv=lambda: payload))
                 assert payload['type']=='connection_rejected'
     finally:
@@ -296,7 +297,7 @@ def test_revoked_rejection_is_received_by_client_on_bind(provisioned):
             framed.socket.close()
             framed.socket=secured
             payload=framed.recv()
-            with pytest.raises(ConnectionError,match='not authorized or revoked'):
+            with pytest.raises(ConnectionAuthenticationError,match='not authorized or revoked'):
                 ServerConnection.recv_message(SimpleNamespace(recv=lambda: payload))
     finally:
         inbound.close()

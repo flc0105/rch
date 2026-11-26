@@ -2,6 +2,7 @@ import queue
 import threading
 import uuid
 
+from client.connection.errors import ConnectionAuthenticationError
 from client.connection.message_dispatcher import ClientInboundMessageDispatcher
 from client.connection.message_router import ClientInboundMessageRouter
 from client.app.runtime import ClientRuntime
@@ -137,7 +138,7 @@ class ServerConnection(RCHSocket):
     def recv_message(self):
         data = self.recv()
         if isinstance(data, dict) and data.get('type') == MSG_TYPE_CONNECTION_REJECTED:
-            raise ConnectionError(str(data.get('message') or 'Server rejected this connection'))
+            raise ConnectionAuthenticationError(str(data.get('message') or 'Server rejected this connection'))
         try:
             result = self.handle_received_message(data)
         except Exception:

@@ -1,5 +1,6 @@
 """Python Client connection strategies selected by configured transport name."""
 from client.connection.mtls import create_context
+from client.connection.errors import ConnectionConfigurationError
 
 
 class TcpConnector:
@@ -20,7 +21,10 @@ class MtlsConnector(TcpConnector):
 
     def connect(self, server, address, config):
         # Never send any application bytes until mutual certificate validation.
-        context = create_context(config, server_side=False)
+        try:
+            context = create_context(config, server_side=False)
+        except (OSError, ValueError) as exc:
+            raise ConnectionConfigurationError(f'mTLS Identity configuration failed: {exc}') from exc
         if not server.connect(address):
             return False
         try:

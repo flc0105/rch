@@ -224,7 +224,7 @@ func TestMutualTLSRejectsUntrustedServer(t *testing.T) {
 	if conn, err := dialServer(); err == nil {
 		conn.Close()
 		t.Fatal("untrusted Server certificate accepted")
-	} else if !strings.Contains(err.Error(), "Server mTLS identity not trusted") {
+	} else if terminalFailure(err, true) == nil || !strings.Contains(err.Error(), "Server mTLS identity not trusted") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -549,49 +549,25 @@ def test_duplicate_bind_connect_reports_existing_session_without_new_dial(bind_s
         database.close_thread_connection()
 
 
-def test_bind_recovers_listening_after_initial_port_conflict(monkeypatch):
-    """Existing Client retry loop must re-bind after a busy port becomes free."""
+def test_bind_initial_port_conflict_stops_without_retry(monkeypatch):
+    from unittest.mock import Mock
     from client.app.client import Client
     from client.connection import lifecycle
+    from client.connection.errors import ConnectionConfigurationError
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as occupied:
-        occupied.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         occupied.bind(('127.0.0.1', 0))
         port = occupied.getsockname()[1]
         occupied.listen(1)
         monkeypatch.setattr(lifecycle, 'RUNTIME_CONFIG', _config(port))
-        monkeypatch.setattr(lifecycle, "reconnect_backoff_bounds", lambda: (0.02, 0.04))
-        accepted = []
-        fake = SimpleNamespace(
-            server=SimpleNamespace(adopt_socket=accepted.append),
-        )
+        fake = SimpleNamespace(server=SimpleNamespace(adopt_socket=Mock()))
         manager = ClientConnectionLifecycle(fake)
         fake.connection_lifecycle = manager
         fake.connect = manager.connect_socket
-        monkeypatch.setattr(manager, 'reset_connection', lambda: None)
-
-        with pytest.raises(OSError) as failure:
-            manager.connect_socket()
+        fake._recover_from_connection_error = Mock(side_effect=AssertionError('unexpected retry'))
+        with pytest.raises(ConnectionConfigurationError, match='Bind listener startup failed'):
+            Client.connect_initial(fake)
         assert manager._bind_listener is None
+        fake._recover_from_connection_error.assert_not_called()
+        fake.server.adopt_socket.assert_not_called()
 
-        errors = []
-        def recover():
-            try:
-                Client._recover_from_connection_error(fake, failure.value)
-            except Exception as exc:
-                errors.append(exc)
-        thread = threading.Thread(target=recover, daemon=True)
-        thread.start()
-        assert _wait_for(lambda: thread.is_alive())
-    # Port is released; the original Client stays alive and retries by itself.
-    assert _wait_for(lambda: manager._bind_listener is not None, timeout=3)
-    with socket.create_connection(('127.0.0.1', port), timeout=2):
-        thread.join(timeout=3)
-    try:
-        assert not thread.is_alive(), 'Bind retry did not accept incoming connection'
-        assert not errors
-        assert len(accepted) == 1
-    finally:
-        for sock in accepted:
-            sock.close()
-        manager.close_bind_listener()

@@ -55,12 +55,15 @@ func TestSessionIdleTimeoutTriggersReconnectReason(t *testing.T) {
 	}
 }
 
-func TestSessionRejectedKeepsRetryBackoff(t *testing.T) {
+func TestSessionRejectedIsTerminal(t *testing.T) {
 	admitted, err := testClientSession(t, func(sock *protocol.RATSocket) {
 		_ = sock.Send(map[string]interface{}{"type": "connection_rejected", "message": "Client mTLS identity not authorized or revoked"})
 	})
 	if admitted || err == nil || !strings.Contains(err.Error(), "Client mTLS identity not authorized or revoked") {
 		t.Fatalf("admitted=%v, error=%v", admitted, err)
+	}
+	if terminalFailure(err, true) == nil {
+		t.Fatal("explicit rejection was classified as retryable")
 	}
 }
 

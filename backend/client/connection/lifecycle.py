@@ -3,6 +3,7 @@ import threading
 import time
 
 from client.connection.server_connection import ServerConnection
+from client.connection.errors import ConnectionConfigurationError, terminal_connection_error
 from client.connection.transport_connectors import get_connector
 from client.config.config import RUNTIME_CONFIG
 from client.config.runtime_config_service import reconnect_backoff_bounds
@@ -84,15 +85,18 @@ class ClientConnectionLifecycle:
         """
         关闭当前连接并重建连接对象
         """
+        self.close_session()
+        self.client.receiver_worker.reset_runtime()
+        self.client.server = self.create_connection()
+        if self._bind_listener is not None:
+            self._bind_listener.release_session()
+
+    def close_session(self):
         self.client.receiver_worker.stop()
         self.close_current_connection()
         if not self.client.receiver_worker.join():
             logger.warning('Previous ClientReceiver did not exit after connection shutdown')
         self.handle_connection_lost()
-        self.client.receiver_worker.reset_runtime()
-        self.client.server = self.create_connection()
-        if self._bind_listener is not None:
-            self._bind_listener.release_session()
 
     def close_bind_listener(self):
         if self._bind_listener is not None:
@@ -105,17 +109,26 @@ class ClientConnectionLifecycle:
         if mode == 'bind':
             if self._bind_listener is None:
                 from client.connection.bind_listener import BindListener
-                listener = BindListener(RUNTIME_CONFIG)
-                listener.start()
+                try:
+                    listener = BindListener(RUNTIME_CONFIG)
+                    listener.start()
+                except (OSError, ValueError) as exc:
+                    raise ConnectionConfigurationError(f'Bind listener startup failed: {exc}') from exc
                 self._bind_listener = listener
             self.client.server.adopt_socket(self._bind_listener.accept())
             self.client.server.bind_listener = self._bind_listener
             return
         if mode != 'reverse':
-            raise ValueError('connection_mode must be reverse or bind')
+            raise ConnectionConfigurationError('connection_mode must be reverse or bind')
+        host, port = self.client.address
+        if not isinstance(host, str) or not host.strip() or type(port) is not int or not 1 <= port <= 65535:
+            raise ConnectionConfigurationError('Invalid Reverse server host or port')
         protocol = str(RUNTIME_CONFIG.get('server_transport') or 'tcp').strip()
-        connector = get_connector(protocol)
-        connector.validate(RUNTIME_CONFIG)
+        try:
+            connector = get_connector(protocol)
+            connector.validate(RUNTIME_CONFIG)
+        except (OSError, ValueError) as exc:
+            raise ConnectionConfigurationError(f'Connection configuration failed: {exc}') from exc
         logger.info('Connecting to %s via %s', self.client.address, protocol)
         retry_delay = 0
         while True:
@@ -124,6 +137,12 @@ class ClientConnectionLifecycle:
                     return
                 logger.warning('Connection attempt failed: destination unavailable')
             except OSError as exc:
+                terminal = terminal_connection_error(exc)
+                if terminal is not None:
+                    self.client.server.close()
+                    if terminal is exc:
+                        raise
+                    raise terminal from exc
                 logger.warning('Connection attempt failed: %s', exc)
             self.client.server.close()
             retry_delay = next_reconnect_delay(retry_delay)

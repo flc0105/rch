@@ -8,6 +8,7 @@ import socket
 import threading
 from contextlib import contextmanager
 
+from client.connection.errors import terminal_connection_error
 from client.connection.file_connection_slot import FileConnectionSlot
 from client.connection.mtls import create_context
 from core.protocol.auxiliary import close_socket, receive_greeting
@@ -94,7 +95,8 @@ class BindListener:
                     conn = self.ssl_context.wrap_socket(conn, server_side=True)
                     conn.settimeout(None)
                 except Exception as exc:
-                    logger.warning('Bind mTLS handshake failed from %s: %s', peer, exc)
+                    terminal = terminal_connection_error(exc)
+                    logger.warning('Bind mTLS handshake failed from %s: %s', peer, terminal or exc)
                     conn.close()
                     continue
             handler = self._tunnel_handler

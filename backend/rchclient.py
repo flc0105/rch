@@ -2,6 +2,7 @@ import sys
 import traceback
 
 from client.app.client import Client
+from client.connection.errors import terminal_connection_error
 from client.config.config import SERVER_ADDR
 from client.config.feature_config import resolve_features
 from client.config import runtime_config
@@ -49,6 +50,21 @@ def main():
                 client.watchdog_manager.stop()
         sys.exit(0)
     except Exception as e:
+        terminal = terminal_connection_error(e)
+        if terminal is not None:
+            # Deliberate configuration/authentication stop must not be treated
+            # as a crash by the local process recovery supervisor.
+            if process_recovery_watchdog is not None:
+                process_recovery_watchdog.stop()
+            if client is not None:
+                client.connection_lifecycle.close_session()
+                client.connection_lifecycle.close_bind_listener()
+                if client.local_ipc is not None:
+                    client.local_ipc.stop()
+            logger.error('Connection stopped; check configuration or identity: %s', terminal)
+            if client is not None and client.watchdog_manager is not None:
+                client.watchdog_manager.stop()
+            sys.exit(1)
         if client is not None:
             client.server.report_session_end(
                 'client_error', summary=f'{type(e).__name__}: {e}',

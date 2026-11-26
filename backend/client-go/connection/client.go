@@ -26,14 +26,14 @@ func New() *Client {
 	return &Client{clientID: executor.NewClientID(), identity: detectHostIdentity(), launch: detectLaunchContext()}
 }
 
-func (c *Client) Run() {
+func (c *Client) Run() error {
 	switch config.CONNECTION_MODE {
 	case "reverse":
-		c.runReverse()
+		return c.runReverse()
 	case "bind":
-		c.runBind()
+		return c.runBind()
 	default:
-		log.Printf("unsupported connection mode: %s", config.CONNECTION_MODE)
+		return configurationFailure(fmt.Errorf("unsupported connection mode: %s", config.CONNECTION_MODE))
 	}
 }
 
@@ -54,7 +54,7 @@ func (r *reverseRetryBackoff) next(minimum, maximum time.Duration) time.Duration
 	return delay
 }
 
-func (c *Client) runReverse() {
+func (c *Client) runReverse() error {
 	var retry reverseRetryBackoff
 	for {
 		conn, err := dialServer()
@@ -73,6 +73,9 @@ func (c *Client) runReverse() {
 		} else {
 			log.Printf("RCH connection failed: %v", err)
 		}
+		if terminal := terminalFailure(err, config.SERVER_TRANSPORT == "mtls_tcp"); terminal != nil {
+			return terminal
+		}
 		minimum, maximum := config.Runtime().ReconnectBackoffBounds()
 		delay := retry.next(time.Duration(minimum)*time.Second, time.Duration(maximum)*time.Second)
 		log.Printf("Reconnecting in %gs after: %v", delay.Seconds(), err)
@@ -80,11 +83,10 @@ func (c *Client) runReverse() {
 	}
 }
 
-func (c *Client) runBind() {
+func (c *Client) runBind() error {
 	listener, err := listenBind()
 	if err != nil {
-		log.Printf("RCH Bind listener failed: %v", err)
-		return
+		return configurationFailure(fmt.Errorf("RCH Bind listener startup failed: %w", err))
 	}
 	defer listener.Close()
 	log.Printf("RCH Bind listening on %s (%s)", listener.Addr(), config.SERVER_TRANSPORT)
@@ -93,6 +95,9 @@ func (c *Client) runBind() {
 	for {
 		conn, err := acceptBind(listener)
 		if err != nil {
+			if terminal := terminalFailure(err, config.SERVER_TRANSPORT == "mtls_tcp"); terminal != nil {
+				err = terminal
+			}
 			log.Printf("RCH Bind acceptance failed: %v", err)
 			continue
 		}
@@ -174,7 +179,7 @@ func (c *Client) serveConnectionWithTimeoutSource(conn net.Conn, router *bindFil
 			admitted = true
 			continue
 		case "connection_rejected":
-			return admitted, fmt.Errorf("RCH connection rejected: %v", msg["message"])
+			return admitted, authenticationFailure(fmt.Errorf("RCH connection rejected: %v", msg["message"]))
 		case "session_config":
 			if config.CONNECTION_MODE == "bind" {
 				endpoint, ok := msg["server_web_base_url"].(string)
