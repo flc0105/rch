@@ -53,16 +53,22 @@ test('Info shows requested fields and only valid conditional fields', () => {
   const reverse = info(sample('reverse'))
   assert.deepEqual(Array.from(reverse, row => row.label), [
     'File Name','Version','Builder','Connection Mode','Transport','Listener',
-    'Target OS','Target Arch','Build Origin','Connect To','Web IP','Web Port','Build Time','Size',
+    'Target OS','Target Arch','Build Origin','Connect To','Web URL','Build Time','Size',
   ])
   assert.equal(reverse.find(row => row.label === 'Version').value, 'go_2026_x')
   assert.equal(reverse.filter(row => row.label === 'Version').length, 1)
   assert.equal(reverse.find(row => row.label === 'Connect To').value,'192.168.1.2:9998')
+  assert.equal(reverse.find(row => row.label === 'Web URL').value, '192.168.1.2:8085')
   const bind = info(sample('bind'))
   assert.equal(bind.find(row => row.label === 'Listen On').value,'0.0.0.0:9443')
-  assert.ok(!bind.some(row => ['Listener','Web IP','Web Port'].includes(row.label)))
+  assert.ok(!bind.some(row => ['Listener','Web URL'].includes(row.label)))
   const loader = info(sample('bind','go_loader'))
-  assert.ok(loader.some(row => row.label === 'Web IP'))
-  assert.ok(loader.some(row => row.label === 'Web Port'))
+  assert.equal(loader.find(row => row.label === 'Web URL').value, '192.168.1.2:8085')
   assert.ok(!loader.some(row => row.label === 'Listener'))
+  const bundle = info({...sample('reverse', 'python'), target_os: '', target_arch: ''})
+  assert.ok(!bundle.some(row => ['Target OS', 'Target Arch'].includes(row.label)))
+  assert.equal(bundle.find(row => row.label === 'Web URL').value, '192.168.1.2:8085')
+  const bindBundle = info({...sample('bind', 'python'), target_os: '', target_arch: ''})
+  assert.ok(!bindBundle.some(row => ['Target OS', 'Target Arch', 'Web URL'].includes(row.label)))
+  assert.equal(info({...sample('reverse'), web_ip: '', web_port: 0}).find(row => row.label === 'Web URL').value, '-')
 })

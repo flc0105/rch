@@ -25,6 +25,8 @@ def test_bundle_default_mode_and_manual_override(tmp_path, mode):
         target_os='mac', target_arch='arm64', connection_mode=mode,
         bind_host='0.0.0.0', bind_port=9443,
     )
+    assert result['target_os'] == ''
+    assert result['target_arch'] == ''
     with zipfile.ZipFile(result['file_path']) as archive:
         source = archive.read('client/config/config.py').decode()
         assert '_get_connection_mode_override' in source

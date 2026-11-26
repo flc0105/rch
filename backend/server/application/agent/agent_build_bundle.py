@@ -58,6 +58,6 @@ class BundleBuilder:
             'file_path': bundle_path,
             'file_name': bundle_name,
             'warnings': [self.BUILD_STATUS_MESSAGE],
-            'target_arch': 'n/a',
+            'target_arch': '',
             'target_os': '',
         }

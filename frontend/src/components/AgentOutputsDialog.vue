@@ -427,8 +427,10 @@ export default {
         { key: 'connection_mode', label: 'Connection Mode', value: this.displayAgentConnectionMode(row.connection_mode) },
         { key: 'transport', label: 'Transport', value: this.displayAgentTransport(row.transport) },
         ...(reverse ? [{ key: 'listener', label: 'Listener', value: row.listener_name }] : []),
-        { key: 'target_os', label: 'Target OS', value: row.target_os },
-        { key: 'target_arch', label: 'Target Arch', value: row.target_arch },
+        ...(row.builder === AGENT_BUILDER.PYTHON ? [] : [
+          { key: 'target_os', label: 'Target OS', value: row.target_os },
+          { key: 'target_arch', label: 'Target Arch', value: row.target_arch },
+        ]),
         { key: 'build_origin', label: 'Build Origin', value: this.formatAgentSourceText(row.build_origin) },
         {
           key: 'endpoint',
@@ -437,8 +439,7 @@ export default {
           mono: true,
         },
         ...(showWeb ? [
-          { key: 'web_ip', label: 'Web IP', value: row.web_ip, mono: true },
-          { key: 'web_port', label: 'Web Port', value: row.web_port },
+          { key: 'web_url', label: 'Web URL', value: this.formatAgentEndpoint({endpoint_ip: row.web_ip, endpoint_port: row.web_port}), mono: true },
         ] : []),
         { key: 'build_time', label: 'Build Time', value: this.formatOutputDateTime(row.build_time) },
         { key: 'size', label: 'Size', value: this.formatOutputBytes(row.size) },

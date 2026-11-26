@@ -26,7 +26,7 @@ def _register(registry, directory, *, builder='go', mode='reverse', transport='m
         'file_name': filename, 'builder': builder,
         'build_version': 'go_20261125_abc12345',
         'target_os': '' if builder == 'python' else 'win',
-        'target_arch': 'n/a' if builder == 'python' else 'amd64',
+        'target_arch': '' if builder == 'python' else 'amd64',
     }, source=origin, request_payload={
         'builder': builder,
         'connection_mode': mode,
@@ -60,7 +60,7 @@ def test_metadata_records_authentic_endpoints_and_only_meaningful_web(catalog, m
     assert record['web_ip'] == ('192.168.1.10' if mode == 'reverse' or builder == 'go_loader' else '')
     assert record['web_port'] == (8085 if mode == 'reverse' or builder == 'go_loader' else 0)
     assert record['target_os'] == ('' if builder == 'python' else 'win')
-    assert record['target_arch'] == ('n/a' if builder == 'python' else 'amd64')
+    assert record['target_arch'] == ('' if builder == 'python' else 'amd64')
     assert record['build_origin'] == 'manual'
     assert record['build_version'] == 'go_20261125_abc12345'
     assert 'version' not in record
@@ -124,7 +124,7 @@ def test_web_agent_api_passes_resolved_transport_and_endpoints(catalog, tmp_path
         def build_agent(self, **kwargs):
             (directory / 'new.zip').write_bytes(b'build')
             return {'file_name': 'new.zip', 'builder':kwargs['builder'],
-                    'build_version':'python_2026_abc', 'target_os':'', 'target_arch':'n/a'}
+                    'build_version':'python_2026_abc', 'target_os':'', 'target_arch':''}
     # Import Web facade without initializing unrelated Web admin authentication.
     config = ModuleType('server.config.config')
     config.SOCKET_PORT = 9999

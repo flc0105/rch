@@ -4,6 +4,8 @@
 
 **Agent Builder 构建 Bind Python Bundle** 只需要 Client Listen IP/Port；无需填写 Server Socket 或 Web 地址。Bind Agent 无参数启动后等待 Server 从设备栏 More → Connect to Client 接入，接收本次会话的 Server Web API 地址。One-liner 的 Web IP/Port 是首次安装所需的下载地址，与最终 Bundle 的运行时设置相互独立。Reverse Bundle 的地址配置保持不变。
 
+Agent Outputs 的 Info 按 `host:port` 显示 Web URL（仅存在 Web 端点时）。Python Bundle 不显示 Target OS 和 Target Arch；Go 和 Go Loader 显示对应的目标平台。
+
 ## 选择合适的启动方式
 
 | 目标环境 | 推荐入口 | 运行特点 |
