@@ -1,5 +1,5 @@
 import { defineComponent, h, ref } from 'vue'
-import { ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import { ElCheckbox, ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import { loadServerPreferences } from '../api/serverPreferencesApi.js'
 import { pasteRemoteFiles, extractRemoteZip, inspectRemoteUpload } from '../api/remoteFilesApi.js'
 
@@ -11,10 +11,13 @@ async function expectData(response, label) {
   return json.data || {}
 }
 
-async function chooseConflict(conflict) {
+async function chooseConflict(conflict, scope = {}) {
   const actions = (conflict.allowed_actions || []).filter(key => labels[key])
   if (!actions.length) throw new Error('Unsupported destination conflict')
+  // A remembered action is only valid for conflicts that actually allow it.
+  if (actions.includes(scope.action)) return scope.action
   const choice = ref('stop')
+  const applyToAll = ref(false)
   const content = defineComponent({
     setup() {
       return () => h('div', [
@@ -26,6 +29,11 @@ async function chooseConflict(conflict) {
           style: 'width:100%',
           'aria-label': 'Conflict action',
         }, () => actions.map(value => h(ElOption, { key: value, value, label: labels[value] }))),
+        h(ElCheckbox, {
+          modelValue: applyToAll.value,
+          'onUpdate:modelValue': value => { applyToAll.value = value },
+          style: 'margin-top:12px',
+        }, () => 'Apply to all'),
         ...(actions.includes('merge') ? [h('p', 'Merge keeps destination-only files. Replace removes them.')] : []),
       ])
     },
@@ -36,6 +44,7 @@ async function chooseConflict(conflict) {
       confirmButtonText: 'Continue', cancelButtonText: 'Cancel',
       showCancelButton: true, closeOnClickModal: false, type: 'warning',
     })
+    if (applyToAll.value) scope.action = choice.value
     return choice.value
   } catch (_) {
     return null
@@ -52,11 +61,12 @@ export async function preparePasteConflicts(clientId, request) {
   if (!await conflictsEnabled()) return { conflict_policies: (request.paths || []).map(() => 'stop') }
   const preview = await expectData(await pasteRemoteFiles(clientId, { ...request, inspect: true }), 'Conflict inspection')
   const policies = (request.paths || []).map(() => 'stop')
+  const scope = {}
   for (const conflict of (preview.conflicts || [])) {
     if (!Number.isInteger(conflict.index) || conflict.index < 0 || conflict.index >= policies.length) {
       throw new Error('Invalid conflict inspection result')
     }
-    const answer = await chooseConflict(conflict)
+    const answer = await chooseConflict(conflict, scope)
     if (!answer || answer === 'stop') return false
     policies[conflict.index] = answer
   }
@@ -73,11 +83,11 @@ export async function prepareExtractConflict(clientId, request) {
   return { conflict_policy: answer }
 }
 
-export async function prepareUploadConflict(clientId, destinationDir, filename, { allowSkip = false, promptEnabled = null } = {}) {
+export async function prepareUploadConflict(clientId, destinationDir, filename, { allowSkip = false, promptEnabled = null, conflictScope = {} } = {}) {
   if (!(promptEnabled === null ? await conflictsEnabled() : promptEnabled)) return 'stop'
   const preview = await expectData(await inspectRemoteUpload(clientId, destinationDir, filename), 'Upload conflict inspection')
   const conflicts = preview.conflicts || []
   if (!conflicts.length) return 'stop'
-  const answer = await chooseConflict(conflicts[0])
+  const answer = await chooseConflict(conflicts[0], conflictScope)
   return !answer || answer === 'stop' ? false : (answer === 'skip' && !allowSkip ? false : answer)
 }

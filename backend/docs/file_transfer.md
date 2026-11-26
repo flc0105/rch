@@ -131,7 +131,7 @@ Remote Files 单文件 **Upload** 保持原有任务和传输链路，任务显�
 
 单文件和批次共用 Upload Task 生命周期；一次批次由一个 Task 调度，逐个执行原生 Transfer，并最多缓存一个待下发文件。Terminal 使用任务原生完成事件。全部预期成员结束时自动关闭，部分提交或纯目录批次显式结束提交；客户端断开、取消或浏览器提交超时也会关闭未完成批次。父级结束必须等待已提交文件全部进入终态，只有这个结果会触发一条 `file_transfer_batch_finished` 汇总通知。`transfer_updated` 和 `file_transfer_lifecycle` 仍按文件发出，不会因批次汇总而丢失传输进度。
 
-Transfer Center 的 Active / Recent 以单文件或 Batch 父级为行；Recent 的 SQL 分页按父记录计数，重启后仍能从 SQLite 还原批次。Batch 的 Details 列出子文件的状态与进度，支持批次整体取消与成员原有取消入口。当前批次总体百分比按**已完成文件数量**计算，不能把 Browser→Server 和 Server→Client 两段重置的字节进度简单相加。即使某些文件未成功提交，父级也会保留不完整状态和已经完成的成员信息。
+Transfer Center 的 Active / Recent 以单文件或 Batch 父级为行；Recent 的 SQL 分页按父记录计数，重启后仍能从 SQLite 还原批次。Batch 的 Details 在 File Transfers 列表中实时展示各子文件当前阶段、百分比、字节数及错误；支持批次整体取消与成员原有取消入口。当前批次总体百分比按**已完成文件数量**计算，不能把 Browser→Server 和 Server→Client 两段重置的字节进度简单相加。即使某些文件未成功提交，父级也会保留不完整状态和已经完成的成员信息。
 
 **数据库更新：**旧 `rch.db` 须在关闭 Server 后显式升级：为 `transfer_records` 新增 `batch_id` 字段，并新建 `transfer_batches` 及对应索引；Server 不在启动时自动修改既有表结构。具体 SQL 与字段以 `server/persistence/rch_database.py` 的当前规范 Schema 为准。运行在远端设备上的 `pyexec` 不能代替 Server 本地数据库迁移。
 

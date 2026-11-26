@@ -199,15 +199,34 @@
       <el-descriptions-item v-if="infoTransfer.is_batch" label="Files">{{ infoTransfer.completed_files }} / {{ infoTransfer.total_files }} completed</el-descriptions-item>
       <el-descriptions-item v-if="infoTransfer.is_batch" label="Outcome">{{ infoTransfer.failed_files }} failed · {{ infoTransfer.cancelled_files }} cancelled · {{ infoTransfer.interrupted_files }} interrupted · {{ infoTransfer.unsubmitted_files }} not submitted</el-descriptions-item>
     </el-descriptions>
-    <div v-if="infoTransfer?.is_batch" class="transfer-batch-members">
-      <div v-if="batchMembersLoading" class="transfer-card-detail">Loading files…</div>
-      <div v-for="file in batchMembers" :key="file.transfer_id" class="transfer-batch-member">
-        <span class="transfer-batch-member-name" :title="file.destination_path || file.filename">{{ file.filename }}</span>
-        <span class="transfer-batch-member-state" :title="file.error || ''">{{ file.error || (file.state === 'running' ? (file.percent == null ? stageLabel(file) : formatPercent(file.percent)) : recentStateLabel(file)) }}</span>
-        <button v-if="file.state === 'running' && file.cancel_supported !== false"
-          class="transfer-text-action" type="button" @click="cancelActiveTransfer(file)">Cancel</button>
+    <section v-if="infoTransfer?.is_batch" class="transfer-batch-section">
+      <div class="transfer-batch-heading">
+        <h3>File Transfers</h3>
+        <span>{{ batchMembers.length }} / {{ infoTransfer.total_files }} files</span>
       </div>
-    </div>
+      <div class="transfer-batch-members">
+        <div v-if="batchMembersLoading && !batchMembers.length" class="transfer-batch-empty">Loading files…</div>
+        <div v-else-if="!batchMembers.length" class="transfer-batch-empty">{{ batchMembersError || 'No file transfers yet' }}</div>
+        <div v-for="file in orderedBatchMembers" :key="file.transfer_id" class="transfer-batch-member">
+          <div class="transfer-batch-member-head">
+            <span class="transfer-batch-member-name" :title="file.destination_path || file.filename">{{ file.filename }}</span>
+            <span class="transfer-batch-member-state" :class="`is-${file.state}`">{{ recentStateLabel(file) }}</span>
+          </div>
+          <div v-if="hasProgress(file)" class="transfer-batch-member-progress">
+            <el-progress :percentage="normalizedPercent(file.percent)" :status="file.state === 'completed' ? 'success' : file.state === 'failed' ? 'exception' : undefined" :stroke-width="5" :show-text="false" />
+            <span>{{ formatPercent(file.percent) }}</span>
+          </div>
+          <div v-else-if="file.state === 'running'" class="transfer-indeterminate" aria-hidden="true"><span></span></div>
+          <div v-if="file.total_bytes != null || (file.state === 'running' && file.cancel_supported !== false)" class="transfer-batch-member-meta">
+            <span v-if="file.total_bytes != null">{{ formatInfoBytes(file.transferred_bytes) }} / {{ formatInfoBytes(file.total_bytes) }}</span>
+            <button v-if="file.state === 'running' && file.cancel_supported !== false"
+              class="transfer-text-action" type="button" @click="cancelActiveTransfer(file)">Cancel</button>
+          </div>
+          <div v-if="file.error" class="transfer-batch-member-error">{{ file.error }}</div>
+        </div>
+      </div>
+      <div v-if="batchMembers.length && batchMembersError" class="transfer-batch-member-error">{{ batchMembersError }}</div>
+    </section>
   </el-dialog>
 </template>
 
@@ -260,6 +279,8 @@ export default {
       infoTransfer: null,
       batchMembers: [],
       batchMembersLoading: false,
+      batchMembersError: '',
+      batchMembersRequestId: 0,
     }
   },
 
@@ -293,6 +314,12 @@ export default {
 
     recentTransfers() {
       return (this.transfers || []).filter(item => item?.state && item.state !== 'running')
+    },
+
+    orderedBatchMembers() {
+      // Keep the live files visible even when the batch has hundreds of completed members.
+      return [...this.batchMembers.filter(file => file.state === 'running'),
+        ...this.batchMembers.filter(file => file.state !== 'running')]
     },
 
     remainingRecentCount() {
@@ -351,17 +378,22 @@ export default {
       this.infoVisible = true
       this.batchMembers = []
       this.batchMembersLoading = true
+      this.batchMembersError = ''
+      const requestId = ++this.batchMembersRequestId
       try {
         const result = await loadBatchTransfers(transfer.batch_id, this.tabId)
-        if (this.infoTransfer?.batch_id === transfer.batch_id) {
+        if (requestId === this.batchMembersRequestId && this.infoTransfer?.batch_id === transfer.batch_id) {
           const merged = new Map((result.items || []).map(item => [item.transfer_id, item]))
           for (const item of this.batchMembers) merged.set(item.transfer_id, item)
           this.batchMembers = [...merged.values()]
         }
       } catch (error) {
-        ElMessage.error(error.message || 'Failed to load batch files')
+        if (requestId === this.batchMembersRequestId && this.infoTransfer?.batch_id === transfer.batch_id) {
+          this.batchMembersError = error.message || 'Failed to load batch files'
+          ElMessage.error(this.batchMembersError)
+        }
       } finally {
-        if (this.infoTransfer?.batch_id === transfer.batch_id) this.batchMembersLoading = false
+        if (requestId === this.batchMembersRequestId && this.infoTransfer?.batch_id === transfer.batch_id) this.batchMembersLoading = false
       }
     },
 
@@ -435,6 +467,7 @@ export default {
 
     hasProgress(transfer) {
       return transfer?.progress_supported !== false
+        && transfer?.percent != null
         && Number.isFinite(Number(transfer?.percent))
         && Number(transfer?.is_batch ? transfer.total_files : transfer?.total_bytes) > 0
     },
@@ -605,6 +638,7 @@ export default {
 .transfer-card-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
   margin-top: 8px;
 }
 
@@ -813,10 +847,23 @@ export default {
 <style>
 .transfer-info .el-descriptions__content { overflow-wrap: anywhere; }
 .transfer-info-path { overflow-wrap: anywhere; white-space: pre-wrap; }
-.transfer-batch-members { max-height: 320px; overflow-y: auto; margin-top: 12px; }
-.transfer-batch-member { display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; min-height: 38px; border-bottom: 1px solid var(--el-border-color-extra-light);
-  font-size: 12px; }
-.transfer-batch-member-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.transfer-batch-member-state { max-width: 50%; overflow-wrap: anywhere; text-align: right; }
+.transfer-batch-section { margin-top: 20px; }
+.transfer-batch-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.transfer-batch-heading h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--el-text-color-primary); }
+.transfer-batch-heading > span { color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
+.transfer-batch-members { max-height: min(340px, 45vh); overflow-y: auto; border: 1px solid var(--el-border-color); border-radius: 8px; }
+.transfer-batch-member { padding: 10px 12px; border-bottom: 1px solid var(--el-border-color-lighter); font-size: 12px; }
+.transfer-batch-member:last-child { border-bottom: 0; }
+.transfer-batch-member-head, .transfer-batch-member-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.transfer-batch-member-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 600; color: var(--el-text-color-primary); }
+.transfer-batch-member-state { flex: 0 0 auto; max-width: 50%; overflow-wrap: anywhere; text-align: right; color: var(--el-text-color-secondary); }
+.transfer-batch-member-state.is-completed { color: var(--el-color-success); }
+.transfer-batch-member-state.is-failed, .transfer-batch-member-error { color: var(--el-color-danger); }
+.transfer-batch-member-progress { display: grid; grid-template-columns: minmax(0, 1fr) 40px; gap: 8px; align-items: center; margin-top: 7px; }
+.transfer-batch-member-progress > span { text-align: right; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
+.transfer-batch-member .transfer-indeterminate { margin-top: 7px; }
+.transfer-batch-member-meta { margin-top: 5px; color: var(--el-text-color-secondary); }
+.transfer-batch-member-meta button { margin-left: auto; }
+.transfer-batch-member-error { margin-top: 5px; overflow-wrap: anywhere; }
+.transfer-batch-empty { padding: 18px 12px; text-align: center; font-size: 12px; color: var(--el-text-color-secondary); }
 </style>

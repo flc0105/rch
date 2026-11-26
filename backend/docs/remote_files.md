@@ -147,7 +147,7 @@ Browser 的 Copy、Cut 和 Paste 使用的是**界面内部的远程路径列表
 
 ### 文件冲突策略与全局设置
 
-在 **Settings → Preferences** 中可切换 **File conflicts**。这个设置由 Server 保存，全局应用于从 Web Remote Files 发起的复制、移动、**Extract Here**、ZIP 预览中的 **Extract to...**，Browser / Remote Folder Picker 上传，以及 Artifact Manager 的 **Send to Current Device**。默认 **关闭**：所有目标同名冲突均拒绝执行并报错，不覆盖、不合并、不自动改名。开启后，前端在目标冲突时提供选择；目标无冲突时直接执行。
+在 **Settings → Preferences** 中可切换 **File conflicts**。这个设置由 Server 保存，全局应用于从 Web Remote Files 发起的复制、移动、**Extract Here**、ZIP 预览中的 **Extract to...**，Browser / Remote Folder Picker 上传，以及 Artifact Manager 的 **Send to Current Device**。默认 **关闭**：所有目标同名冲突均拒绝执行并报错，不覆盖、不合并、不自动改名。开启后，前端在目标冲突时提供选择；目标无冲突时直接执行。冲突弹窗的 **Apply to all** 将所选动作应用于本次操作中后续允许该动作的冲突；遇到不支持该动作的冲突时重新询问。选择仅在当前操作内有效。
 
 | 目标冲突 | 可选动作 | 执行效果 |
 |---|---|---|

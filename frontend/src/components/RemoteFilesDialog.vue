@@ -1330,6 +1330,7 @@ export default {
         // Inspect existing destinations before creating folders or starting transfers.
         const askOnConflict = await conflictsEnabled()
         const existingDirectories = new Map()
+        const conflictScope = {}
         for (const entry of plan.files) {
           if (!stillActive()) throw new Error('Remote upload context changed')
           const parent = entry.relativePath.split('/').slice(0, -1).join('/')
@@ -1340,7 +1341,7 @@ export default {
             existingDirectories.set(destinationDir, response.ok && result.code === 0)
           }
           const policy = parent && askOnConflict && !existingDirectories.get(destinationDir) ? 'stop'
-            : await prepareUploadConflict(context.clientId, destinationDir, entry.file.name, { allowSkip: true, promptEnabled: askOnConflict })
+            : await prepareUploadConflict(context.clientId, destinationDir, entry.file.name, { allowSkip: true, promptEnabled: askOnConflict, conflictScope })
           if (policy === false) throw new Error(`Upload stopped: ${entry.relativePath}`)
           if (policy !== 'skip') queue.push({ file: entry.file, destinationDir, policy })
         }

@@ -309,6 +309,7 @@ test('dragging a single loose file uses the original Upload handler without a Ba
 
 test('batch conflicts reuse Skip, Keep Both and Stop decisions before creating transfers', async () => {
   const order = []
+  let scope
   const c = vueComponent('RemoteFilesDialog', {
     RemotePinsDialog: {}, RemoteFilePicker: {}, DragUploadDialog: {}, MoreFilled: {}, OPEN_TRANSFER_CENTER_KEY: 'x',
     flattenUploadAttachments, createTerminalOperation: () => ({ operation_id: 'conflict-batch' }),
@@ -316,6 +317,9 @@ test('batch conflicts reuse Skip, Keep Both and Stop decisions before creating t
     finalizeBrowserUploadBatch: async args => order.push(['finalize', args.error]),
     prepareUploadConflict: async (_client, _target, name, options) => {
       assert.equal(options.allowSkip, true)
+      assert.ok(options.conflictScope)
+      if (!scope) scope = options.conflictScope
+      assert.equal(options.conflictScope, scope)
       return name === 'skip.txt' ? 'skip' : name === 'copy.txt' ? 'keep_both' : 'stop'
     },
     uploadRemoteFileToClient: async args => order.push(['file', args.file.name, args.conflictPolicy]),
