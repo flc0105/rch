@@ -20,7 +20,7 @@ Web 实时订阅者 / NotificationEventProjector
 Toast、Notification Center、其他事件消费者
 ```
 
-SDK 使用的是一次 HTTP 请求，**不是 Client 自己保持一个 SSE 连接**。SSE 是 Server 向浏览器或其他通知消费者主动推送事件的下游机制。其他 Server 业务也可以直接发布事件，不需要经过 Device Event 的 HTTP 接口。
+SDK 使用的是一次 HTTP 请求，**不是 Client 自己保持一个 WebSocket 连接**。WebSocket 是 Server 向浏览器或其他通知消费者主动推送事件的下游机制。其他 Server 业务也可以直接发布事件，不需要经过 Device Event 的 HTTP 接口。
 
 Event Emit 与普通命令的执行结果流相互独立：Script / Job 可以在执行过程中多次发送事件，而不是只能在任务退出时上报一次。
 
@@ -161,9 +161,9 @@ Server 接受事件后统一执行：
 web_event_bus.publish('device_event', event)
 ```
 
-浏览器订阅的 SSE 事件类型始终是 `device_event`；`app.process.started` 是该事件的数据字段 `kind`。两者不是同一层的名称。需要为某种 `kind` 定制通知时，应在通知投影或前端展示规则中明确处理，而不是期待任意新的 `kind` 自动获得专用图标和标题。
+浏览器订阅的 WebSocket 事件类型始终是 `device_event`；`app.process.started` 是该事件的数据字段 `kind`。两者不是同一层的名称。需要为某种 `kind` 定制通知时，应在通知投影或前端展示规则中明确处理，而不是期待任意新的 `kind` 自动获得专用图标和标题。
 
-事件会发布给在线 SSE 订阅者；Server 中的通知投影还可能把它写成可持久化的 Notification Center 记录。一次上报被成功接收，仅证明它进入了当前 Server 的事件处理流程，不能保证浏览器已经接收、通知偏好允许显示或用户已读。
+事件会发布给在线 WebSocket 订阅者；Server 中的通知投影还可能把它写成可持久化的 Notification Center 记录。一次上报被成功接收，仅证明它进入了当前 Server 的事件处理流程，不能保证浏览器已经接收、通知偏好允许显示或用户已读。
 
 ### 从命令完成记录产生事件
 
@@ -195,7 +195,7 @@ Device Event 经过 Server 后，可以被映射成一条通知。普通事件�
 
 这一步由 Server 的通知投影机制决定。项目中设备上线下线、文件传输、PTY、ScreenView、External Tool 等通知也可直接来自 Server 事件总线，而不需要调用 Device Event HTTP API。
 
-Notification Center 历史和实时 Toast 使用独立规则：关闭 `device_event` 的显示偏好，不会让 `events.emit()` 停止发送事件；已经投影的历史记录也不会因为关闭显示而自动删除。具体的存储、偏好、两条 SSE 通道和断线续传见 [SSE Notifications](sse_notifications.md)。
+Notification Center 历史和实时 Toast 使用独立规则：关闭 `device_event` 的显示偏好，不会让 `events.emit()` 停止发送事件；已经投影的历史记录也不会因为关闭显示而自动删除。具体的存储、偏好、两条 WebSocket 通道和断线续传见 [WebSocket Notifications](websocket_notifications.md)。
 
 ## 可靠性与身份校验边界
 
@@ -207,11 +207,11 @@ Notification Center 历史和实时 Toast 使用独立规则：关闭 `device_ev
 | `data` 类型错误 | 必须传 `dict`，不能直接传列表或文本 |
 | 找不到目标 Client | 核对 `client_id`，以及当前 Client 是否在线 |
 | 请求超时或 Server 不可访问 | 检查 Client 至 Server 的 HTTP 路径；默认超时 10 秒 |
-| 事件被接受却没有 Toast | 检查浏览器 SSE 连接及通知显示偏好；也可能没有在线浏览器 |
+| 事件被接受却没有 Toast | 检查浏览器 WebSocket 连接及通知显示偏好；也可能没有在线浏览器 |
 | 没有在 Notification Center 找到事件 | 核对是否已投影并写入历史，而非只检查 HTTP 成功 |
 | 相同业务事件出现多次 | `events.emit()` 每次产生新的 `event_id`；相同 `kind` / `data` 不会自动去重 |
 | `kind` 不同但通知都叫 Device Event | 通用通知投影不会为任意 `kind` 自动生成独立通知标题 |
 
-`events.emit()` 不提供离线可靠队列、重试确认、消费确认或“恰好一次”通知语义。通知系统的 SSE 断线恢复处理的是**已经持久化的通知记录**，并不代替 Client 端离线事件补发。
+`events.emit()` 不提供离线可靠队列、重试确认、消费确认或“恰好一次”通知语义。通知系统的 WebSocket 断线恢复处理的是**已经持久化的通知记录**，并不代替 Client 端离线事件补发。
 
 如事件携带敏感信息，应该只放必要的业务字段。它们可能进入 Server 通知历史、浏览器通知上下文或其他订阅者，不要把凭据、隐私原文、大块日志作为常规 `data` 或 `message` 发送。

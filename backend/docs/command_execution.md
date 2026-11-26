@@ -82,7 +82,7 @@ WebTaskRunner 消费执行事件
 |---|---|---|---|
 | `client_id` | Client 运行实例启动时 | 目标 Client 实例 | 定位当前 Socket 会话与前台执行槽 |
 | `task_id` | Server 接受 Web Task 时 | 一次 Web 提交 | 取消 API、Web 活动状态、WebSocket 关联 |
-| `command_id` | 真正下发 Client 消息时 | 该 Socket 会话上的一条命令消息 | 匹配 `result`、`cancel_ack`、取消目标及 Client Session Token |
+| `command_id` | 真正下发 Client 消息时 | 该 Socket 会话上的一条命令消息 | 匹配 `result`、`cancel_ack`、取消目标 |
 | `history_entry_id` | 满足记录策略的执行开始时 | 一条持久化执行历史 | SQLite 输出记录、状态、回放与 Artifact 关联 |
 | `tab_id` | 浏览器标签页上下文建立时 | 发起操作的浏览器标签页 | 定向投递 `command_result` / `command_complete` |
 
@@ -114,9 +114,9 @@ Server Built-in 的 Job、Artifact、设备事件、Pinned Path 和 External Too
 
 ## 前台任务状态与跨标签页恢复
 
-Connection Info 的 **Task** 字段显示 `Idle`、`Running` 或 `Cancelling`；Terminal Connection Context 也可以选择 **Task** 标签。Server 从当前 ClientSession 的前台任务槽返回状态，不依赖浏览器中保留的 Web Task ID。页面启动或切换 Client 时读取快照，并订阅前台任务状态变更事件；每 2 秒同步一次状态作为重连兜底。任务结束后状态回到 `Idle`。
+Connection Info 的 **Task** 字段显示 `Idle`、`Running` 或 `Cancelling`；Terminal Connection Context 也可以选择 **Task** 标签。Server 从当前 ClientSession 的前台任务槽返回状态，不依赖浏览器中保留的 Web Task ID。页面启动或切换 Client 时读取快照，并订阅前台任务状态变更事件；WebSocket 重连时重新读取权威快照。任务结束后状态回到 `Idle`。
 
-当页面打开、刷新或首次切换到某个 Client 时，首次成功取得的权威 Task 快照若包含既有运行任务，Terminal 在输出区显示一次警告行及 **[ Details ]** 链接，沿用终端其他状态提示的交互样式。后续 SSE 与状态刷新仍实时更新 Task、Busy 和取消能力，但不会新建警告；既有警告只跟随同一任务的取消状态更新，并在任务结束或被替换后移除。本页操作开始或已有新的前台事件时，尚未完成的首次提示判定即关闭，防止 Terminal 命令、文件浏览等操作误触发黄色警告。每个 Client 在同一页面生命周期内只判定一次；刷新页面会重新判定。警告属于内存中的临时界面状态，不写入 Terminal 的持久输出历史，恢复历史和分页时也不应将其作为命令输出重现。详情包含执行命令、来源、任务类型、开始时间、持续时间、任务／命令 ID 与取消状态。可以取消的 Web 命令通过已有 Task Cancel API 请求取消；`cancel_policy=none`、尚未绑定 Client 命令 ID、已经请求取消或非 Web 来源的任务不开放此按钮。状态查询不占用前台槽，也不产生远程命令。
+当页面打开、刷新或首次切换到某个 Client 时，首次成功取得的权威 Task 快照若包含既有运行任务，Terminal 在输出区显示一次警告行及 **[ Details ]** 链接，沿用终端其他状态提示的交互样式。后续 WebSocket 与状态刷新仍实时更新 Task、Busy 和取消能力，但不会新建警告；既有警告只跟随同一任务的取消状态更新，并在任务结束或被替换后移除。本页操作开始或已有新的前台事件时，尚未完成的首次提示判定即关闭，防止 Terminal 命令、文件浏览等操作误触发黄色警告。每个 Client 在同一页面生命周期内只判定一次；刷新页面会重新判定。警告属于内存中的临时界面状态，不写入 Terminal 的持久输出历史，恢复历史和分页时也不应将其作为命令输出重现。详情包含执行命令、来源、任务类型、开始时间、持续时间、任务／命令 ID 与取消状态。可以取消的 Web 命令通过已有 Task Cancel API 请求取消；`cancel_policy=none`、尚未绑定 Client 命令 ID、已经请求取消或非 Web 来源的任务不开放此按钮。状态查询不占用前台槽，也不产生远程命令。
 
 ## 4. 前台串行约束与执行并发
 
@@ -128,7 +128,7 @@ RCH 在单个 `ClientSession` 上保留一份当前前台 Task 运行态，不�
 
 前台 Task 状态由会话的统一执行运行态发布 `foreground_task_changed` WebSocket：成功占槽、绑定远程 `command_id`、请求取消、收到 Client 的 `cancel_ack` 和释放占槽时，都会广播 `{client_id, task}`。`task` 使用与 `/api/connections/<client_id>/task` 相同的 `Running`／`Cancelling`／`Idle` 快照，支持 Web Terminal、Server CLI、同步 External Tool 等共用前台槽的入口；与之独立的 PTY 和 TransferManager 会话不纳入此状态。通知由运行态在锁内按变更顺序发布，避免极短任务的 Idle 先于 Running 到达。
 
-Web 首次选中设备、切换设备、WebSocket 重连和设备重新上线时查询一次当前快照，持续运行期间直接消费 WebSocket，不定时查询 `/task`。通用 WebSocket 不提供事件重放，因此重连快照负责补齐断线期间漏掉的状态；如果快照请求未返回就收到了较新的 WebSocket，浏览器会忽略旧快照。Task 时长由本地时间刷新，不产生额外请求。取消按钮的可用性来自实际 Web Task 归属、绑定的远程 Command ID 和命令策略，不能仅根据 `source` 文本判断；CLI 等任务可查看详情但不提供 Web Task 取消。Client 明确拒绝取消后，展示状态恢复 Running，直到任务结束或再次发起请求。
+Web 首次选中设备、切换设备、WebSocket 重连和设备重新上线时查询一次当前快照，持续运行期间直接消费 WebSocket，不定时查询 `/task`。通用 WebSocket 提供定向命令事件的短时有界重放，重连快照负责恢复权威 Task 状态；如果快照请求未返回就收到了较新的 WebSocket，浏览器会忽略旧快照。Task 时长由本地时间刷新，不产生额外请求。取消按钮的可用性来自实际 Web Task 归属、绑定的远程 Command ID 和命令策略，不能仅根据 `source` 文本判断；CLI 等任务可查看详情但不提供 Web Task 取消。Client 明确拒绝取消后，展示状态恢复 Running，直到任务结束或再次发起请求。
 
 **前台槽是执行策略，不是“Client 一次只能做一件事情”的全局锁。** 心跳、监控会话、通知、PTY、某些文件传输与后台 Job 有各自的控制或数据通道；它们不等于再创建一个普通 Web Command Task。但通过同步远程命令访问 Client 的其他 API，如运行时配置查询或进程控制，仍可能遵守统一前台占槽要求。
 
@@ -149,19 +149,16 @@ Go Client 使用相同 Control 信封和会话前台槽，Remote Files 与 Scrip
 
 远程请求通过 `ClientSessionCommandChannel.send_command()` 构造协议消息：普通命令使用 `type/id/text` 和必要的 `extra`，Control 使用 `type/id/domain/action/payload` 结构化对象。Client 连接注册时获得一枚 Client Session Token，普通命令、ACMD、Script 和 Job 统一使用这枚凭证访问中央白名单内的 HTTP API，不按单次执行签发凭证或声明 API Scope。交互请求额外核对当前 Web Task 和命令身份。
 
-收到 Client 返回的 `result` 时，Server 先更新相关工作目录，再交给结果分发器。只有 `id` 与当前队首等待的 `command_id` 匹配，才将 `(status, value, eof)` 投入对应的执行结果队列；`value` 通常来自 `text`，结构化 Control 的最终结果则来自 JSON 对象 `data`。正常输出按照该等待流逐块消费，直到终止标记 `eof`。Job CLI 与 Web Job Manager 在应用层校验结果并渲染为原有可读反馈；普通命令的文本输出仍保持原样。不匹配的结果进入独立的未预期消息处理路径。
+Server 按 `command_id` 将每个 Result Envelope 分发到已登记的等待流，支持 Foreground 与 Independent 请求并存。`started`、`progress`、`chunk` 表示过程事件，唯一 `completed` 携带执行终态；独立的取消 ACK 更新取消状态。终端和 Web 根据结果级呈现契约消费数据。
 
-`WebTaskRunner` 消费标准化事件后执行两件相互独立的操作：将每块输出按原始顺序追加到 SQLite 历史，并通过 WebEventBus 发送到执行任务的标签页。零散输出使用 `command_result`；密集输出按时间、条数和字节数合并为 `command_result_batch`，其 `results` 数组逐项保留原有的 `status` 和 `text`，不拼接文本或丢弃空块。批次在短时间内刷新，任务结束前强制发完最后一批，然后才发布 `command_complete`。典型 WebSocket 消息如下：
+`WebTaskRunner` 消费标准化事件后执行两件相互独立的操作：将每块输出按原始顺序追加到 SQLite 历史，并通过 WebEventBus 发送到执行任务的标签页。零散输出使用 `command_result`；密集输出按时间、条数和字节数合并为 `command_result_batch`，其 `results` 数组逐项保留原有的 `status` 和 `text`，不拼接文本或丢弃空块。批次在短时间内刷新，任务结束前强制发完最后一批，然后才发布 `command_complete`。典型 WebSocket 业务消息如下（定向命令事件另携带续传 `cursor`）：
 
 ```text
-event: command_result
-data: {"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"status":1,"text":"/home/user","metadata":{},"time":"<server-local-iso-time>"}
+{"id":"<event-id>","event":"command_result","data":{"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"status":1,"text":"/home/user","metadata":{},"time":"<server-local-iso-time>"}}
 
-event: command_result_batch
-data: {"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"results":[{"status":1,"text":"first"},{"status":1,"text":"second"}],"metadata":{},"time":"<server-local-iso-time>"}
+{"id":"<event-id>","event":"command_result_batch","data":{"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"results":[{"status":1,"text":"first"},{"status":1,"text":"second"}],"metadata":{},"time":"<server-local-iso-time>"}}
 
-event: command_complete
-data: {"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"success":true,"status":"success","metadata":{},"cancel_requested":false,"cancelled":false,"time":"<server-local-iso-time>"}
+{"id":"<event-id>","event":"command_complete","data":{"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"success":true,"status":"success","metadata":{},"cancel_requested":false,"cancelled":false,"time":"<server-local-iso-time>"}}
 ```
 
 Web 在 `ws://<host>:8086/ws/events?tab_id=<browser-tab-id>` 订阅事件。提交时将同一 `tab_id` 通过 `X-Tab-Id` 传给 Server，Server 才能把该 Task 的输出和完成事件送到相应标签页，而不是传播给所有打开的终端。若提交时没有提供有效 `tab_id`，事件总线不会具有这个定向范围，因此前端应保持两端使用同一标签页标识。
@@ -170,7 +167,7 @@ Socket `result` 帧使用 `event_type=started/progress/chunk/completed`，仅 `c
 
 普通 Terminal 将 `command_result.text` 或 `command_result_batch.results` 中的每条文本按序写入完整输出历史，并按浏览器绘制帧合并可见窗口更新，接到 `command_complete` 后显示成功、失败或取消提示，并清除活动 Task。对于 Script、Quick Action 的 Dialog 展示，前端根据请求 Metadata 把这一 Task 的事件交给相应对话框处理，而不是另建执行引擎。前端还维护少量“已完成 Task ID”标记，处理**完成 WebSocket 比提交 HTTP 返回更早到达**的竞态，避免短命任务被迟到的 `setActiveTask` 重新显示成 Busy。
 
-最终状态由结果流汇总得到。`status=0` 的失败块通常使 Task 进入 `error`；可以被明确识别的非致命取消能力提示不会被误当成致命执行失败。若已发出取消请求且实际收到取消或超时类结果，则可判为 `cancelled`。单纯调用取消 API，或者 Client 给出“接受取消”的 ACK，均不等于已经进入取消终态。
+最终状态由结果流的 `completed` 状态确定。中间过程输出保留级别；取消请求与 ACK 更新运行状态，执行真正结束后才发布任务终态。
 
 **WebSocket 将实时事件投递给当前在线的订阅者。** 持久执行历史通过 Command History 查询。 页面重连以后，可以查询符合策略且已写入 SQLite 的执行历史，但不能凭已删除的内存 Task 恢复完整 Task 运行态。
 
@@ -196,7 +193,7 @@ Client 的执行上下文决定是否能取消：对于不支持取消的策略�
 
 **历史条目在任务提交阶段按策略创建，而非完成后无条件补写。** 集中的 `CommandHistoryRecordPolicy` 判断应否记录，避免把 Web 高频文件浏览、部分进程控制、Job 控制、上传、结构化 JSON 任务等大量操作污染用户命令历史。用户手动输入的普通命令与符合回放条件的执行通常会记录；Script 等其他模块不一定创建这一类历史条目。规则应在同一策略入口扩展，而不是在每个按钮里各写一套判断。
 
-对允许记录的执行，SQLite Entry 从 `running` 开始，连续输出追加 `status/text/eof` 等记录，并更新行数、字符数、截断标记。持久化输出有数量和字符上限，因此**实时 WebSocket 中看到的全部输出不保证永久完整保留在历史中**。最后更新 Entry 的成功/错误状态、结束时间及最终工作目录。`command_id → history_entry_id` 映射还允许关联命令产生的 Artifact；当等待流结束时，对应映射和按命令授予的临时 Client Session Token 会清理。
+对允许记录的执行，SQLite Entry 从 `running` 开始，连续输出追加 `status/text/eof` 等记录，并更新行数、字符数、截断标记。持久化输出有数量和字符上限，因此**实时 WebSocket 中看到的全部输出不保证永久完整保留在历史中**。最后更新 Entry 的成功/错误状态、结束时间及最终工作目录。`command_id → history_entry_id` 映射还允许关联命令产生的 Artifact；当等待流结束时，对应映射会清理；Client Session Token 随连接结束撤销。
 
 Command History 与 Web Task 终态存在一个语义差别：历史的结束状态主要是 `success/error`，Web Task 可以进一步显示 `cancelled`。因此查询历史不能直接等价还原 Web 的每一项任务状态和取消 ACK。
 
@@ -226,7 +223,7 @@ Web 入口需要提供明确的 `client_id`、命令、`tab_id` 和必要的呈�
 - [Command History](command_history.md)：History/Recent/Pin、输出保存和回放。
 - [Structured Output](structured_output.md)：结构化结果如何进入终端展示。
 - [Scripts](scripts.md)、[Background Jobs](background_jobs.md)：前台脚本任务与长期后台执行的区别。
-- [WebSocket Notifications](sse_notifications.md)：事件总线、定向事件及通知分发。
+- [WebSocket Notifications](websocket_notifications.md)：事件总线、定向事件及通知分发。
 - [Connection Lifecycle](connection_lifecycle.md)：Socket 连接和离线状态对任务执行的影响。
 
 
@@ -234,8 +231,8 @@ Web 入口需要提供明确的 `client_id`、命令、`tab_id` 和必要的呈�
 
 Server 只将 `SERVER_COMMAND_REGISTRY` 显式注册的一级名称作为 Builtin，先用公用子命令解析器识别 `script/job/alias/xt/history` 等命令，再交给原业务 Support。未命中注册表的普通命令继续走 ACMD → Alias → Client 普通执行；Client 未注册的普通命令保留 Shell 后备执行。Server `script exec` 与 Script Library UI 使用同一份 Script Metadata 参数校验、运行模式解析和源码准备机制；实时 Configuration 查询不绑定 Script Activity，最后通过 `control(domain=script, action=run)` 直接向 Client 交付结构化请求，不构造伪命令。
 
-### Client 返回结果的派发次序（v34.6）
+### Client 返回结果的派发次序
 
-`ClientSessionCommandChannel.send_command()` 必须在 `session.send()` 前向按 ID 分发的 `pending_results` 注册新消息 ID。此前极快完成的 Client 结果可能早于 `wait_for_result()` 注册而到达，误入 `background_message`，并导致前台永远等待以及取消时返回 `Command is not running`。现在先注册、后发送，在 `completed` 或迭代器结束时统一清理；发送失败时回滚排队 ID。Client 的未知命令 Shell fallback 仍是原有能力，不因 Server Registry 扩展而改变。
+发送远程请求前须登记消息 ID，再发送协议消息，确保即时返回的结果也能匹配等待流。发送失败、终态、超时或断线时清理对应等待状态；迟到的结果不得影响其他任务。
 
 Control 的 Activity 终态来自最终 Result；中间输出保留原始级别，Warning 不累计为失败。

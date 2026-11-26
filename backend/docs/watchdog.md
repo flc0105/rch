@@ -112,7 +112,7 @@ Server 为每个 `client_id` 维护一个内存中的 FIFO 待执行队列（最
 
 - **每个客户端最多积压 32 条指令。** 依照 FIFO 顺序交付；达到队列上限后明确拒绝新指令，不会覆盖已经入队的指令。
 - **GET 会取走并删除指令。** 不应手工调用上述 GET 来“查看队列”，否则会把指令提前消费，真正的 Worker 可能收不到。
-- **POST 返回成功只表示已经入队。** 领取后会发布 SSE 事件；`clone` 由 Worker 回传执行 ACK，`kill/relaunch` 领取后即视为交付；以上不等于新进程已经上线。超时和失败会进入 Notification Center。
+- **POST 返回成功只表示已经入队。** 领取后会发布 WebSocket 事件；`clone` 由 Worker 回传执行 ACK，`kill/relaunch` 领取后即视为交付；以上不等于新进程已经上线。超时和失败会进入 Notification Center。
 - **队列不持久化。** Server 进程重启可能丢失待处理命令；Worker 执行失败也不会自动重新入队。多进程部署之间的内存队列不共享。
 
 例如，对一个无法响应 Socket 命令的 Client 提交 `relaunch`，HTTP POST 可能立即返回成功，但必须继续观察 Worker 日志以及新旧进程和连接状态，才能知道是否完成替换。
@@ -225,7 +225,7 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 
 ### 控制开关的生效时间
 
-| 配置项 | 默认值 | 含义 | 普通 `set` 修改 |
+| 配置项 | 默认值 | 含义 | 普通 `config set` 修改 |
 | --- | --- | --- | --- |
 | `REMOTE_CONTROL_WATCHDOG_ENABLED` | `false` | 是否启用独立 HTTP 远程控制 | 支持 |
 | `REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS` | `15` | Remote Control Watchdog HTTP 轮询间隔，单位秒 | 不支持 |
@@ -244,7 +244,7 @@ Web 的 **info → Watchdog** 在这种情况下显示 **Lifecycle managed by la
 | Linux | `~/.config/rchclient/runtime_config.json` |
 | iOS | `~/Documents/.rchclient/runtime_config.json` |
 
-Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`、`clone`、`resume`；待处理指令按实例 FIFO 排队（最多 32 条），新指令不会覆盖之前的指令。指令超时时间及队列上限统一定义在 `ControlCommandStore` 类顶部。Server 在指令领取时发布 `httpctl_consumed` SSE 事件；当未领取或领取后未收到确认且超过超时预算时，会主动发布 `httpctl_timeout`。`clone` 和 `resume` 成功执行后由 Worker 回传 ACK；`resume` 的 `delivered` 只确认原 Client IPC 已接受唤醒。`kill`、`relaunch` 执行时 Worker 即将退出，领取即视为交付。超时和执行失败会写入 Notification Center，并通过 `notification_center_updated` SSE 触发前端通知弹窗；Watchdog 偏好中控制超时、控制失败默认开启，指令领取调试通知默认关闭。Web 控制操作入队成功后立即显示一次 Toast，该反馈仅表示请求已入队。HTTP Control 继续使用原有匿名领取接口，指令状态仍保存在 Server 进程内存，Server 重启会丢失待处理队列。
+Remote HTTP Control 通过原 Client 的 `client_id` 投递 `kill`、`relaunch`、`clone`、`resume`；待处理指令按实例 FIFO 排队（最多 32 条），新指令不会覆盖之前的指令。指令超时时间及队列上限统一定义在 `ControlCommandStore` 类顶部。Server 在指令领取时发布 `httpctl_consumed` WebSocket 事件；当未领取或领取后未收到确认且超过超时预算时，会主动发布 `httpctl_timeout`。`clone` 和 `resume` 成功执行后由 Worker 回传 ACK；`resume` 的 `delivered` 只确认原 Client IPC 已接受唤醒。`kill`、`relaunch` 执行时 Worker 即将退出，领取即视为交付。超时和执行失败会写入 Notification Center，并通过 `notification_center_updated` WebSocket 触发前端通知弹窗；Watchdog 偏好中控制超时、控制失败默认开启，指令领取调试通知默认关闭。Web 控制操作入队成功后立即显示一次 Toast，该反馈仅表示请求已入队。HTTP Control 继续使用原有匿名领取接口，指令状态仍保存在 Server 进程内存，Server 重启会丢失待处理队列。
 
 ### 操作状态和重置
 
@@ -274,9 +274,9 @@ watchdog --json
 config list
 ```
 
-`watchdog` 返回便于阅读的当前状态；`watchdog --json` 返回同样的结构化状态。顶层按 `client`、`remote_control_watchdog`、`local_heartbeat_watchdog`、`process_recovery_watchdog` 分组，第二层才是各项具体信息，字段不再重复所属 Watchdog 前缀；秒数统一使用 `_seconds`。`config list` 仍可查看运行时配置，包括不支持普通 `set` 修改的三个 Remote Control Watchdog / Local Heartbeat Watchdog 时间参数；这些查询都不改变配置。
+`watchdog` 返回便于阅读的当前状态；`watchdog --json` 返回同样的结构化状态。顶层按 `client`、`remote_control_watchdog`、`local_heartbeat_watchdog`、`process_recovery_watchdog` 分组，第二层才是各项具体信息，字段在所属 Watchdog 分组内使用简明名称；秒数统一使用 `_seconds`。`config list` 仍可查看运行时配置，包括不支持普通 `config set` 修改的三个 Remote Control Watchdog / Local Heartbeat Watchdog 时间参数；这些查询都不改变配置。
 
-`watchdog` 的**普通文本输出**与 `set` 分组列表一致：每个对象显示为 `[client]`、`[remote_control_watchdog]`、`[local_heartbeat_watchdog]`、`[process_recovery_watchdog]` 标题，下面逐行输出 `字段 = 值`，组之间留空行；不会把第二层对象直接打印成 Python 字典。比如：
+`watchdog` 的**普通文本输出**与 `config list` 分组列表一致：每个对象显示为 `[client]`、`[remote_control_watchdog]`、`[local_heartbeat_watchdog]`、`[process_recovery_watchdog]` 标题，下面逐行输出 `字段 = 值`，组之间留空行；不会把第二层对象直接打印成 Python 字典。比如：
 
 ```text
 [client]
@@ -314,13 +314,13 @@ config reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
 
 每一行只清除对应开关的运行时覆盖值；当前默认值均为关闭。只需重置一个模式时执行对应一行即可，新的值会立即应用到 Watchdog 组件。
 
-以上 `set` 和 `watchdog` 都是 **Client 命令通道内置命令**，不能直接作为普通操作系统 Shell 命令执行。
+`config` 和 `watchdog` 都是 **Server Builtin**，不能直接作为普通操作系统 Shell 命令执行。
 
 ## 守护状态与控制台观测
 
 ### 状态字段的含义
 
-`watchdog --json` 使用四个顶层对象，每个对象内部只放直接属性，不再有第三层。下列 JSON 仅示意结构（PID、地址、间隔均非当前机器的实测值）：
+`watchdog --json` 使用四个顶层对象，每个对象内部只放直接属性，各组使用直接属性。下列 JSON 仅示意结构（PID、地址、间隔均非当前机器的实测值）：
 
 ```json
 {
@@ -384,7 +384,7 @@ config reset LOCAL_HEARTBEAT_WATCHDOG_ENABLED
 
 三种 Watchdog 日志分别位于 **`<Client temp root>/watchdog_logs/`** 下的 `client_remote_control_watchdog.log`、`client_local_heartbeat_watchdog.log`、`process_recovery_watchdog.log`。路径由 `client/watchdog/watchdog_paths.py` 统一计算；Windows 的 Client temp root 使用 `rch_client_temp`，POSIX 使用 `rch_client_temp_u<effective_uid>` 并按 UID 隔离。Process 日志保留轮转。Local 心跳保存在并列的 `watchdog_heartbeats/`，Process 监督会话的 `ready.json`、`stop`、`stopped`（含原子 `.tmp`）保存在 `watchdog_sessions/rch_process_recovery_watchdog_*/`。日志属于系统临时空间，**不会像外部运行时配置目录中的文件那样保证持久保留**；系统清理临时目录可能使历史诊断日志消失。切换代码后需重启 Client（及其 Worker/Supervisor）使用新路径；旧配置目录里的日志不会被自动迁移或删除。
 
-`worker_alive` 或 `supervisor_alive` 为 `true` 只说明相应进程仍被检测为存活，不意味着网络命令已交付、心跳恢复已完成或新 Client 已连接 Server。状态查询不会将不再使用的扁平字段作为额外兼容输出。Process 扫描算法、修改检查间隔的方法及生命周期边界详见 [Process Recovery Watchdog](process_recovery_watchdog.md)。
+`worker_alive` 或 `supervisor_alive` 为 `true` 只说明相应进程仍被检测为存活，不意味着网络命令已交付、心跳恢复已完成或新 Client 已连接 Server。Process 扫描算法、修改检查间隔的方法及生命周期边界详见 [Process Recovery Watchdog](process_recovery_watchdog.md)。
 
 ### 浏览器中的控制与显示
 
@@ -599,4 +599,4 @@ unset ADMIN_API_TOKEN
 
 ## 启动时按需加载
 
-`client/config/feature_config.py` 解析唯一的 `watchdog` 启动能力。`true` 时导入 Watchdog Manager、Monitor 和 Supervisor 的实现，三个运行模式分别通过 `set` 热启停；`false` 时完全跳过这些实现的导入。iOS 的有效能力固定为 `false`，launchd Client 的能力为 `true`，实际监督仍由 launchd 管理。修改 Feature 配置需要重启 Client。
+`client/config/feature_config.py` 解析唯一的 `watchdog` 启动能力。`true` 时导入 Watchdog Manager、Monitor 和 Supervisor 的实现，三个运行模式分别通过 `config set` 热启停；`false` 时完全跳过这些实现的导入。iOS 的有效能力固定为 `false`，launchd Client 的能力为 `true`，实际监督仍由 launchd 管理。修改 Feature 配置需要重启 Client。

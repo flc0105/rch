@@ -61,7 +61,7 @@ Client without deleting their definitions. CLI and Toolbox use the same
 instance lifecycle service.
 
 There is no extra Tunnel TCP listening port. Each independent Tunnel control
-connection and forwarded TCP data connection uses the **existing RCH TCP/TLS
+connection and forwarded TCP data connection uses the **existing RCH TCP or mTLS/TCP
 listener address and port**. An optional, detachable listener adapter is
 installed only while a Tunnel mapping is running. The main RCH session socket
 never carries Tunnel file or application bytes. Firewall and NAT rules that
@@ -91,9 +91,9 @@ The Tunnel belongs to the Client and Server processes, not a specific RCH
 Session. Each process exit closes its tunnel connections. The stored instance
 definitions remain available for manual reactivation. The data control
 connection is not automatically re-established after a network failure.
-The Tunnel channel uses a random token for setup authentication. When the
-existing RCH listener is TLS-enabled, independent Tunnel sockets use the same
-TLS listener and the Client verifies its configured certificate fingerprint.
+The Tunnel channel uses a random token for setup authentication. Independent Tunnel sockets follow the established RCH session transport. In
+mTLS mode, both peers authenticate with their installed Identity material;
+Server-side Client authorization is checked for new connections.
 Plain TCP transports remain unencrypted. The Tunnel forwards TCP, not UDP, and
 does not rewrite HTTP Host, redirects or TLS
 certificate names.

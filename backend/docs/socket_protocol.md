@@ -1,10 +1,10 @@
 # Client–Server Socket Protocol
 
-RCH 的 Client 与 Server 通过一条持续存在的 TCP 连接交换控制消息。连接建立后先传输 `info` 握手；之后远程命令、只读补全查询、取消、心跳、PTY、屏幕画面、剪贴板、设备监控及传输任务的控制信息，都复用这条连接上的 JSON 消息协议。Server 将 Client 发送的消息分派到正在等待的命令或特定会话服务，Web 再通过 HTTP API 与 SSE 使用这些能力。
+RCH 的 Client 与 Server 通过一条持续存在的 TCP 连接交换控制消息。连接建立后先传输 `info` 握手；之后远程命令、只读补全查询、取消、心跳、PTY、屏幕画面、剪贴板、设备监控及传输任务的控制信息，都复用这条连接上的 JSON 消息协议。Server 将 Client 发送的消息分派到正在等待的命令或特定会话服务，Web 再通过 HTTP API 与 WebSocket 使用这些能力。
 
-**Socket 消息、Web Task、SSE 事件是三层不同概念。** Socket 协议解决 Server 与 Client 之间如何封包、收发和识别消息；Web Task 管理由浏览器发起的一次执行；SSE 把结果推送给浏览器。文件传输的实际字节内容还有独立的 HTTP 或 TCP 数据连接，不经这条 JSON Socket 连续搬运。
+**Socket 消息、Web Task、WebSocket 事件是三层不同概念。** Socket 协议解决 Server 与 Client 之间如何封包、收发和识别消息；Web Task 管理由浏览器发起的一次执行；WebSocket 把结果推送给浏览器。文件传输的实际字节内容还有独立的 HTTP 或 TCP 数据连接，不经这条 JSON Socket 连续搬运。
 
-Bind TCP 改变拨号方向：Python Client 在配置的地址监听，Server 通过设备栏 More 的主动连接操作向目标 IP 和端口建立 TCP 连接，首条应用消息仍是 **Client 发出的 `info`**。Server 调用现有 `SessionAcceptor.accept_session()`，继续使用原帧格式与结果事件。当前 Bind 使用普通 TCP。Server 完成会话注册后先发送原有 `client_session_token`，然后向 Bind Client 发送一次 `session_config`（`server_web_base_url`），随后发布上线事件。Reverse 只接收原有 Session Token，不改变 Web URL。Bind Client 将该 URL 作为当前会话的 Web API origin，断开时失效；新连接重新获得公告。
+Bind 由 Python 或 Go Client 监听，Server 拨号；Reverse 由 Client 拨号。两种方向均支持 TCP 或 mTLS/TCP，首条应用消息为 Client 的 `info`。参见 [Connection Lifecycle](connection_lifecycle.md)。
 
 ## 1. 一条 TCP 连接中的消息
 
@@ -16,14 +16,14 @@ Browser                         Server                              Client
    |-- HTTP: submit command ----->|                                   |
    |                              |-- TCP: command(id, text) -------->|
    |                              |<-- TCP: result(id, chunk) --------|
-   |<-- SSE: command_result ------|                                   |
+   |<-- WebSocket: command_result ------|                                   |
    |                              |<-- TCP: result(id, completed) --------|
-   |<-- SSE: command_complete ----|                                   |
+   |<-- WebSocket: command_complete ----|                                   |
    |                              |                                   |
    |-- HTTP: open monitor ------->|-- TCP: monitor_open(session_id) -->|
    |                              |<-- TCP: monitor_opened ------------|
    |                              |<-- TCP: monitor_snapshot ----------|
-   |<-- SSE: monitor snapshot ----|                                   |
+   |<-- WebSocket: monitor snapshot ----|                                   |
 ```
 
 首帧由 `backend/server/runtime/server_listener.py` 的 `_receive_client_info()` 接收：Server 对新连接临时设置 **5 秒 Socket 接收超时**，读取并解析第一帧后恢复阻塞模式；失败则关闭新 Socket，不登记成功会话。这不是后续所有消息的通用 5 秒超时，也不是连接保活周期。Server 的活动连接以 `client_id` 寻址；握手字段的解释参见 [Client Handshake & Capability Discovery](client_handshake.md)。
@@ -172,7 +172,7 @@ Control 可以在 `completed` 中同时携带 `message` 与原始业务 `data`�
 | process | kill | `{"pid":1234}` → `completed.message`（不另存重复的业务 data） |
 | session | disconnect | `{}` → Client 立即关闭自己的连接；该控制动作独立执行，连接关闭可先于 Result 终态 |
 
-Configuration 的值使用 JSON 原生标量，CLI `set` 与 Web 共用配置校验、覆盖存储和运行时副作用；查询 Script 默认模式不绑定 Script Activity。Watchdog 查询复用既有状态对象，进程/App 实时列表与详情继续走 Device Monitor。Go 支持 Configuration；Watchdog 和 Process UI 仍按现有能力声明限制。Server → Client 文件传输无论从 Web 还是 Terminal 发起，均走 Transfer 协议，不占用 Client 命令执行槽。
+Configuration 的值使用 JSON 原生标量，Server `config` 与 Web 共用配置校验、覆盖存储和运行时副作用；查询 Script 默认模式不绑定 Script Activity。Watchdog 查询复用既有状态对象，进程/App 实时列表与详情继续走 Device Monitor。Go 支持 Configuration；Watchdog 和 Process UI 仍按现有能力声明限制。Server → Client 文件传输无论从 Web 还是 Terminal 发起，均走 Transfer 协议，不占用 Client 命令执行槽。
 
 Client → Server 单次完成示例：
 
@@ -234,11 +234,11 @@ Device Monitor 通过 `monitor_open/config/close` 控制订阅，Client 按频�
 
 收到 Client 数据后，Server 的处理流程是 `ClientSession.recv_message()` → `ServerInboundMessageDispatcher` → `ServerInboundMessageRouter` → 对应的业务服务回调。不同消息的上层去向不相同：
 
-- 普通 `result` 进入当前命令的等待队列，Web Task 再发布分段 `command_result` 与最终 `command_complete` SSE。
-- PTY、Screen、Monitor、Clipboard、Transfer 由各自服务处理其 Session 状态，按对应 Web 路由和浏览器 Tab 的订阅关系发布 SSE 或查询结果。
+- 普通 `result` 进入当前命令的等待队列，Web Task 再发布分段 `command_result` 与最终 `command_complete` WebSocket。
+- PTY、Screen、Monitor、Clipboard、Transfer 由各自服务处理其 Session 状态，按对应 Web 路由和浏览器 Tab 的订阅关系发布 WebSocket 或查询结果。
 - `heartbeat_ack` 更新会话健康状态，并可通知连接状态订阅者；`cancel_ack` 更新前台任务取消状态。
 
-对浏览器而言，HTTP 用于申请和配置动作，SSE 用于接收事件，**都不是让浏览器直接持有 Python Client 的 TCP Socket**。相反，Server 负责把多个浏览器发起的操作映射到目标 `client_id` 的 TCP Session，并在具体业务下执行授权、队列或资源约束。
+对浏览器而言，HTTP 用于申请和配置动作，WebSocket 用于接收事件，**都不是让浏览器直接持有 Python Client 的 TCP Socket**。相反，Server 负责把多个浏览器发起的操作映射到目标 `client_id` 的 TCP Session，并在具体业务下执行授权、队列或资源约束。
 
 ## 7. 断线、异常与协议边界
 
@@ -255,7 +255,7 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 1. **字节序**：Python `struct 'i'` 使用原生字节序，没有将传输格式固定为跨平台统一的网络字节序；跨不同字节序平台时不能仅靠当前机器上的成功连接判断协议兼容。
 2. **长度校验**：当前 Python 解码端没有显式设置消息体最大长度。新接入不可信网络时，应把内存占用和异常长度视为需要额外保护的风险，而不是当作已经由协议解决。
 3. **完整写入和并发写入**：Python 发送通过 `sendall` 和实例锁实现；这防止本连接多个线程生成的逻辑帧交错，但不提供对端确认或重发保证。
-4. **连接机密性与身份**：`RCHSocket` 代码只是普通 TCP+JSON，没有内置 TLS 加密、消息签名或 Client 证书校验；握手的身份字段由 Client 自报。实际外部访问保护必须由部署边界或明确的上层安全机制提供，不能把 Machine Fingerprint 当认证凭据。
+4. **连接机密性与身份**：`tcp` 为明文传输；`mtls_tcp` 在 Socket 消息交换前完成双向认证。Machine Fingerprint 用于设备归属，身份授权由 mTLS 和应用认证边界负责。
 5. **消息有效性**：基础 Router 根据 `type` 字符串选择方法，未识别类型通常被忽略；不存在统一 JSON Schema 验证或应用协议版本协商。Server Listener 目前将解包后的首帧交给会话构造路径，并没有在该入口显式断言 `type == "info"`；因此 `info` 是当前 Client 的发送约定，而不能把“首帧正确标识为 `info`”当作已经由底层强制校验的安全保证。新增字段应由对应 Handler 验证类型、取值和授权，不要仅因能够解包就执行敏感操作。
 6. **流控与积压**：Socket 多业务复用，Client Deferred 队列和 Server 结果队列都可能积压；目前底层没有通用 per-channel 优先级、配额、ACK 或背压控制。屏幕、监控等高频数据应由自己的业务层限制频率、帧体和生命周期。
 
@@ -267,17 +267,17 @@ Server 接收线程遇到 `socket.error` 后执行连接关闭处理，通知 We
 2. 若由 Server 发起，更新 Python Client 的 `ClientInboundMessageDispatcher` 分类：耗时独占的命令交给 Deferred；心跳、控制类与只读 `completion` 查询由 Immediate 路由。Completion Handler 只读调用 Provider 并回 Result，不得转入命令/Control 执行路径。
 3. 在 `ClientInboundMessageRouter` 或相应 Client 管理器处理请求，构造带有 `type` 和正确业务 ID 的回包；多线程回包通过现有 Python `ServerConnection.send()` 发送。
 4. 在 Server 的 `ServerInboundMessageDispatcher` 注册允许接收的回包类型，实现 `ServerInboundMessageRouter` Handler，再在 `ClientSessionContext` 与应用服务中建立回调、状态更新与资源清理。
-5. Web 功能通过 Server API 发起操作，通过对应 SSE/状态接口接收结果。完成断线、中断、重复请求、迟到响应、错误消息及并发资源的检查。
+5. Web 功能通过 Server API 发起操作，通过对应 WebSocket/状态接口接收结果。完成断线、中断、重复请求、迟到响应、错误消息及并发资源的检查。
 
 例如，如果新增一条长时间运行的订阅会话，不应临时把 `command_id` 当作其永久 Session ID：前台命令完成后，Server 会清掉当前命令的结果等待及部分授权绑定，长期订阅需要它自己的生命周期。Socket 协议会负责封包，**不会替业务保证关闭、订阅权限或客户端断线后的资源释放**。
 
 相关实现入口：`backend/core/protocol/rchsocket.py`、`message_router_base.py`、`message_types.py`；`backend/server/runtime/server_listener.py`、`backend/server/connection/`；`backend/client/connection/` 与 `backend/client/bootstrap/`。讨论用户发起的执行任务可读 [Command Execution Pipeline](command_execution.md)；具体持续会话参见对应功能文档。
 
-## 附录：Go Client（非主要维护路径）
+## 附录：Go Client
 
-下面仅记录该独立实现与上文 Python Client 协议的边界，不作为主要协议流程的前置条件或功能清单。
+Go Client 与 Python Client 共用协议和会话契约；平台能力由各自的 Manifest 声明。
 
-**连接传输。** Go Client 根据构建时注入的 `SERVER_TRANSPORT` 选择 `tcp`（默认）或 `tls_tcp`；TLS/TCP 使用与 Python Client 相同的 Server 证书 SHA-256 指纹校验，在 TLS 握手成功并验证指纹后发送 RCH 握手。证书指纹由所选 Listener 的构建配置注入。
+**连接传输。** Python 与 Go Client 支持 Reverse、Bind 和 `tcp` / `mtls_tcp`。mTLS 在发送 RCH 应用数据前完成双向身份认证，并对 Client Identity 执行 Server 登记校验。详见 [mTLS Identities](mtls_identities.md)。
 
 **帧实现。** `backend/client-go/protocol/ratsocket.go` 也使用“4 字节长度头 + JSON 消息体”，但长度头采用 `binary.LittleEndian`、`uint32`，接收通过 `io.ReadFull`。Python 侧使用原生格式有符号整数长度头；两者在常见 little-endian 机器上可以互通，不代表已经实现跨任意字节序的统一封包协议。Go 的 `Send()` 分别用一次 `conn.Write()` 发送头和正文，已使用发送互斥锁，尚未实现短写补发循环；该接收端也未显式规定最大消息长度。
 
@@ -303,7 +303,7 @@ JSON frame transport.
 
 The `expose_on` setting selects only the local listening socket. Extra Tunnel
 TCP connections are dialled in the same direction as the already established
-RCH session and reach the same TCP/TLS listener address and port, regardless of
+RCH session and reach the same TCP or mTLS/TCP listener address and port, regardless of
 where a mapping listens. A removable listener handler is registered on demand
 and de-registered after the last mapping stops. No Tunnel parsing or bridging
 runs in the normal RCH handshake while Tunnel is idle. A separately authenticated

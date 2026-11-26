@@ -130,7 +130,7 @@ Server 监听线程把初始 JSON 与接受连接时得到的来源地址结合�
 
 标准字段与扩展字段的区别会影响后续读取方式，但它们均属于当前会话的握手资料。Server 并不依靠 `SessionInfo` 自动探测远端能力：未上报的字段会使用默认值或空集合，不能由此推断远端实际运行了哪些功能。
 
-注册过程完成后，Server 通过 `client_id` 管理在线 `ClientSession`，绑定命令历史、Artifact、Client Session Token、PTY、Screen View、Clipboard、Monitor 和 Transfer 的会话回调；设置初始连接时间和最近活跃时间；按 `machine_id` 更新最近设备缓存与连接历史；在发布 `connection_online` SSE 前向该 Client 发送连接期 Client Session Token（每次连接一份，断连撤销），最后发布 `connection_online` SSE。Server 不会因为握手带来了 `machine_id` 就用它替代 `client_id` 定位执行目标：同一台机器上可能同时运行多条 Client 连接。
+注册过程完成后，Server 通过 `client_id` 管理在线 `ClientSession`，绑定命令历史、Artifact、Client Session Token、PTY、Screen View、Clipboard、Monitor 和 Transfer 的会话回调；设置初始连接时间和最近活跃时间；按 `machine_id` 更新最近设备缓存与连接历史；在发布 `connection_online` WebSocket 前向该 Client 发送连接期 Client Session Token（每次连接一份，断连撤销），最后发布 `connection_online` WebSocket。Server 不会因为握手带来了 `machine_id` 就用它替代 `client_id` 定位执行目标：同一台机器上可能同时运行多条 Client 连接。
 
 对外查询时，**完整会话信息、设备列表摘要和专用能力 API 并不是同一份 JSON**：
 
@@ -192,20 +192,20 @@ Heartbeat 更新连接的最近活跃信息、RTT 和可能的当前工作目录
 
 相关详细参考：[Device Identity & Inventory](./device_identity.md)、[Terminal Autocomplete](./autocomplete.md)、[Variables](./variables.md)、[Client Builds and Updates](./client_update.md)、[Connection Lifecycle](./connection_lifecycle.md) 与 [Administrator Authentication](./admin_auth.md)。
 
-## 附录：Go Client（非主要维护路径）
+## Go Client 握手
 
-Go Client 支持 TCP 和 TLS/TCP 监听器。Go (Simple) 构建时注入 Listener 协议和 Server 证书 SHA-256 指纹；未选择 TLS/TCP 时使用 TCP。TLS/TCP 在验证证书指纹通过后发送 Client 握手消息。
+Go Client 支持 Reverse 和 Bind，传输方式为 `tcp` 或 `mtls_tcp`。mTLS 在发送 Client 握手消息前完成双向身份验证，身份文件独立于构建产物。参见 [mTLS Identities](mtls_identities.md)。
 
-这一独立实现只用于解释连接能力边界，不属于上文 Python Client 握手工作流。它在 TCP 连接后同样发送 `type: "info"`，并在同一进程的重新连接间沿用 Client ID，但当前上报内容较少：
+Go Client 在传输连接建立后发送 `type: "info"`，并在同一进程的重新连接间沿用 Client ID，但当前上报内容较少：
 
 - 基础字段包括 `id`、`os_type`、`os_ver`、`hostname`、`cwd`、`integrity`、`go_version` 和 `build_version`；其中 Windows `integrity` 读取当前进程 Token 的完整性 RID。
 - `launch_mode` / `launch_source` 支持 `terminal`、`terminal_background`、`detached`、`user_service`、`system_service`、`scheduled`、`unknown` 七类外部运行形态，不使用 Python Client 的 `ide` 分类；启动时采集一次并在重连时复用，服务类型由实际管理器与当前进程 PID 核对。
 - `command_manifest` 来自 Go 自身的命令执行器，涵盖基本文件操作；`cd` 与 `download` 声明 `filesystem` CompletionSpec，Server 据此通过独立 `completion` 消息请求路径候选；`variable_manifest` 仍为空列表。
 - `system_paths` 提供 Root、Home、Desktop、Documents、Downloads、Temp 和可执行文件目录，用于 Remote Files Quick Jump。
 - `machine_id` 和 `machine_fingerprint_basis` 使用 Go 的机器身份实现；`client_revision` 及 Python 源码指纹明细没有上报。
-- `feature_manifest.remote_files=true` 表示 Go 可使用目录导航及基本文件管理命令；文件传输、Preview 和 ZIP 功能尚需对应执行模块。
+- `feature_manifest.remote_files=true` 表示 Go 可使用目录导航及基本文件管理命令，并支持受管理文件传输、Preview 和 ZIP。
 
-Go Client 的连接、身份、目录管理、Remote Files HTTP 上传／下载／预览／ZIP 传输和命令 Manifest 可独立于 Python Client 使用；完整脚本、作业、PTY、屏幕等功能仍须按各 Client 实际能力判断。Go 的图片文件预览只上传原始字节，不负责图片压缩。相关代码位于 `backend/client-go/`。
+Go Client 的连接、身份、目录管理、Remote Files 上传／下载／预览／ZIP 传输和命令 Manifest 可独立于 Python Client 使用；Go 支持使用本机 Python 解释器运行普通 Script；Python SDK、Job、PTY、Screen View 等能力以实际 Client Manifest 为准。Go 的图片文件预览只上传原始字节，不负责图片压缩。相关代码位于 `backend/client-go/`。
 
 ## Capability Metadata 与启动 Feature
 
@@ -213,6 +213,6 @@ Client 在原有 `info.command_manifest` 每个条目中上报命令描述：`na
 
 这些描述属于**静态声明**；取消策略、执行超时及交互状态在运行过程中仍由执行器/任务上下文决定。`output=stream` 表示命令可能在最终结果前发送中间命令结果；`collect` 表示该命令只返回最终命令结果。
 
-`info.feature_manifest` 是 Client 启动时解析的有效 Feature 布尔快照；部分 Feature 决定模块装载，`external_tool` 与 `process_monitor` 决定 Web 工具入口。支持 `pty`、`screen_view`、`screen_input`、`clipboard`、`watchdog`、`external_tool`、`process_monitor`。File Transfer 和 Device Monitor 仍沿用现有路径；Process Inspection/Control 暂未纳入 Feature 开关。Server 的连接列表序列化会透传 `feature_manifest`，供 Web 界面读取；本阶段没有新增服务端 Feature 权限校验。
+`info.feature_manifest` 是 Client 启动时解析的有效 Feature 布尔快照；部分 Feature 决定模块装载，`external_tool` 与 `process_monitor` 决定 Web 工具入口。支持 `pty`、`screen_view`、`screen_input`、`clipboard`、`watchdog`、`external_tool`、`process_monitor`。File Transfer 和 Device Monitor 仍沿用现有路径；Process Inspection/Control 暂未纳入 Feature 开关。Server 的连接列表序列化会透传 `feature_manifest`，供 Web 界面读取；Feature Manifest 用于能力展示，服务端权限仍由相应业务入口校验。
 
-配置入口为 `client/config/feature_config.py` 内的 `FEATURE_OVERRIDES`，在 Client 启动时与平台默认值合并。关闭的 PTY、Screen View、Clipboard Manager 不会导入或实例化；`watchdog=false` 时不导入 Watchdog Manager、Monitor 或 Supervisor；`watchdog=true` 时加载模块，由原有三个 `set` 开关分别热启停 Remote、Local 与 Process。macOS（含 launchd 托管场景）、Windows、Linux的能力默认启用；iOS 固定不支持。launchd 托管下，已加载的 Watchdog 仍执行现有的生命周期运行抑制，`set` 配置可保存但不启动监督进程。Screen Input 关闭时保留只读 Screen View，Client 忽略输入并返回错误；前端隐藏 Control 开关。修改启动 Feature 配置后需重启 Client，当前 Socket 重连会沿用同一进程的配置快照。`external_tool` 和 `process_monitor` 在 macOS、Windows、Linux 默认开启，在 iOS 固定关闭；它们目前控制 Web 的 External Tools 和 Process Manager 入口，可复用的命令、SDK 与 Device Monitor 实现仍按现有路径导入。`process_monitor` 不限制 `acmd ps/kill` 等命令。
+配置入口为 `client/config/feature_config.py` 内的 `FEATURE_OVERRIDES`，在 Client 启动时与平台默认值合并。关闭的 PTY、Screen View、Clipboard Manager 不会导入或实例化；`watchdog=false` 时不导入 Watchdog Manager、Monitor 或 Supervisor；`watchdog=true` 时加载模块，由三个 Watchdog 运行配置开关分别热启停 Remote、Local 与 Process。macOS（含 launchd 托管场景）、Windows、Linux的能力默认启用；iOS 固定不支持。launchd 托管下，已加载的 Watchdog 仍执行现有的生命周期运行抑制，运行配置可保存但不启动监督进程。Screen Input 关闭时保留只读 Screen View，Client 忽略输入并返回错误；前端隐藏 Control 开关。修改启动 Feature 配置后需重启 Client，当前 Socket 重连会沿用同一进程的配置快照。`external_tool` 和 `process_monitor` 在 macOS、Windows、Linux 默认开启，在 iOS 固定关闭；它们目前控制 Web 的 External Tools 和 Process Manager 入口，可复用的命令、SDK 与 Device Monitor 实现仍按现有路径导入。`process_monitor` 不限制 `acmd ps/kill` 等命令。

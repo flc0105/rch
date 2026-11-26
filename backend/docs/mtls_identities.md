@@ -4,9 +4,9 @@
 
 `tcp` 为独立明文模式，不依赖 Identity 材料。`mtls_tcp` 为独立的双向认证模式。Reverse 和 Bind 均在发送 RCH 应用数据前完成双向 TLS 握手，TLS 至少 1.2。
 
-Server 使用独立的 `server-ca.crt` / `server-ca.key` 签发 Server Identity；Client Identity 由另一个 `client-ca.crt` / `client-ca.key` 签发。两种 CA 各自只被对端按预期角色信任。Server 还按签发登记表检查 Client 证书的 SHA-256 摘要，拒绝未授权、已撤销或已过期的安装身份。证书有效期由标准 SSL 验证，并由 Server 管理表再次判断。SHA-256 用于登记表的内部证书索引，不是旧的网络端 Server 证书指纹固定模式。
+Server 使用独立的 `server-ca.crt` / `server-ca.key` 签发 Server Identity；Client Identity 由另一个 `client-ca.crt` / `client-ca.key` 签发。两种 CA 各自只被对端按预期角色信任。Server 还按签发登记表检查 Client 证书的 SHA-256 摘要，拒绝未授权、已撤销或已过期的安装身份。证书有效期由标准 SSL 验证，并由 Server 管理表再次判断。SHA-256 用于登记表的内部证书索引。
 
-## 首次启用（必须在建立 mTLS 连接前完成）
+## 初始化与身份安装
 
 1. 在 Server Web 的 **Settings → Identities** 中点击 **Initialize**。Server 的信任材料保存在 `RCH_SERVER_RUNTIME_DIR/identities/`，默认即 `<project>/backend/runtime/identities/`。此操作只可初始化一次，不会覆盖现有信任根。需要系统安装 `openssl` 命令供签发使用；Socket 握手本身由 Python `ssl` 完成。
 2. 在 **Client Identities** 输入安装范围的识别名称和有效期（默认 365 天），点击 **Create**。Web 会下载仅包含 `client.crt`、`client.key`、`server-ca.crt` 的独立 ZIP。务必通过受保护的管理员渠道交付，不能放入公开构建包、匿名 Bootstrap、普通更新包或共享仓库。
@@ -25,6 +25,8 @@ Server 使用独立的 `server-ca.crt` / `server-ca.key` 签发 Server Identity�
 - **配置校验**：Listener 配置只接受 `tcp` 和 `mtls_tcp`。无效协议会拒绝加载原配置，配置文件不会被自动改写。Client 选择 mTLS 时需要预先安装有效身份。
 - **私钥备份**：Server Identity 目录包含两套 CA 私钥和 Client 私钥，必须严格访问控制、离线加密备份。下载 ZIP、Client 的 Identity 目录和浏览器下载缓存均按敏感凭据处理。
 
-## 实现限制
+## 平台与运维边界
 
-本版本不支持设备数量上限、自动预注册、匿名签发、自动续签/系统 CA 导入或 Windows ACL 的自动管理。现有活跃会话在撤销前完成的握手不会被强制终止；需要新的立即断开机制必须另行设计。Go 原生 Client 通过 Go TLS 标准库读取与 Python 相同的三份 Identity 文件；Reverse 和 Bind 均支持 `tcp` / `mtls_tcp`。Go Loader 通过 Web API 构建并运行 Python Client，本身不建立 RCH Socket 连接；Bind Loader 必须设置可达的 Server Web IP/Port。Go Client 仍沿用自身现有的功能清单（不提供 Python 的全部辅助连接功能）。iOS TLS 环境尚未实机验证。
+Python 和 Go Client 使用相同的 Identity 文件契约，Reverse 与 Bind 均支持 mTLS。Go Loader 负责下载并启动 Python Bundle；Bind Loader 需要可达的 Server Web 地址。iOS / Pythonista 的 TLS 握手仍需实机验证。
+
+证书续签、Server Identity 轮换及 Windows 私钥 ACL 由管理员维护；避免在信任材料尚未安全分发时替换 CA。

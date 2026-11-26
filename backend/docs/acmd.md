@@ -106,7 +106,7 @@ acmd ps --port 8080 --json --with-actions
 - `--no-confirm` 必须指定目标，不发起任何交互。`--force` 仅决定使用
   `SIGKILL`，未指定时使用 `SIGTERM`。不从未确认的自由文本猜目标。
 - `acmd ps` 支持 `--pid/--name/--port`；进程数据始终保留 `pid / ppid / name / username / status` 五个字段。指定 `--with-actions` 时，在结果级 `view.actions` 中声明一次 Kill 模板；默认不附加 `view`。操作按钮由 JSON Viewer 展示，Terminal 表格和数据字段不变。
-- `kill_proc / kill_port / pkill / pgrep` 不再是注册的 Client 命令。
+
 - 进程选择和发信号都在 Client 执行。不预设 PID 白名单或进程保护名单；
   操作系统权限仍决定实际信号是否成功。对 PID 创建时间、名称、可执行
   文件和端口归属进行重检，拒绝预览后身份发生变化的进程。
@@ -290,7 +290,7 @@ Manifest 提供的是**当前连接的建议入口**，不是一整套动态参�
 
 ## 执行环境和控制边界
 
-Server 在识别 `acmd` 后发送原始命令文本及结构化参数，包含 `--format/-f/--json`；Client 由独立 Runner 调用 Registry，统一识别格式并校验业务参数，仍绑定本次 `command_id`、取消与超时上下文。结构化结果成功产生后，Registry 检查本次格式是否适用；不适用则返回英文错误，不自动改用其他格式。失败或纯消息结果直接显示 `message`。Result 的 `presentation.requested/default` 供 Server 和 Activity 通过同一个 Core Renderer 生成文字，Web 由现有任务事件与 SSE 展示。
+Server 在识别 `acmd` 后发送原始命令文本及结构化参数，包含 `--format/-f/--json`；Client 由独立 Runner 调用 Registry，统一识别格式并校验业务参数，仍绑定本次 `command_id`、取消与超时上下文。结构化结果成功产生后，Registry 检查本次格式是否适用；不适用则返回英文错误，不自动改用其他格式。失败或纯消息结果直接显示 `message`。Result 的 `presentation.requested/default` 供 Server 和 Activity 通过同一个 Core Renderer 生成文字，Web 由现有任务事件与 WebSocket 展示。
 
 在 Web Terminal 发起的前台 ACMD 仍会受到 Client 前台任务占用约束。它不是能够绕过主执行槽的独立控制通道，也不提供 PTY 那样的持续交互输入会话。
 
@@ -332,4 +332,3 @@ Client ACMD Registry 统一接受 `--format/-f/--json`，每条命令的 `Argume
 ### JSON Viewer 的结果级 View
 
 ACMD 的结构化 Result 可以附带 `view`。它与负责终端文字布局的 `presentation` 并列：`titleField` 指定 Card 标题字段，`columns` 可为主表字段配置 `width` 或 `minWidth`（像素），`details` 将字段显示在可展开详情中；`actions` 是整张表共用的行操作模板，命令中的 `{field}` 引用当前行的原始字段值。Viewer 复用现有的执行确认、Terminal/New Dialog 和成功刷新功能；确认缺省开启，刷新缺省关闭。桌面默认 Table、可切换 Card；移动端默认 Card，前两项操作直接显示，余下操作进入 More。原生业务 `data` 不承载重复的逐行动作定义。
-

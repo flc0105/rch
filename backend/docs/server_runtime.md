@@ -8,25 +8,11 @@ Client 使用 Socket 连接注册阶段接收 `session_config`，独立的 HTTP 
 
 ## 根目录和配置
 
-Server 所有主要运行时持久数据共用 `backend/server/config/config.py` 中的 **`SERVER_RUNTIME_DIR`**：
-
-```python
-# ------------------ runtime ------------------ #
-SERVER_RUNTIME_DIR = os.path.abspath(os.path.join(
-    BACKEND_DIR,
-    os.path.expanduser(os.environ.get('RCH_SERVER_RUNTIME_DIR', '').strip() or 'runtime'),
-))
-```
-
-默认目录为 **项目固定的 `backend/runtime/`**，并非 Server 的当前工作目录。`BACKEND_DIR` 来自配置文件的实际源码路径，因此从 PyCharm、终端或其他 CWD 启动都指向同一处。
-
-可在**启动 Server 前**设置环境变量 `RCH_SERVER_RUNTIME_DIR` 改变默认路径。绝对路径直接使用，相对路径相对于项目 `backend/` 解析，`~` 展开为用户主目录。例如 macOS/Linux：
+Server 持久数据默认位于项目的 `backend/runtime/`。启动前可设置 `RCH_SERVER_RUNTIME_DIR`；相对路径以 `backend/` 为基准，绝对路径直接使用，支持 `~` 展开。修改后重启 Server。
 
 ```bash
 RCH_SERVER_RUNTIME_DIR=/data/rch-runtime python backend/run_web.py
 ```
-
-也可以直接在上述 `config.py` 的 `SERVER_RUNTIME_DIR` 定义处改默认目录；运行中的 Server 不会自动热更新，修改后需重新启动。
 
 ## 共用目录的组成
 
@@ -39,20 +25,21 @@ RCH_SERVER_RUNTIME_DIR=/data/rch-runtime python backend/run_web.py
 | `SERVER_RUNTIME_DIR/cleanup_logs/` | 清理日志 |
 | `SERVER_RUNTIME_DIR/server.log`、`server.log.1` ～ `.5` | `run_web.py` 的 Server 日志及自动轮转备份 |
 | `SERVER_RUNTIME_DIR/logs/` | Go Loader 上报日志 |
+| `SERVER_RUNTIME_DIR/listeners.json` | Reverse Listener 配置 |
+| `SERVER_RUNTIME_DIR/identities/` | mTLS 信任根、签发记录及私钥；严格保护 |
 | `SERVER_RUNTIME_DIR/agent_output/` | Agent 构建产物文件（元数据位于 `rch.db`） |
 
 上述位置都由 Server 的配置目录派生，不能再分别由启动 CWD 决定。Client 侧的三个 Watchdog 日志**不在这里**，它们位于客户端用户配置目录的 `logs/` 下，参见 [Watchdog](watchdog.md)。
 
-## 变更和迁移注意
+## 备份与目录变更
 
-从以前以不同 CWD 启动的项目切换到固定目录时，原有 `runtime/` 可能散落在其他位置。**程序不会自动扫描或迁移旧文件**。更换配置或升级前先停止 Server，确认旧数据库、`auth.json`、文件存储和其他数据的真实位置，按实际需要备份并搬到同一个目标目录，然后启动。尤其避免遗失 `auth.json`，否则新的管理员密码、API Token 和 Session Secret 将在新路径生成，旧登录状态会失效。
+变更 Runtime 目录前停止 Server，备份数据库、凭据、Identity、文件及配置，再按需复制到目标位置。管理员认证、Keychains 和 mTLS 身份材料需要和对应数据一起保存；使用空目录会初始化新的运行数据。
 
 ## Server 日志
 
 使用 `run_web.py` 启动时，Server 除了继续保留原有的终端日志输出，还会自动写入
 `SERVER_RUNTIME_DIR/server.log`。因此 `nohup` 的重定向文件、`launchctl` 的 stdout/stderr
-配置均不影响这份 Server 自己维护的日志。文件包括项目 Python Logger、Uvicorn
-主日志和 HTTP 访问日志；Werkzeug 等传播到根 Logger 的记录也会写入。不会重新注册
+配置均不影响这份 Server 自己维护的日志。文件包括项目 Python Logger、WebSocket 与 HTTP 访问日志；Werkzeug 等传播到根 Logger 的记录也会写入。不会重新注册
 或替换原有的控制台 Handler。
 
 日志按**文件大小**自动轮转：当前文件最大约 **10 MiB**，保留最多 **5** 个旧文件
@@ -89,26 +76,14 @@ curl -fsS -X POST 'http://127.0.0.1:8085/api/server/restart' \
 
 如果 Restart 后出现 Python 启动错误，新进程可能无法启动；可从 Server 终端日志或 `SERVER_RUNTIME_DIR/server.log` 查看原因并手动运行 `run_web.py`。
 
-## Bind TCP 主动连接
+## Bind 主动连接
 
-Python Client 采用 Bind TCP 时在本机监听，Server 从设备栏主动发起连接，使用普通 TCP。Agent Build 支持 Python Source Bundle 选择 Reverse / Bind；Bind 需填写 Client 本机监听 IP 和端口，无参数启动生成的 Bundle 时使用构建时选择的模式。One-liners 同样支持这两种构建模式；Bind 只需 Server Web IP/Port（用于 Bootstrap 和 HTTP 请求）及 Client Listen IP/Port，不填写 Server Socket IP/Port。连接后仍由 Client 首先发送 `info`，其余命令、PTY、心跳和文件控制沿用原有 Socket Session。
+Python 和 Go Client 均支持 Bind；Server 主动拨号至 Client 的监听 IP 和端口。Agent Builder 选择 Bind 与 TCP 或 mTLS/TCP，使用 mTLS 前按 [mTLS Identities](mtls_identities.md) 初始化和安装身份材料。
 
-在 **Client 的 `backend/` 目录**启动：
+源码 Python Client 可在 Client 的 `backend/` 目录启动：
 
 ```bash
 python rchclient.py --profile bind
 ```
 
-`backend/client/config/profiles/bind.json` 默认监听 `0.0.0.0:9443`。可在此文件调整 `bind_host` 与 `bind_port`；`bind_host` 是 Client 监听的本地接口，Server 对应填写 Client 的可访问 IP/主机名和端口。跨设备使用文件、Artifact、Script SDK HTTP 功能时，把同一份 profile 的 `server_web_host` 设置为 Server 在局域网中的地址。
-
-在 **Server 的 `backend/` 目录**正常启动：
-
-```bash
-python run_web.py
-```
-
-浏览器打开 RCH → 左侧设备栏右上角 **More → Connect to Client** → 填写 Client IP 和端口 → **Connect**。连接成功后自动显示并选中该 Client；重复连接同一地址会复用仍然在线的会话。设备菜单 **Disconnect** 会关闭当前 Bind Session，Client 进程保留监听；**Reconnect** 直接关闭并重建当前会话。离线保存目标可通过 **Connect** 恢复连接，或使用 **Remove Connection** 删除该保存地址。
-
-同一个 Client 实例最多保持一条活动 Server Session。`pause_connection` 暂停接入，恢复后可重新主动连接。固定端口的 `update`、`spawn_instance`、`spawn_elevated_instance`、`relaunch_instance` 继续采用手工进程交接，避免同一端口冲突。Reverse TCP/TLS 仍是默认启动模式。
-
-Bind TCP 当前使用明文 TCP，不执行 TLS 握手。
+Bind Profile 默认监听 `0.0.0.0:9443`；`bind_host` 和 `bind_port` 对应 Client 本机接口和端口。启动 Server Web 后，从设备栏 **More → Connect to Client** 填写可达的 Client 地址、端口、传输方式和 Server Web URL。该 URL 必须可由 Client 访问，用于 HTTP 文件和 SDK 请求。成功连接后目标可保存；设备菜单提供 Disconnect、Reconnect、Connect 及 Remove Connection 等相应操作。详见 [Connection Lifecycle](connection_lifecycle.md)。

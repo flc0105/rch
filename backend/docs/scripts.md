@@ -108,7 +108,7 @@ Server 的 `script exec <name> [--execution_mode MODE] [--output_mode MODE] -- -
 {"type":"control","id":49,"domain":"script","action":"run","payload":{"script_name":"ops/health_probe","source":"<Server 提供的脚本源码>","params":{"target":"/tmp","limit":20},"execution_mode":"inproc","output_mode":"collect"}}
 ```
 
-Server 统一准备 Script Control 的源码、业务参数与已解析的两个运行模式。`execution_mode`、`output_mode` 是独立的 Control 字段，不属于脚本 `params`，Client 不再另选默认值。CLI 模式选项必须位于脚本路径之前，路径之后仍是业务参数，例如：
+Server 统一准备 Script Control 的源码、业务参数与已解析的两个运行模式。`execution_mode`、`output_mode` 是独立的 Control 字段，不属于脚本 `params`，Client 不另选默认值。CLI 模式选项必须位于脚本路径之前，路径之后仍是业务参数，例如：
 
 ```text
 script exec --name ops/health_probe --execution_mode subprocess_pipe --output_mode stream -- --limit 20
@@ -173,7 +173,7 @@ Go Client 使用可选的本机 Python 解释器运行普通 Python Script。仅
 
 Web Script Library 保留现有 `SCRIPT_METADATA.params` 表单和 Server 参数校验：Server 根据 Schema 解析 `required`、`default`、类型和选项，再将参数字典通过 `extra` 交给 Go Client。Go 通过独立 Python 子进程执行收到的源码，提供 `kwargs` 及参数同名全局变量，支持常规 `print()`、标准库和目标机器已安装的 Python 包。脚本在目标 Client 工作目录中运行，stdout/stderr 通过已有命令结果通道回传；执行占用前台任务槽，支持取消，默认超时为 300 秒，可以通过 `SCRIPT_DEFAULT_TIMEOUT` 调整。
 
-这一执行环境提供普通 Python 运行能力，不注入 Python Client 的 Script SDK（例如 `context`、`artifact`、`scripts`、`keychains`、`workspace` 和导出的 Client 命令）。依赖这些 SDK 的脚本需选择 Python Client；在 Go Client 上调用时，按实际导入或名称错误反馈。Go Client 提供 `set` 命令及 Info → Configuration 设置。`SCRIPT_PYTHON_PATH` 默认留空并按系统 `PATH` 查找解释器；填写后直接使用指定路径，无法找到该解释器时报告错误。`SCRIPT_DEFAULT_TIMEOUT` 控制 Script 子进程运行时长（默认 300 秒）。配置写入用户配置目录的 `rchclient/runtime_config_go.json`，重新启动后继续生效。
+这一执行环境提供普通 Python 运行能力，不注入 Python Client 的 Script SDK（例如 `context`、`artifact`、`scripts`、`keychains`、`workspace` 和导出的 Client 命令）。依赖这些 SDK 的脚本需选择 Python Client；在 Go Client 上调用时，按实际导入或名称错误反馈。Go Client 可通过 Server `config` 命令及 Info → Configuration 管理运行配置。`SCRIPT_PYTHON_PATH` 默认留空并按系统 `PATH` 查找解释器；填写后直接使用指定路径，无法找到该解释器时报告错误。`SCRIPT_DEFAULT_TIMEOUT` 控制 Script 子进程运行时长（默认 300 秒）。配置写入用户配置目录的 `rchclient/runtime_config_go.json`，重新启动后继续生效。
 
 ### 注入的名称与身份
 
@@ -306,7 +306,7 @@ Script Library 的 HTTP 管理入口提供目录、文件的读取及修改。�
 | 管理目录 | `POST /api/scripts/folders`、`POST /api/scripts/folders/rename`、`DELETE /api/scripts/folders` | 创建、重命名或递归删除目录 |
 | 在设备上执行 | `POST /api/connections/{client_id}/scripts/run` | 按 Metadata 绑定参数，提交前台 Script 任务 |
 
-Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `presentation` 为 `dialog` 或 `terminal`；Dialog 还需非空 `run_id`。它校验参数后创建普通 Web 命令任务，并非同步等待整个脚本运行完成的 HTTP 请求。直接通过 API 或新的前端按钮接入时，应复用这些字段与既有 `task_id`/SSE 结果处理，而不是绕开 Script 运行服务私自下发 Python 代码。
+Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `presentation` 为 `dialog` 或 `terminal`；Dialog 还需非空 `run_id`。它校验参数后创建普通 Web 命令任务，并非同步等待整个脚本运行完成的 HTTP 请求。直接通过 API 或新的前端按钮接入时，应复用这些字段与既有 `task_id`/WebSocket 结果处理，而不是绕开 Script 运行服务私自下发 Python 代码。
 
 当前 Catalog 由 Server 文件系统决定。运行前刷新 Catalog 可获得最新 Metadata；上传和编辑不能保证已经打开的其他浏览器脚本表单自动更新，应根据界面生命周期重新获取数据。修改脚本名称后，旧的终端运行块或其他 Script 的 `scripts.run()` 引用也需要采用新的 Script Name。
 
@@ -335,7 +335,7 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 
 ### 终端列表的平台筛选
 
-`script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤；未声明或声明为空时不显示，**不再根据目录名推断平台**。补全 `script exec <path>` 复用这份判断。`script exec` 及 Script Library UI 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。
+`script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤；未声明或声明为空时不显示，**不根据目录名推断平台**。补全 `script exec <path>` 复用这份判断。`script exec` 及 Script Library UI 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。
 
 Web Script Library 的目录导航不承担平台筛选职责。首次打开默认选中 `common` 目录（如存在），否则选中 `root`；关闭后重新打开同一设备时保留用户上次选择的目录，切换目标设备时回到默认目录。目录中的脚本平台适用性始终取决于各脚本的 `SCRIPT_METADATA.platforms`，与目录名无关。
 

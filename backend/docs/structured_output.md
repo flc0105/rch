@@ -161,7 +161,7 @@ Viewer 将它显示为 Name、PID、Active 三列（实际表头使用原始字�
 
 - 前两项操作直接显示为按钮，第三项及后续操作进入 `More`。桌面 Table 的 Actions 列跟随整张表横向滚动，Card 在卡片内直接排布操作。
 - `confirm` 默认 `true`，执行时展示目标 Client 和完整命令，可选择 Terminal 或 New Dialog；显式 `false` 则直接提交。`refresh` 默认 `false`；显式 `true` 仅在操作成功后使用原 Command/Script/Quick Action 重放来源刷新当前 Viewer。
-- 操作继续使用原有任务、确认、取消、目标 Client、SSE 以及 Run Again 逻辑；刷新不会覆盖历史 Result，也不会修改原始业务数据。
+- 操作继续使用原有任务、确认、取消、目标 Client、WebSocket 以及 Run Again 逻辑；刷新不会覆盖历史 Result，也不会修改原始业务数据。
 - Shell `echo`、Script `print` 等普通 JSON 文本仍能被识别并查看；它们不具备结果级 `view` 时不生成操作按钮。Script 使用 `context.emit_view(data, view=...)` 一次发出原始数据和结果级 View；Command Action 可填写正式的 `script exec <name> -- --key value` 命令执行另一条 Script。
 
 ### 多组键值展示（Grouped）
@@ -247,9 +247,9 @@ Viewer 的操作包括：
 
 Web Terminal 将一次用户发起的 Command、Script、Quick Action 或上传视为一个带业务身份的操作。操作的 `kind`、`action` 与 `invocation` 沿用 Activity History 的语义；终端块的标题由展示层处理，标题中的 `[Run Script]`、`[Remote Upload]` 和 `[Artifact Send]` 等文字只用于阅读。只有真实 Command 的执行文本才能作为 Shell Command 重跑。
 
-浏览器为每次已确认提交的操作创建临时 `operation_id`，并通过 `X-RCH-Operation-ID` 请求头传给 Server。Server 校验 UUID，随 Web Task 元数据和执行 SSE 回传；浏览器将同一操作的输出、完成状态与 JSON 内容关联到对应终端块。`task_id`、`transfer_id` 和 Activity History ID 继续分别承担执行、传输与历史记录职责，浏览器操作 ID 不写入 Activity History。浏览器上传由 Transfer Center 管理上传阶段，再由 Web Task 报告目标设备传输的最终执行状态。
+浏览器为每次已确认提交的操作创建临时 `operation_id`，并通过 `X-RCH-Operation-ID` 请求头传给 Server。Server 校验 UUID，随 Web Task 元数据和执行 WebSocket 回传；浏览器将同一操作的输出、完成状态与 JSON 内容关联到对应终端块。`task_id`、`transfer_id` 和 Activity History ID 继续分别承担执行、传输与历史记录职责，浏览器操作 ID 不写入 Activity History。浏览器上传由 Transfer Center 管理上传阶段，再由 Web Task 报告目标设备传输的最终执行状态。
 
-**Run again** 的可用性由操作携带的 `replay` 执行描述决定：真实 Command 保存命令文本，Script 保存脚本身份和参数，Quick Action 保存别名、平台及实际提交的参数，并由 Quick Action API 重新执行。Remote Upload 和 Artifact Send 不提供通用重跑描述。Block Dropdown、JSON Viewer 均采用相同规则，重跑创建新的操作与任务。已经显示的操作与结果不会因重跑而被覆盖。终端操作起始行的 `> ` 标记保留，用于区分操作开始与完成行；Command 与 Quick Action 的终端执行显示 `$>` 提示符，Script、Remote Upload、Artifact Send 等操作标题显示 `> [XXX]`。SSE 命令结果到达时，如果当前终端已经没有对应操作的起始行，终端会以任务身份补建起始标记，并将后续输出和完成状态归入同一块。Remote Files 与 Remote Folder Picker 上传、Artifact Send 在冲突预检查阶段发生错误时，会显示带起始行及失败结束行的操作块；用户取消冲突选择时不产生执行记录。Folder Picker 经嵌套弹窗转发的操作身份与 Remote Files 一致。Remote Files 的 Set CWD 命令同样使用独立操作 ID 关联任务结果。
+**Run again** 的可用性由操作携带的 `replay` 执行描述决定：真实 Command 保存命令文本，Script 保存脚本身份和参数，Quick Action 保存别名、平台及实际提交的参数，并由 Quick Action API 重新执行。Remote Upload 和 Artifact Send 不提供通用重跑描述。Block Dropdown、JSON Viewer 均采用相同规则，重跑创建新的操作与任务。已经显示的操作与结果不会因重跑而被覆盖。终端操作起始行的 `> ` 标记保留，用于区分操作开始与完成行；Command 与 Quick Action 的终端执行显示 `$>` 提示符，Script、Remote Upload、Artifact Send 等操作标题显示 `> [XXX]`。WebSocket 命令结果到达时，如果当前终端已经没有对应操作的起始行，终端会以任务身份补建起始标记，并将后续输出和完成状态归入同一块。Remote Files 与 Remote Folder Picker 上传、Artifact Send 在冲突预检查阶段发生错误时，会显示带起始行及失败结束行的操作块；用户取消冲突选择时不产生执行记录。Folder Picker 经嵌套弹窗转发的操作身份与 Remote Files 一致。Remote Files 的 Set CWD 命令同样使用独立操作 ID 关联任务结果。
 
 执行期间由 Command、Script 或 Quick Action 产生的 Artifact 在带有相同设备和命令 ID 的终端块中显示 `[Preview] 文件名`，位置在 `[Command finished]` 前；每个 Artifact 单独显示一行，单文件同样显示文件名。Artifact 创建事件使用 `source_command_id` 与命令结果中的 `command_id` 关联；即使文件晚于完成事件到达，仍可更新对应块。终端不再写入 `[File Ready]` 行，通知中心与 Artifacts 保持原有访问入口。Remote Files 等独立操作不产生此类终端预览链接。
 
@@ -259,7 +259,7 @@ Terminal 输出块菜单的 **Run again** 适用于真实 Command、携带可重
 
 JSON Viewer 支持对有效来源的 Command、Script 或 Quick Action 使用 **Run Again**，包括 Quick Action Result Dialog 打开的 JSON。发起一次新的执行并在 Terminal 中留下新执行记录。当前 Viewer 不关闭；新任务完成后优先使用原生 Result 数据和关联的 `view` 更新 Viewer；未提供结构化数据时尝试识别完整合法 JSON 块，解析失败则保留原数据显示。此前的 Terminal 历史内容始终不变。
 
-Result 的 `view.actions` 统一描述操作模板；`confirm` 控制二次确认，`refresh` 控制成功后使用原操作重放来源刷新 Viewer。无重放来源时可以执行动作，但不会刷新。Terminal 与 New Dialog 都保持 JSON Viewer 打开，使用既有 `/api/connections/{client_id}/command` 请求和任务结果 SSE。
+Result 的 `view.actions` 统一描述操作模板；`confirm` 控制二次确认，`refresh` 控制成功后使用原操作重放来源刷新 Viewer。无重放来源时可以执行动作，但不会刷新。Terminal 与 New Dialog 都保持 JSON Viewer 打开，使用既有 `/api/connections/{client_id}/command` 请求和任务结果 WebSocket。
 
 Run Again 与模板操作均执行新的任务；仅当前任务的结果用于刷新对应窗口，其他任务的输出不会混入。一次执行发送多条结构化记录时，优先选择最后一条携带 `view` 的记录和其原始 `data`，否则选择最后一条结构化记录；不跨事件拼接数据与 Actions。动作成功后若配置 `refresh: true`，在刷新期间旧按钮暂停；刷新失败时保留原始结果并提示已过期，直到成功重跑后恢复操作。
 

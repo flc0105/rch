@@ -1,6 +1,6 @@
 # RCH Client 运行配置指南（config）
 
-Web Configuration 与 Server `config` 命令共享 Client 配置服务、类型/choices 校验、覆盖文件和运行时副作用。Server 解析终端 `config` 与 `watchdog`，分别使用与 Web 相同的 Configuration、Watchdog Control；Configuration GET 返回统一 Result，其中 `data` 是完整配置对象；SET/RESET 仅返回状态和简短消息。`config list --json` 返回与表格一致的四字段配置视图。无效枚举值不得写入配置。
+Web Configuration 与 Server `config` 命令共享 Client 配置服务、类型/choices 校验、覆盖文件和运行时副作用。Server 解析终端 `config` 与 `watchdog`，分别使用与 Web 相同的 Configuration、Watchdog Control；Configuration GET 返回统一 Result，其中 `data` 是完整配置对象；SET/RESET 仅返回状态和简短消息。`config list --json` 返回包含 group、key、value、default 的四字段配置视图。无效枚举值不得写入配置。
 
 ## `config` 命令与 Configuration
 
@@ -28,13 +28,14 @@ RCH 为每台 Client 提供一套可以在线查询和调整的运行配置。�
 
 | 命令 | 用途 |
 |---|---|
-| `config` / `config list` | 按 group、key、value、default 四列排序展示配置 |
+| `config` / `config list` | 默认按组展示 `key = value` |
+| `config list --format grouped/kv/table/records` | 选择列表呈现布局（一次指定一种） |
 | `config list --json` | 输出相同四字段的 JSON 数组 |
 | `config set KEY VALUE` | 设置一项配置，也支持 `--key KEY --value VALUE` |
 | `config reset KEY` | 重置一项覆盖，也支持 `--key KEY` |
 | `config reset-all` | 清除全部覆盖；仅在明确需要时执行 |
 
-终端不再提供 `--all`；完整编辑 Schema 仍由 Web Configuration GET 获取。
+完整编辑 Schema 由 Web Configuration GET 提供。
 
 例如：
 
@@ -45,7 +46,7 @@ config set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe
 config reset SCRIPT_DEFAULT_EXECUTION_MODE
 ```
 
-普通 `config set KEY VALUE` 成功后输出简洁状态消息；需要执行额外运行时操作的配置继续返回相应的应用结果或警告。`config list --json` 与默认表格使用相同四个业务字段，保留值的原始 JSON 类型；Web Configuration 独立使用完整编辑 Schema，包括 `value_type`、`choices`、数值范围与 `editable`。
+普通 `config set KEY VALUE` 成功后输出简洁状态消息；需要执行额外运行时操作的配置继续返回相应的应用结果或警告。`config list --json` 与 `--format table` 使用相同四个业务字段，保留值的原始 JSON 类型；Web Configuration 独立使用完整编辑 Schema，包括 `value_type`、`choices`、数值范围与 `editable`。
 
 配置名不区分输入时的大小写，但文档和界面统一使用大写名称。布尔值可使用 `true` / `false`；数字项按配置自身的单位和范围填写。`config set KEY VALUE` 是修改语法：查询请使用 `config` 或 `config list --json`。
 
@@ -56,7 +57,7 @@ config reset SCRIPT_DEFAULT_EXECUTION_MODE
 
 ## 2. 三种最重要的 Strategy
 
-这里的 Strategy 指**运行方式的选择**。当前常用的三个策略项分别控制 HTTP 文件传输、Python 执行与 Screen View 帧编码；它们相互独立，不是全局统一的“性能模式”。
+三个独立策略分别控制文件传输、Python 执行与 Screen View 帧编码。
 
 ### 2.1 文件传输 — `FILE_TRANSFER_MODE`
 
@@ -64,9 +65,9 @@ config reset SCRIPT_DEFAULT_EXECUTION_MODE
 
 | 选项 | 特点 | 更适合的情况 |
 |---|---|---|
-| `http_simple` | 使用较传统的 HTTP 文件上传/下载方式。上传的 multipart 内容可能被整体缓存在内存中；运行中取消不受支持 | 小文件、需要传统传输方式的任务 |
+| `http_simple` | 使用非流式 HTTP 文件上传方式。上传的 multipart 内容可能被整体缓存在内存中；运行中取消不受支持 | 小文件、无需流式上传进度的任务 |
 | `http_streaming` | 流式传输，按块处理文件，支持进度回报与协作取消；大文件上传不必整体装入内存 | 大文件、弱网、需要观察传输进度或中途取消的任务 |
-| `tcp_streaming` | 受管理的 Server ↔ Python Client 文件搬运使用独立 TCP 数据连接，支持流式读写、进度和取消 | Remote Files 等 Transfer 任务；浏览器和普通 HTTP 调用仍走 HTTP |
+| `tcp_streaming` | 受管理的 Server ↔ Client 文件搬运使用独立 TCP 数据连接，支持流式读写、进度和取消 | Remote Files 等 Transfer 任务；浏览器和普通 HTTP 调用仍走 HTTP |
 
 ```text
 config set FILE_TRANSFER_MODE http_streaming
@@ -122,7 +123,7 @@ Script 的本次选择和 Metadata default 优先于这两个配置。未声明�
 config set SCREEN_FRAME_STRATEGY keyframe_delta
 ```
 
-`keyframe_delta` 不是将 WebSocket 改成 HTTP，也不是新的屏幕采集权限模式；它只改变画面数据的编码与重建方法。当画面变化很大、经过一定时间或分辨率改变时，仍会发送新的完整关键帧，因此不保证任何场景都比 `full_jpeg` 省流量。
+`keyframe_delta` 使用关键帧及差分帧进行编码和重建。当画面变化很大、经过一定时间或分辨率改变时，仍会发送新的完整关键帧，因此不保证任何场景都比 `full_jpeg` 省流量。
 
 **该配置只在建立 Screen View 会话时选定。** 修改后需要关闭并重新打开 Screen View，或者使用窗口中的 Restart，当前会话才会采用新策略。窗口内的 **FPS、Quality** 是另两项会话设置，可以在已有会话中调整，和这里的帧策略不必一起修改。
 
@@ -136,7 +137,8 @@ config set SCREEN_FRAME_STRATEGY keyframe_delta
 | Command | `COMMAND_DEFAULT_STREAM_TIMEOUT` | `300` 秒 | 流式命令的一般兜底超时 |
 | Preview | `PREVIEW_IMAGE_COMPRESS_ENABLED` | `false` | 在图片预览上传前尝试压缩，仅影响相应预览流程 |
 | Preview | `PREVIEW_IMAGE_COMPRESS_QUALITY` | `75` | 统一控制预览 JPEG 的质量；PNG 等图片也会先转换成 JPEG 预览 |
-| Connection | `RECONNECT_INTERVAL_SECONDS` | `5` 秒 | Client 断线后再次尝试连接的间隔 |
+| Connection | `RECONNECT_BACKOFF_MIN_SECONDS` | `5` 秒 | Reverse 重连退避初始间隔 |
+| Connection | `RECONNECT_BACKOFF_MAX_SECONDS` | `30` 秒 | Reverse 重连退避上限 |
 | Connection | `SERVER_INBOUND_TIMEOUT_SECONDS` | `120` 秒 | Client 连续未收到 Server 消息达到该时长时主动重连；`0` 表示禁用此超时 |
 | Watchdog | `REMOTE_CONTROL_WATCHDOG_ENABLED` | `false` | 启用独立 HTTP 远程进程控制 |
 | Watchdog | `LOCAL_HEARTBEAT_WATCHDOG_ENABLED` | `false` | 启用本地心跳超时恢复 |
@@ -227,7 +229,7 @@ config reset-all
 | `PREVIEW_IMAGE_COMPRESS_QUALITY` | 先启用图片压缩，再 `config set PREVIEW_IMAGE_COMPRESS_QUALITY 40`；对同一张 JPG 或 PNG 新建预览，与改成 `90` 后的预览比较 JPEG 预览文件大小和画质；同一个数值同时控制两种来源图片。最后依次重置这两个设置。图片复杂度会影响差异。 |
 | `SCRIPT_DEFAULT_EXECUTION_MODE` | `config set SCRIPT_DEFAULT_EXECUTION_MODE subprocess_pipe`；执行一段输出 PID 的 Python 脚本，核对脚本正常输出；对测试长脚本尝试取消，确认能停止子进程。重置为 `inproc` 后再次执行短脚本。 |
 | `SCREEN_FRAME_STRATEGY` | `config set SCREEN_FRAME_STRATEGY full_jpeg`；重新打开 Screen View，检查策略标识和正常显示；重置为默认 `keyframe_delta` 后使用 Restart/新建会话，再确认策略标识、关键帧和变化区域刷新。仅在启用 Screen View 的平台提供该设置。 |
-| `RECONNECT_INTERVAL_SECONDS` | `config set RECONNECT_INTERVAL_SECONDS 2`；在测试环境短暂阻断 Client → Server 的网络连接，查看日志中下一次重连等待约 2 秒；恢复网络并重置到 5 秒。已进入的单次睡眠不被追溯缩短。 |
+| `RECONNECT_BACKOFF_MIN_SECONDS` / `RECONNECT_BACKOFF_MAX_SECONDS` | 在测试 Client 使用 Configuration 查看 5/30 秒默认值；调整后核对最小值不大于最大值，网络故障时按指数退避；成功连接后重置。测试后恢复各项默认值。 |
 | `SERVER_INBOUND_TIMEOUT_SECONDS` | `config set SERVER_INBOUND_TIMEOUT_SECONDS 0`；iOS 切后台后恢复前台时，如原 Socket 仍可用，继续处理后续 Heartbeat。`config reset SERVER_INBOUND_TIMEOUT_SECONDS` 恢复默认 120 秒。 |
 | `REMOTE_CONTROL_WATCHDOG_ENABLED` | `config set REMOTE_CONTROL_WATCHDOG_ENABLED true`；查看 `watchdog --json` 是否显示启用和 Worker 状态；`config reset REMOTE_CONTROL_WATCHDOG_ENABLED` 后确认关闭/Worker 状态更新。 |
 | `REMOTE_CONTROL_WATCHDOG_INTERVAL_SECONDS`（只读） | Info → Configuration 完整配置视图 核对默认 15 秒；在启用 Remote Control Watchdog 后用 `watchdog --json` 核对 `interval_seconds`。此项不能由前台直接编辑。 |
@@ -242,4 +244,3 @@ config reset-all
 
 **快速记忆**：`config` 是命令入口，**Info → Configuration** 是可视化入口；`default / override` 是配置来源；三个常用策略分别解决**文件怎么传、Python 怎么运行、屏幕画面怎么编码**。
 配置写入或重置若触发已登记的运行时 effect callback，成功执行的启停/重启说明追加到最终 `completed.message`；异常或需要后续操作的警告仍单独显示。没有副作用的配置保持原始简洁提示，CLI/Web 均复用这份完成消息。
-

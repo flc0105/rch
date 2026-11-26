@@ -216,7 +216,6 @@ Client 与 Server 共用 `CommandLineResolver` 处理 Shell-like Token、原文 
 
 Server 注册表 `server_builtin_registry.py` 是一级 Builtin 与 `alias/job/script/xt/history/httpctl` 子命令唯一的静态定义来源。统一的递归遍历向普通 Builtin、XT 和 Help 提供静态路径，XT Provider 仅处理 Client 运行时安装、模块、实例及 Exec 等动态候选。Server 本机路径补全依命令节点上的 `CompletionSpec` 选择文件或目录候选；`upload` 的 RawTail 声明两种类型。`RegisteredServerSubcommandCompletionProvider` 从该表生成 `script list/view/exec`、`job list/start/logs/ps/status/stop/stop-all` 等结构；动态 `script exec <path>`、`job start <name>` 仍由专门 Provider 查询当前 Server Catalog。前端 `CommandInputBar` 对任何命令都可查询统一 Server 补全服务；服务端按 Provider 选择是否生成候选，脚本仍由 Metadata 平台信息过滤。`help` 的目标名称与子命令由同一 Server Builtin Registry 生成。
 
-### v34.6 顶层命令与平台筛选边界
+### 顶层命令与平台筛选
 
 Server Registry 的 `script` 是一级命令，来源为 `server`；它不应被当作 `script exec <path>` 的特定平台脚本进行目录筛选。输入 `sc` 应能找到 `script`，选中后再通过上下文 Provider 获取 `list/view/exec/run` 子命令。只有真实 Script 路径候选才进行平台筛选。Job Catalog 的 `job start` 动态候选采用与 CLI `job list` 一致的 Metadata 平台条件。
-

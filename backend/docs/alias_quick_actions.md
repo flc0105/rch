@@ -163,7 +163,7 @@ Web Quick Actions 的定义列表基于 Alias JSON，并非单独的 Quick Actio
 
 这里的“生效”判断考虑目标 Client 平台和是否被本平台同名项覆盖，而不是只检查这个名称是否存在。结果弹窗即使选择了一个被覆盖的 `common` 项，也会按**选中的那条 `common` 模板**展开，不会偷偷切换到平台覆盖版本。
 
-Web 向任务附带 `quick_action`、`quick_action_run_id`、`quick_action_alias`、`quick_action_platform`、`quick_action_presentation`、显示命令和实际展开命令等 Metadata。返回 `task_id` 用于关联前台任务；SSE 命令输出和完成消息根据这些 Metadata、运行 ID 与展示模式路由到对应结果弹窗或 Terminal。弹窗聚合文本片段、显示 Success / Failed / Cancelled，支持 Copy；它不是独立的 JSON Table Viewer，关闭结果窗口也不等于取消远程命令。
+Web 向任务附带 `quick_action`、`quick_action_run_id`、`quick_action_alias`、`quick_action_platform`、`quick_action_presentation`、显示命令和实际展开命令等 Metadata。返回 `task_id` 用于关联前台任务；WebSocket 命令输出和完成消息根据这些 Metadata、运行 ID 与展示模式路由到对应结果弹窗或 Terminal。弹窗聚合文本片段、显示 Success / Failed / Cancelled，支持 Copy；它不是独立的 JSON Table Viewer，关闭结果窗口也不等于取消远程命令。
 
 **一个已知的参数边界**：在“生效 Alias + Run in Terminal”路径中，Server 用 `shlex.join()` 生成调用文本，但不会自动给第一个以 `--` 开头的位置值补 Alias 所需的单独 `--`。因此这种值可能被 Alias 误解释为命名参数；对于此类参数，优先使用结果弹窗，或者在手动终端调用中显式写 `--`。复杂跨 Shell 的转义同样需核对最终展开文本，不能只看表单里的原始值。
 

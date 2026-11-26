@@ -73,7 +73,7 @@ class ShellDiagnosticsCommands:
 - `interaction`：标记通常可能请求 Web 交互，用于 Manifest 提示，不控制命令执行权限。
 - `completion`：可选的最小 `CompletionSpec(provider, kinds)`，声明命令参数由哪个 Client Completion Provider 处理及允许的候选类别；不复制命令名、参数位置或运行时路径。
 
-普通 Runner 的调用约定是：先通过项目解析器分离首个命令名称及其余文本；然后以方法签名决定调用 `handler()` 还是 `handler(arg)`。因此普通命令更适合无参或**单段原始参数文本**；多值、可验证的选项建议使用 ACMD。命令返回一般为 `(status, result)`，其中 `1` 表示成功、`0` 表示失败；其他输出约定需与执行链保持一致。中间流式结果应复用执行 Scope 的 `emit_chunk(message)`、`emit_progress(message, level=None)`；仅在直接管理终态的流式方法中调用 `emit_completed(status="success"|"error"|...)`。一次性函数继续返回 `(status, result)`，由执行入口生成唯一 completed；禁止主动发完 completed 又返回新的结果导致重复终态。显式 progress.level 支持 info/success/warning/error，由 Server 公共 Renderer 投影标记；不得在 Client 字符串里预先拼 Marker，也不得自行创建 Web SSE 事件。
+普通 Runner 的调用约定是：先通过项目解析器分离首个命令名称及其余文本；然后以方法签名决定调用 `handler()` 还是 `handler(arg)`。因此普通命令更适合无参或**单段原始参数文本**；多值、可验证的选项建议使用 ACMD。命令返回一般为 `(status, result)`，其中 `1` 表示成功、`0` 表示失败；其他输出约定需与执行链保持一致。中间流式结果应复用执行 Scope 的 `emit_chunk(message)`、`emit_progress(message, level=None)`；仅在直接管理终态的流式方法中调用 `emit_completed(status="success"|"error"|...)`。一次性函数继续返回 `(status, result)`，由执行入口生成唯一 completed；禁止主动发完 completed 又返回新的结果导致重复终态。显式 progress.level 支持 info/success/warning/error，由 Server 公共 Renderer 投影标记；不得在 Client 字符串里预先拼 Marker，也不得自行创建 Web WebSocket 事件。
 
 ### 运行上下文与能力约束
 
@@ -127,7 +127,7 @@ Schema 可声明 `str`、`int`、`float`、`bool`、`flag`，以及默认值、�
 
 Server 命令入口由 `server.application.command.server_builtin_registry.SERVER_COMMAND_REGISTRY` 显式注册；`BuiltinCommandHandler.resolve_builtin_command()` 只接受注册名称，未命中则交由 Planner 保持 ACMD、Alias、Client 普通命令和 **未知命令 Shell 回退**的原有机制。不能靠 `hasattr()` 将辅助方法误当用户 Builtin。
 
-Server Builtin 的 `group` 统一默认 `server`，每个主命令不再指定 `script/alias/job/history/control/external_tool` 等独立 Group；Manifest 继续输出 `group=server`，供 Client / Server 来源区分。
+Server Builtin 在 Manifest 使用 `group=server`，其子命令、参数和补全由 Server Registry 统一声明。
 
 新增主命令在 Server Registry 声明 `name/description/handler`；固定子命令可在 `SubcommandSpec.subcommands` 继续声明下一层。Registry 使用共享 `CommandLineResolver` 沿已声明路径逐层匹配到叶子，再按该叶子的 `ArgumentCommandSpec` 校验参数。Resolver 保留 Token 原文 Span，使 RawTail 与 fallback 叶子收到原有参数文本。`xt instance status`、`xt package install` 等动作以及静态 Help/补全都来自此注册定义；`xt exec run <exec-name> ...` 是正式 RawTail 叶子；`xt exec <exec-name> ...` 通过同组声明的 fallback_subcommand=run 作为简写，原生参数不进入管理命令的选项解析。Job、Script 和 XT Instance 统一使用 `-- --key value` 传递业务参数；位置参数和对应长选项使用同一字段。Alias 模板等真正需要保留原文的命令继续使用 RawTail，业务执行仍由所属 Support / Service 处理。
 
@@ -137,7 +137,7 @@ Registry 同时产生 Server Manifest、`help` 和静态子命令补全候选。
 
 当前聚合的一级命令包括 `alias`（默认生效列表、`list/set/unset`）、`job`（`list/start/ps/status/stop/stop-all`）、`script`（`list/view/exec`）、`xt`（`exec/package/module/instance/help`；Exec 使用 `xt exec <name>`）、`history`（默认 Quick 列表、`clear/run`）及原有 `notify/saveout/gopin/rtt/httpctl/upload`。`exec` 和 `run_script` **不作为独立 Server 顶级命令**：Terminal 使用 `script exec <name> [--execution_mode MODE] [--output_mode MODE] -- --key VALUE ...`，Script Library UI 直接提交 Web Script Task，Server 两端共用 Script Metadata 参数校验，均发送 `control(domain=script, action=run)`。
 
-测试用的 `interaction_*` 演示命令已从 Client 注册类和源码中移除，真实的 Interaction Broker、Script SDK 授权与进程预览命令依然保留。Server 的 `disconnect` Builtin 及其专用处理器已经删除；Client 会话控制命令与现有 Web 连接管理接口未改变。Builtin 的 `description` 只写简短说明，不能将 `<usage> | <description>` 的格式拼入描述；参数用法由独立 `usage`/子命令规格承担。默认 `gopin` 列表只显示保存名称与路径，不再打印机器 ID，持久化隔离仍按机器 ID 完成。
+交互确认由 Interaction Broker 提供，Script SDK 与需要确认的业务命令共用该接口。
 
 Client 的 `CommandCatalog` 通过 `inspect.getmembers()` 收集当前平台命令对象中带 `help` 属性的方法，生成 `command_manifest`（含 `name/help/group/suggest`），并附加 `ArgumentCommandRegistry.get_manifest_payload()` 的 ACMD 条目。Manifest 在 Client 构造 `info` 握手时提交，Server 的 `SessionInfo` 保存该连接的快照；**不是 Web 打开命令面板时实时从 Client 重新扫描 Python 方法**。
 
@@ -201,15 +201,15 @@ iOS 的命令可见性由 `iOSCommands` 的实际导出方法和 ACMD Registry �
 ZIP 创建与解压使用四平台 Common ACMD 的 `acmd zip`、`acmd unzip` Standalone 注册，复用 Remote Files 的 `ArchiveService`；两者接受位置路径或 `--path`。ZIP/UNZIP 默认返回一条包含文件数、可读大小、耗时及目标路径的简洁文本，仅 `-v/--verbose` 输出逐文件进度。ZIP 权限拒绝时默认停止，显式 `--skip-unreadable` 才允许跳过并显示警告和部分归档提示；UNZIP 保留 `--conflict` 及 `--merge`／`--skip` 简写。两条命令不提供 `--json`；Remote Files Browser 原有调用行为不变。Shell-like 不再导出 `zip_dir` / `unzip`。
 
 普通 Client 命令的可见名称直接来自 `@shell_command` 修饰的方法名，`group`
-决定 Manifest、Client Help 和 Info → Commands 的分类。重命名后不保留旧名称兼容入口。
-本次分组使用 `shell`（`cd`、`pwd`）、`execution`（`shell`、`shell_stream`、
+决定 Manifest、Client Help 和 Info → Commands 的分类。
+常见分组包括 `shell`（`cd`、`pwd`）、`execution`（`shell`、`shell_stream`、
 `shell_bg`、`run_bg`、`pyexec`、`pyexec_stream`）、
 `session`（`var`、`kill_instance`、`reexec_instance`、`relaunch_instance`、`spawn_instance`）、
-`runtime`（`watchdog`、`set`）、`maintenance`（`clean`、`update`）、
+`runtime`（以 Client Manifest 为准）、`maintenance`（`clean`、`update`）、
 `automation`（`keyboard_send`）、
 `media`（`screenshot`、`webcam_snap`）、`privilege`（`run_elevated`、
 `spawn_elevated_instance`、`is_elevated`）、
-`system`（`getinfo`、`idletime`、`getuid`、`getpid`、`uptime`、`userenum`）。`ip` 已不再注册为 Client 命令。
+`system`（`getinfo`、`idletime`、`getuid`、`getpid`、`uptime`、`userenum`）。
 
 Server → Client 文件传输统一使用 `transfer_start` / `transfer_update`，由 TransferManager 执行，不注册内部传输命令。
 剪贴板读写在 Common Interaction 注册为 `acmd clipboard_read` / `acmd clipboard_write`，由注册表向 macOS、Windows 和 iOS 导出。默认读取文本并报告非文本类型，`--download` 将图片或文件保存到 Artifacts。
@@ -232,7 +232,7 @@ paths and Info → Watchdog log paths open the same viewer directly.
 The Client Device Monitor `log_file` channel uses `options.path` and a 250 ms
 sampling interval. It reads bounded incremental UTF-8 chunks through the shared
 `core.utils.log_reader.read_text_log_chunk` cursor reader, handles rotation/truncation, and transmits
-updates through the existing `monitor_snapshot` → Server EventBus → SSE path.
+updates through the existing `monitor_snapshot` → Server EventBus → WebSocket path.
 No foreground RCH command or External Tools log polling endpoint is used.
 A Server-side file source can be added later; v1 has no Server file picker or
 System Events implementation.

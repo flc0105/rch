@@ -15,7 +15,7 @@ Client 命令 / Script 调用交互 API（或 Server Builtin 直接调用 Broker
           ↓
 Server 验证当前 Client 连接和正在运行的 Web Task → Interaction Broker 创建待回复请求
           ↓
-SSE interaction_requested → 对应 Web 标签页的统一交互窗口
+WebSocket interaction_requested → 对应 Web 标签页的统一交互窗口
           ↓
 用户 Approve / Continue、Reject，或输入选择值
           ↓
@@ -197,7 +197,7 @@ def approve_local_action(self, arg=''):
 
 ## Web 响应与异常回收
 
-Web 的统一交互窗口根据 `kind` 生成输入控件、选择列表或 Preview；不是每个命令单独实现一个弹窗。实时消息通过 SSE 送到对应标签页，网页可调用 `GET /api/interactions/pending?tab_id=...` 补取未完成请求，最终用 `POST /api/interactions/{interaction_id}/answer` 提交 `approved` 和按需提供的 `value`。这两个浏览器接口仍走 Web 的正常鉴权，不能把它们视为任何用户都可代答的匿名端点。
+Web 的统一交互窗口根据 `kind` 生成输入控件、选择列表或 Preview；不是每个命令单独实现一个弹窗。实时消息通过 WebSocket 送到对应标签页，网页可调用 `GET /api/interactions/pending?tab_id=...` 补取未完成请求，最终用 `POST /api/interactions/{interaction_id}/answer` 提交 `approved` 和按需提供的 `value`。这两个浏览器接口仍走 Web 的正常鉴权，不能把它们视为任何用户都可代答的匿名端点。
 
 例如批准一条普通 Confirm：
 
@@ -209,7 +209,7 @@ Web 的统一交互窗口根据 `kind` 生成输入控件、选择列表或 Prev
 
 | 现象 | 原因或排查方向 |
 |---|---|
-| 没有弹出交互窗口 | 没有活跃 Web Task、标签页不匹配、SSE 未到达；检查待处理请求与任务状态 |
+| 没有弹出交互窗口 | 没有活跃 Web Task、标签页不匹配、WebSocket 未到达；检查待处理请求与任务状态 |
 | Client 提示缺少授权 | Client 未收到当前连接的 Client Session Token，或当前没有有效 Web Task |
 | `@confirm` 拒绝后仍有后续操作 | 应确认危险操作只写在获得批准之后的路径中 |
 | 输入/选择突然失败 | 用户取消、交互超时或原执行任务已结束 |

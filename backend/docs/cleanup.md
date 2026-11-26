@@ -42,7 +42,7 @@ Server Runtime 默认位于 `backend/runtime/`，也可能由 `RCH_SERVER_RUNTIM
 ls -lt backend/runtime/cleanup_logs/
 ```
 
-若 Runtime 位置经过自定义，应使用实际目录。关于 Runtime 位置、日志和通知系统，分别参见 [Server Runtime](server_runtime.md)、[Server / Client Logging](logging.md) 与 [Notifications](sse_notifications.md)。
+若 Runtime 位置经过自定义，应使用实际目录。关于 Runtime 位置、日志和通知系统，分别参见 [Server Runtime](server_runtime.md)、[Server / Client Logging](logging.md) 与 [Notifications](websocket_notifications.md)。
 
 ### 使用注意
 

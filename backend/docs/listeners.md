@@ -1,33 +1,38 @@
-# TCP and TLS/TCP listeners
+# TCP and mTLS/TCP listeners
 
-The Server accepts reverse Agent connections through multiple independently managed listeners. Each listener has an ID, name, TCP bind address, port, protocol (`tcp` or `tls_tcp`) and enabled state. All accepted connections share the existing `info` handshake, `ClientSession` pool, command router, heartbeat, PTY and file-transfer control messages. Server endpoint protocols register their own listener construction, certificate provisioning and supported Agent builders. The management UI reads available protocol definitions from the Server rather than maintaining a separate protocol list. Listener management has a list view and a separate Add listener form. The Python Client independently selects its registered connection strategy from `server_transport`. For a new socket-compatible transport, register the Server listener implementation and the corresponding Python Agent connector independently; both keep using the existing RCH message and Session handling after connection.
+The Server accepts Reverse connections through independently managed listeners. Each listener has a name, local bind address, port, protocol and enabled state. Python Bundle, Go and Go Loader builds support the registered transports:
 
-## Configure
+| Protocol | Connection protection |
+|---|---|
+| `tcp` (TCP) | Plain TCP; restrict it to trusted network boundaries |
+| `mtls_tcp` (mTLS/TCP) | Mutual TLS authentication before RCH application messages |
 
-In the Web UI, open **Utilities → Listeners**. Add a listener with a name, protocol, local bind address (usually `0.0.0.0`) and unused port. Listeners start immediately; Stop prevents new connections while existing Sessions remain connected. Start resumes accepting. Delete removes the endpoint, but leaves already connected sessions alive. The default TCP listener remains available as a manageable, nondeletable entry.
+Both transports carry the same RCH handshake, commands, results and heartbeat. Managed TCP file transfers and supported Tunnel channels use separate connections on the same listener and follow the session's transport. Browser HTTP and WebSocket access have their own deployment security requirements.
 
-Listener configuration is stored at `backend/runtime/listeners.json` (or under `RCH_SERVER_RUNTIME_DIR`). The default entry initially uses `RCH_SOCKET_PORT`, default `9999`. Ports used by the HTTP and browser WebSocket services are reserved. Enabled listeners start when Server starts. If a bind fails, the Listener view shows an error status.
+## Configure and operate
 
-Select **Build Agent → Bundle → Listener** to embed the selected listener's protocol and port. Set Server IP to the address reachable from the Agent (not the listener's `0.0.0.0` bind address). Other builders retain TCP-only support. The device sidebar shows a compact listener label next to each device name. Connection History snapshots record the listener name and local listening port for new connections.
+Open **Utilities → Listeners**. Add a name, protocol, local address (for example `0.0.0.0`) and unused port. For mTLS, initialize Server Identity and securely provision Client Identity before connecting; see [mTLS Identities](mtls_identities.md).
 
-## TLS certificate pinning
+Listeners start when created. Stop prevents new connections; Start resumes acceptance. Delete removes a nondefault listener. Stopping or deleting a listener leaves its existing sessions connected. The default TCP listener can be stopped or started but cannot be deleted. Enabled listeners start with the Server; bind failures appear in the listener status.
 
-When a TLS/TCP listener is created or its fingerprint is first requested, the Server uses the `openssl` executable to generate a self-signed certificate and private key under `runtime/listener_tls/<id>.crt` and `<id>.key`. The private key stays on the Server. The Bundle includes only the SHA-256 fingerprint of the public certificate. The Listener Manager keeps the main table compact: TLS listeners offer a Certificate action that opens a dialog with the full fingerprint and a Copy control, including for stopped TLS listeners. Plain TCP listeners have no certificate fingerprint.
+The listener configuration is stored in `RCH_SERVER_RUNTIME_DIR/listeners.json`. The default TCP port is `RCH_SOCKET_PORT` (9999 by default); the Web HTTP and WebSocket ports are reserved.
 
-On connecting, the Python Bundle establishes TLS 1.2+ and compares the peer's certificate fingerprint with the embedded value **before** sending its `info` handshake. Certificate mismatches fail connection and retry. There is no fallback from TLS to plaintext. Certificates are reused across Server restarts; regenerating a certificate requires rebuilding the corresponding Bundles. Back up the private key and certificate together if moving Server runtime data.
+## Agent configuration
 
-This first version authenticates the **Server endpoint to the Bundle**, but does not authenticate each Agent to the Server. Restrict publicly exposed listening ports with network access controls until Agent enrollment/authentication is added. Browser HTTP, file transfer, and browser WebSocket channels keep their own configurations; the TLS/TCP listener covers only the command/control socket. The Server must have OpenSSL available when creating new TLS listeners.
+In **Build Agent**, select Reverse and the desired Listener. Set the Server host and port to the address reachable by the Client; the listener's local bind address is not the advertised address. Go Loader passes the selected listener to the Bundle request. One-liners can also select a listener. Build and update packages carry transport settings, while mTLS identities are installed separately and retained across releases.
+
+For Bind, the Client listens and the Server dials the saved target. Select TCP or mTLS/TCP consistently on both ends. See [Connection Lifecycle](connection_lifecycle.md) and [Client Bootstrap](bootstrap.md).
 
 ## API
 
-These endpoints use the existing authenticated Web API session or token:
+These routes require administrator authentication:
 
-- `GET /api/listeners` — list listener configurations, status, session counts, errors, protocol build metadata and TLS certificate fingerprint
-- `GET /api/listener-protocols` — list registered protocol names, labels and build support
-- `POST /api/listeners` — create and immediately start a listener (`name`, `protocol`, `host`, `port`)
-- `PATCH /api/listeners/<id>` — set `{ "enabled": true | false }`
-- `DELETE /api/listeners/<id>` — remove a nondefault listener and stop accepting
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/api/listeners` | Configurations, status and session counts |
+| GET | `/api/listener-protocols` | Registered transports and builder capabilities |
+| POST | `/api/listeners` | Create a listener (`name`, `protocol`, `host`, `port`) |
+| PATCH | `/api/listeners/<listener_id>` | Set `enabled` |
+| DELETE | `/api/listeners/<listener_id>` | Remove a nondefault listener |
 
-For `POST /api/agent/build`, Bundle and Go Loader requests may add `listener_id` alongside existing Server Host/Port/Web Port fields. Server validates the port against the selected listener and automatically injects the listener protocol and pinned certificate fingerprint into Bundle builds. Go Loader stores the selected listener ID and passes it to the Bundle build request when running. Without `listener_id`, the preexisting TCP Bundle build remains supported. An Update Bundle retains the Client’s configured connection host, port and Web endpoint. These advertised addresses may be forwarded through FRP/NAT and need not match local listener bind ports. The Server uses the requested transport; a TCP Update does not require a unique local listener. TLS/TCP Updates require a certificate fingerprint matching an enabled Server listener. An explicitly supplied listener ID must agree with the requested transport and, for TLS/TCP, its certificate. Listener identity is included in build metadata when unambiguous. One-liners may select a listener; TLS selections pass the listener ID to the generated Python/PowerShell bootstrap and then into the Bundle build request, where the existing registry resolves the TLS fingerprint. The default TCP one-liners keep their previous command form.
-
-受管理的 TCP 文件传输复用原 Bind / Reverse TCP / Reverse TLS 监听端口，通过独立数据连接和主会话身份进行分流，不额外登记 Client Session。
+Build requests may specify `listener_id` for Reverse connections; the Server resolves the transport and validates the request against the selected listener. Bind builds select the transport directly. Advertised endpoint addresses may be forwarded through NAT or a proxy. See [Client Update](client_update.md) for release handoff.

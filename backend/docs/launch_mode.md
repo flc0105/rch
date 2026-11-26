@@ -273,7 +273,7 @@ Scheduled (cron)
 
 验证完成后立即从 `crontab -e` 删除该行，避免每分钟继续创建实例。
 
-POSIX Client temp root 按 effective UID 隔离；如果仍看到旧版 `/tmp/rch_client_temp` 的跨用户权限错误，先确认正在运行的 Client 已更新到 UID 隔离实现。
+POSIX Client 临时目录按 effective UID 隔离。遇到权限错误时核对当前运行账户与实际临时目录的访问权限。
 
 ### 7.8 Unknown
 

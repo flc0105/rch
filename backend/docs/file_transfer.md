@@ -37,7 +37,7 @@ Remote Files 上传到设备
 
 ### 直接流式处理
 
-`8085` 由 Flask/Werkzeug 直接提供，不经过 FastAPI、Uvicorn 或 ASGI/WSGI 桥接。HTTP 文件上传、暂存下载、Artifact 下载与普通 Web API 都在这条原生 HTTP 通道上。浏览器原始上传按 `DEFAULT_HTTP_TRANSFER_BUFFER_SIZE` 分块读取 `request.stream`、直接写入暂存文件；普通文件接口沿用现有 Client HTTP Strategy 和分块下载实现。
+`8085` 由 Flask/Werkzeug 提供。HTTP 文件上传、暂存下载、Artifact 下载与普通 Web API 都在这条原生 HTTP 通道上。浏览器原始上传按 `DEFAULT_HTTP_TRANSFER_BUFFER_SIZE` 分块读取 `request.stream`、直接写入暂存文件；普通文件接口沿用现有 Client HTTP Strategy 和分块下载实现。
 
 `8086` 专用于 WebSocket，文件内容不经过该端口。两个服务共享 RCH Server 的业务对象，但有独立监听与连接资源；并发大文件任务的实际性能需要通过同环境吞吐和 API 延迟测试验收。
 
@@ -88,11 +88,11 @@ Remote Files 上传到设备
 | 运行中取消 | 不支持 | 协作取消 | 协作取消并关闭数据连接 |
 | 上传大小限制 | Client 1 GiB 保护 | Server HTTP 请求上限 | Server 文件字节上限 |
 
-TCP 模式仅作用于 Remote Files 和其他明确进入受管理 Transfer 的 Server 与 Python Client 间文件搬运，包括文件、ZIP、预览和文件下发。浏览器上传暂存、Artifact 下载仍使用原 HTTP 接口。内置 `acmd download`、`acmd clipboard_read --download`、`screenshot`、`webcam_snap`，以及 Clipboard 图片 Get 和已暂存图片/文件 Send 同样进入受管理 Transfer。Script SDK、Job 及任意 URL HTTP 下载不改为 TCP；选择 `tcp_streaming` 时，原策略控制的 HTTP 调用仍使用 HTTP 流式策略。Go Client 保持现有 HTTP 实现。
+TCP 模式仅作用于 Remote Files 和其他明确进入受管理 Transfer 的 Server 与 Client 间受支持的文件搬运，包括文件、ZIP、预览和文件下发。浏览器上传暂存、Artifact 下载仍使用原 HTTP 接口。内置 `download`、`acmd clipboard_read --download`、`screenshot`、`webcam_snap`，以及 Clipboard 图片 Get 和已暂存图片/文件 Send 同样进入受管理 Transfer。Script SDK、Job 及任意 URL HTTP 下载不改为 TCP；选择 `tcp_streaming` 时，原策略控制的 HTTP 调用仍使用 HTTP 流式策略。Go Client 支持 `http_streaming` 和 `tcp_streaming`；具体范围见 [Go Client File Transfers](go_file_transfers.md)。
 
-每个 TCP 任务使用一条独立数据 Socket，Bind 由 Server 拨入 Client 的原监听端口，Reverse TCP/TLS 由 Client 连接原 Server 监听端口，TLS 保留现有验证方式。数据连接使用现有 Session Token 与 Transfer ID 关联，不建立第二个 Client Session。主连接继续承载控制与进度。接收端按声明长度流式落盘并检查 SHA-256，成功提交文件或 Artifact 后才确认完成；取消、失败或断线清理未提交的临时文件。TCP 流不在任务中途回退为 HTTP。
+每个 TCP 任务使用一条独立数据 Socket，Bind 由 Server 拨入 Client 的原监听端口，Reverse 由 Client 连接原 Server 监听端口，Bind 与 Reverse 均沿用主连接的 TCP 或 mTLS 传输与身份认证方式。数据连接使用现有 Session Token 与 Transfer ID 关联，不建立第二个 Client Session。主连接继续承载控制与进度。接收端按声明长度流式落盘并检查 SHA-256，成功提交文件或 Artifact 后才确认完成；取消、失败或断线清理未提交的临时文件。TCP 流不在任务中途回退为 HTTP。
 
-### 兼容模式的上传缓存边界
+### HTTP Simple 的上传缓存边界
 
 HTTP Simple 上传使用 `requests` 的标准 multipart `files=...`。由于该路径可能在内存中缓存完整 multipart Body，代码明确拒绝**文件大小超过 1 GiB** 的 HTTP Simple 上传，并提示切换 `http_streaming`。该限制是 Client 策略上的保护，不是 8085 服务的全局上限。
 
@@ -189,15 +189,15 @@ Python Client 的受管理任务在独立 Worker 或当前命令/Control 内调�
 
 Server 根据收到的进度字节数计算完成比例，对速率采用平滑计算，并在可用时推算 ETA；因此百分比是该阶段工作进度，而不是端到端文件完整性校验。进度上报通常做约 250 毫秒节流，完成点仍会被单独报告。发布 `transfer_updated` WebSocket 后，Web 订阅者刷新 Transfer Center；`file_transfer_lifecycle` 则提供开始、结束和失败等生命周期通知，二者服务不同目的。
 
-传输完成通知默认提供 Open Transfers；当方向是 `client_to_server`、状态 `completed` 且关联了 `artifact_id` 时，还提供 Open Artifacts 与 Download（到浏览器）。它们分别打开现有 Artifact Dialog、调用现有下载地址，不新增 Transfer 任务；其他方向、取消、失败或未产生 Artifact 的通知保持原来的操作。通知的显示仍受 SSE 通知偏好控制。
+传输完成通知默认提供 Open Transfers；当方向是 `client_to_server`、状态 `completed` 且关联了 `artifact_id` 时，还提供 Open Artifacts 与 Download（到浏览器）。它们分别打开现有 Artifact Dialog、调用现有下载地址，不新增 Transfer 任务；其他方向、取消、失败或未产生 Artifact 的通知保持原来的操作。通知的显示仍受 WebSocket 通知偏好控制。
 
-`GET /api/transfers?limit=20&offset=0` 从 SQLite 每次只查询 20 条历史，返回 `recent_total`；后续使用 `offset=20/40/...` 加载更多，绝不是返回全量后在浏览器截取。可附加 `machine_id` 按连接历史关联的机器筛选。Active 仍来自内存并遵守当前标签页隔离，之后由 SSE 维持实时进度。Transfer Center 分为 **Active** 和 **Recent**：Active 显示文件名、方向、当前阶段、进度条、字节数、速度、ETA 和 Cancel；Recent 保存全部已完成、失败、取消或重启中断的传输，不做固定条数裁剪。列表仅显示文件名、方向和状态；每条的 More 菜单提供 Info（文件大小、完成时间、源与目标路径、错误及 Artifact 引用）和 Delete。成功的 `client_to_server` 传输若有 `artifact_id`，还提供 Preview 和 Download（浏览器下载），与传输完成 SSE 通知使用相同的资格条件；反方向上传不提供这两个操作。Clear Recent 默认手动清空全部历史；选择 Machine Filter 时只清理该设备关联会话的终态记录，其他设备及活动传输不受影响。前台受管理传输的 `Upload started` / `Download started` 等小 Toast 提供 `Open Transfers` 链接，直接打开现有 Transfer Center；这与 SSE 生命周期通知的按钮无关。Remote Files / Remote File Picker 的 `Upload started` 在浏览器向 Server 开始发送文件时出现，不再等待 Server 暂存完成；下载提示时机保持不变。
+`GET /api/transfers?limit=20&offset=0` 从 SQLite 每次只查询 20 条历史，返回 `recent_total`；后续使用 `offset=20/40/...` 加载更多，绝不是返回全量后在浏览器截取。可附加 `machine_id` 按连接历史关联的机器筛选。Active 仍来自内存并遵守当前标签页隔离，之后由 WebSocket 维持实时进度。Transfer Center 分为 **Active** 和 **Recent**：Active 显示文件名、方向、当前阶段、进度条、字节数、速度、ETA 和 Cancel；Recent 保存全部已完成、失败、取消或重启中断的传输，不做固定条数裁剪。列表仅显示文件名、方向和状态；每条的 More 菜单提供 Info（文件大小、完成时间、源与目标路径、错误及 Artifact 引用）和 Delete。成功的 `client_to_server` 传输若有 `artifact_id`，还提供 Preview 和 Download（浏览器下载），与传输完成 WebSocket 通知使用相同的资格条件；反方向上传不提供这两个操作。Clear Recent 默认手动清空全部历史；选择 Machine Filter 时只清理该设备关联会话的终态记录，其他设备及活动传输不受影响。前台受管理传输的 `Upload started` / `Download started` 等小 Toast 提供 `Open Transfers` 链接，直接打开现有 Transfer Center；这与 WebSocket 生命周期通知的按钮无关。Remote Files / Remote File Picker 的 `Upload started` 在浏览器向 Server 开始发送文件时出现，不再等待 Server 暂存完成；下载提示时机保持不变。
 
 当 `progress_supported=false`，或者缺少有效 `total_bytes` 时，界面显示不确定进度而不是假造一个百分比。例如 HTTP Simple 上传可能正在正常运行但无法报告逐块上传字节；目录打包也可能尚未知道最终 ZIP 大小。此时应查看任务状态与已传输字节，而非依靠百分比判断。
 
 ### 任务记录与 Artifact 的不同生命周期
 
-Transfer Center 使用 `rch.db` 的 `transfer_records` 保存简要历史事实：创建时插入起始状态，结束时更新最终状态、路径、大小、实际字节、时间、错误及 Artifact ID。中途进度、速度、ETA、取消控制和临时 `metadata` 仍只在内存中；不对每个进度分片写 SQLite。重启后，未完成的旧记录标为 `interrupted` 并记录结束时间；历史记录可在新浏览器标签页查看，但活动进度及 SSE 仍按原 `tab_id` 隔离。只有用户通过 Delete/Clear Recent 手动移除记录；删除记录不影响 Artifact 或目标文件。
+Transfer Center 使用 `rch.db` 的 `transfer_records` 保存简要历史事实：创建时插入起始状态，结束时更新最终状态、路径、大小、实际字节、时间、错误及 Artifact ID。中途进度、速度、ETA、取消控制和临时 `metadata` 仍只在内存中；不对每个进度分片写 SQLite。重启后，未完成的旧记录标为 `interrupted` 并记录结束时间；历史记录可在新浏览器标签页查看，但活动进度及 WebSocket 仍按原 `tab_id` 隔离。只有用户通过 Delete/Clear Recent 手动移除记录；删除记录不影响 Artifact 或目标文件。
 
 Artifact 文件及其注册记录是另一条存储生命周期。清理最近 Transfer 只清理进度记录，**不自动删除已生成的 Artifact，也不会删除目标设备上的文件**。同样，直接在浏览器下载 Artifact 并不自动创建一条新的 Transfer 记录。
 
@@ -217,13 +217,13 @@ TCP 模式收到取消请求后，由 Client 的取消上下文中断数据连�
 
 ### 任务接口及通道保护
 
-Web 端的 `tab_id` 用于把正在运行的 Transfer 关联到发起的浏览器标签，并使 `transfer_updated` 等 SSE 消息可以按标签定向发送；已结束的持久历史在同一登录 Server 下跨标签页可见。它不是文件传输身份认证的替代品。Web 的控制 API 应由基础 Web 认证与授权层保护。
+Web 端的 `tab_id` 用于把正在运行的 Transfer 关联到发起的浏览器标签，并使 `transfer_updated` 等 WebSocket 消息可以按标签定向发送；已结束的持久历史在同一登录 Server 下跨标签页可见。它不是文件传输身份认证的替代品。Web 的控制 API 应由基础 Web 认证与授权层保护。
 
 文件传输 HTTP 接口直接运行在 8085。浏览器原始文件上传通过创建任务时签发的一次性随机 Token 授权，并在 `X-RCH-Transfer-Token` 中提交；Client Artifact 上传及暂存文件下载继续使用既有权限与传输校验机制。默认 8086 仅接受 WebSocket 连接，需向浏览器开放；Client 文件流量无需连接 8086。
 
 ### 部署与异常定位
 
-**正常的大文件 Remote Files 上传**，优先确保浏览器到 Server 8085 以及HTTP 模式下目标 Client 到 Server 8085 可达；TCP 模式下原 TCP/TLS 监听端口可达；浏览器端上传成功只代表第一阶段暂存完成，仍需观察后续 Client 下载阶段。若文件很大且需要实时上传字节进度或可取消性，应检查 Client 的 `FILE_TRANSFER_MODE` 是否设置为 `http_streaming` 或 `tcp_streaming`。`http_simple` 不提供流式上传和取消能力。
+**正常的大文件 Remote Files 上传**，优先确保浏览器到 Server 8085 以及HTTP 模式下目标 Client 到 Server 8085 可达；TCP 模式下原 TCP 或 mTLS 监听端口可达；浏览器端上传成功只代表第一阶段暂存完成，仍需观察后续 Client 下载阶段。若文件很大且需要实时上传字节进度或可取消性，应检查 Client 的 `FILE_TRANSFER_MODE` 是否设置为 `http_streaming` 或 `tcp_streaming`。`http_simple` 不提供流式上传和取消能力。
 
 | 现象 | 核查重点 |
 | --- | --- |
@@ -242,6 +242,6 @@ Web 端的 `tab_id` 用于把正在运行的 Transfer 关联到发起的浏览�
 
 远程文件浏览、编辑和路径管理的业务细节见 `remote_files.md`；Artifact 的生成与展示则遵循各自功能模块的文档。这里专注文件字节传输、进度及取消，不把每个历史命令或已有模块列成清单。
 
-### `acmd download`
+### `download`
 
 `download <file>` 是 Client 的终端文件上传（设备到 Server Artifact），不是 Remote Files 的文件浏览命令。无参数立即返回 `Usage: download <file>`，不会把空路径解析成当前工作目录；目录输入仍返回明确的 `Not a file` 错误。该命令执行过程中发送的正常 Socket 结果应与已登记的命令 ID 关联，不得因为极快返回而意外显示成 `[Background]`。是否能取消正在进行的 HTTP 字节传输仍取决于 `FILE_TRANSFER_MODE`；不能将普通任务的取消能力等同于传输取消。

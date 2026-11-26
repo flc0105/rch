@@ -1,4 +1,5 @@
 import os
+import re
 import zipfile
 from pathlib import Path
 from datetime import datetime
@@ -7,41 +8,43 @@ from datetime import datetime
 # 当前脚本所在目录
 BASE_DIR = Path(__file__).resolve().parent
 
-# 需要压缩的目录
-TARGET_DIRS = [
-    "backend",
-    "frontend",
-    "desktop_notifier",
-    "tools"
-]
+# 源码目录与需要保留的根目录文件
+TARGET_DIRS = ("backend", "frontend", "desktop_notifier", "tools")
+TARGET_FILES = ("README.md", "zip_project.py")
 
-# 需要忽略的路径，相对于 BASE_DIR
-IGNORE_PATHS = {
+# 各层级通用的依赖、版本管理、编辑器及缓存目录
+IGNORE_DIR_NAMES = {
+    "__pycache__", "pycache", ".venv", "venv", "node_modules", ".git",
+    ".idea", ".vscode", ".vite", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+    ".tox", ".nox", ".cache",
+}
+IGNORE_FILE_NAMES = {
+    ".DS_Store", "Thumbs.db", "desktop.ini", "nohup.out", ".silverbullet.auth.json",
+}
+IGNORE_SUFFIXES = {".pyc", ".pyo", ".bak", ".swp", ".swo"}
+ENV_EXAMPLES = {".env.example", ".env.sample", ".env.template"}
+ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".7z", ".rar")
+LOG_PATTERN = re.compile(r"\.log(?:\.\d+)?(?:\.gz)?$", re.IGNORECASE)
+
+# 仅在明确的项目路径下排除构建产物和本地运行数据。
+# 不按 runtime、static 等通用名称过滤，以免误删源码目录。
+IGNORE_PATHS = {Path(p) for p in (
     "frontend/dist",
-    "frontend/node_modules",
-    "frontend/.vite",
-    "frontend/.vscode",
     "backend/runtime",
-    "backend/static", # 生产环境解除
-    "backend/venv",
-    "backend/.pytest_cache",
-    #"backend/server/resources/jobs",
-    #"backend/server/resources/scripts",
-    #"backend/server/resources/aliases.json",
+    "backend/static",  # 如需打包生产静态产物，可解除此项
     "backend/server/resources/external_tools/packages",
-    "desktop_notifier/.venv",
     "desktop_notifier/config.json",
     "desktop_notifier/state.json",
-    "desktop_notifier/nohup.out",
-    "backend/docs/.silverbullet.auth.json"
-}
+)}
 
-# 统一转换为 Path
-IGNORE_PATHS = {Path(p) for p in IGNORE_PATHS}
+# 资源目录及测试夹具中的压缩包可以是项目输入；其他目录的归档按备份/产物处理。
+ARCHIVE_INPUT_ROOTS = {Path(p) for p in (
+    "backend/server/resources", "backend/tests", "frontend/tests", "desktop_notifier/tests",
+)}
 
 
 def format_size(size_bytes: int) -> str:
-    """格式化文件大小"""
+    """格式化文件大小。"""
     if size_bytes < 1024:
         return f"{size_bytes} B"
     elif size_bytes < 1024 ** 2:
@@ -52,91 +55,77 @@ def format_size(size_bytes: int) -> str:
         return f"{size_bytes / 1024 ** 3:.2f} GB"
 
 
+def is_within(relative: Path, roots: set[Path]) -> bool:
+    return any(relative == root or root in relative.parents for root in roots)
+
+
 def should_ignore(path: Path) -> bool:
-    """
-    判断文件或目录是否需要忽略
-    path 是绝对路径
-    """
+    """判断 BASE_DIR 下的绝对路径是否需要忽略。"""
     rel_path = path.relative_to(BASE_DIR)
-
-    # 忽略所有 .pyc 文件
-    if path.is_file() and path.suffix == ".pyc":
+    # 不跟随符号链接，避免将项目边界之外的内容写入快照。
+    if path.is_symlink() or is_within(rel_path, IGNORE_PATHS):
         return True
-
-    # 忽略 __pycache__ 或 pycache 目录
-    if any(part in {"__pycache__", "pycache"} for part in rel_path.parts):
-        return True
-
-    # 忽略任何层级的虚拟环境、依赖目录及开发缓存
-    if any(part in {
-        ".venv", "venv", "node_modules", ".git", ".idea", ".vscode",
-        ".vite", ".pytest_cache", ".mypy_cache", ".ruff_cache"
-    } for part in rel_path.parts):
-        return True
-
-    # 忽略系统元数据、备份和临时文件
-    if path.is_file() and (
-        path.name in {".DS_Store", "Thumbs.db", "desktop.ini"}
-        or path.suffix in {".pyo", ".bak", ".swp", ".swo"}
-        or path.name.endswith("~")
+    if any(part in IGNORE_DIR_NAMES for part in rel_path.parts[:-1]) or (
+        path.is_dir() and path.name in IGNORE_DIR_NAMES
     ):
         return True
+    if not path.is_file():
+        return False
 
-    # 忽略本地环境配置，但保留可提交的示例配置
-    if path.is_file() and (
-        path.name == ".env"
-        or (
-            path.name.startswith(".env.")
-            and path.name not in {".env.example", ".env.sample", ".env.template"}
-        )
-    ):
+    name = path.name
+    # 系统元数据、缓存、备份、编辑器临时文件及运行日志。
+    if (name in IGNORE_FILE_NAMES or path.suffix.lower() in IGNORE_SUFFIXES
+            or name.endswith("~") or LOG_PATTERN.search(name)):
         return True
-
-    # 忽略指定路径及其子路径
-    for ignore_path in IGNORE_PATHS:
-        if rel_path == ignore_path or ignore_path in rel_path.parents:
-            return True
-
+    # 本地环境配置；示例配置仍属于源码快照。
+    if (name == ".env" or name.startswith(".env.")) and name not in ENV_EXAMPLES:
+        return True
+    if name.lower().endswith(ARCHIVE_SUFFIXES) and not is_within(rel_path, ARCHIVE_INPUT_ROOTS):
+        return True
     return False
 
 
+def iter_project_files():
+    for name in TARGET_FILES:
+        path = BASE_DIR / name
+        if path.is_file() and not should_ignore(path):
+            yield path
+        else:
+            print(f"警告：根目录文件不存在或被忽略：{path}")
+
+    for target_dir in TARGET_DIRS:
+        root_dir = BASE_DIR / target_dir
+        if not root_dir.is_dir() or should_ignore(root_dir):
+            print(f"警告：目录不存在或被忽略：{root_dir}")
+            continue
+        for current_root, dirs, files in os.walk(root_dir):
+            current_root_path = Path(current_root)
+            # 过滤目录，避免进入被忽略的目录；固定顺序便于比较快照。
+            dirs[:] = sorted(d for d in dirs if not should_ignore(current_root_path / d))
+            for name in sorted(files):
+                file_path = current_root_path / name
+                if file_path.is_file() and not should_ignore(file_path):
+                    yield file_path
+
+
 def zip_project():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    zip_name = f"rch_project_{timestamp}.zip"
-    zip_path = BASE_DIR / zip_name
-
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for target_dir in TARGET_DIRS:
-            root_dir = BASE_DIR / target_dir
-
-            if not root_dir.exists():
-                print(f"警告：目录不存在，已跳过：{root_dir}")
-                continue
-
-            for current_root, dirs, files in os.walk(root_dir):
-                current_root_path = Path(current_root)
-
-                # 过滤目录，避免进入被忽略的目录
-                dirs[:] = [
-                    d for d in dirs
-                    if not should_ignore(current_root_path / d)
-                ]
-
-                # 添加文件
-                for file in files:
-                    file_path = current_root_path / file
-
-                    if should_ignore(file_path):
-                        continue
-
-                    arcname = file_path.relative_to(BASE_DIR)
-                    zipf.write(file_path, arcname)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    zip_path = BASE_DIR / f"rch_project_{timestamp}.zip"
+    # 某些源码归档保留早于 ZIP 格式支持范围的文件时间。
+    archive = zipfile.ZipFile(zip_path, "x", zipfile.ZIP_DEFLATED, strict_timestamps=False)
+    try:
+        with archive as zipf:
+            for file_path in iter_project_files():
+                zipf.write(file_path, file_path.relative_to(BASE_DIR).as_posix())
+    except BaseException:
+        zip_path.unlink(missing_ok=True)
+        raise
 
     zip_size = zip_path.stat().st_size
-
     print("压缩完成")
     print(f"ZIP 文件路径：{zip_path}")
     print(f"ZIP 文件大小：{format_size(zip_size)}")
+    return zip_path
 
 
 if __name__ == "__main__":

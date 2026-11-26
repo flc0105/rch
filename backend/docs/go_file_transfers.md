@@ -7,11 +7,11 @@ Reverse/Bind direction.
 
 | `FILE_TRANSFER_MODE` | Behavior |
 | --- | --- |
-| `http_streaming` (default) | Existing Server Web HTTP upload/download |
+| `http_streaming` (default) | Server Web HTTP streaming upload/download |
 | `tcp_streaming` | Independent authenticated RCH file-data socket, using the current session's TCP or mTLS transport |
 
 Set the mode in the connected Client's Configuration view (under the Transfer
-group), or with its existing Configuration `set` operation. Resetting the setting
+group), or with the Server Builtin `config set FILE_TRANSFER_MODE <mode>`. Resetting the setting
 restores `http_streaming`; only non-default overrides are persisted in the Go
 Client's runtime configuration file. `HTTP_TRANSFER_BUFFER_SIZE` controls the
 shared streaming buffer (default 1 MiB, range 64 KiB–16 MiB).
@@ -26,8 +26,7 @@ Supported managed operations: Client-to-Server file, preview, directory ZIP,
 ZIP entry and Server-to-Client file. Client-command file uploads (such as
 `download` and `screenshot`) use the same transfer mode. TCP streams use the
 shared file-control frame format, SHA-256 trailer, progress/cancel updates,
-and the existing conflict-policy/commit checks. Older Go Client releases
-remain on their own existing HTTP-only behavior until rebuilt.
+and the existing conflict-policy/commit checks. 
 
 Managed transfers belong to the active Client session. When the control
 connection closes, the Client is intentionally stopped or relaunched, or
@@ -40,7 +39,6 @@ session shutdown. Each replacement session receives its own transfer token.
 to 120 seconds. Changes apply to the current Reverse or Bind session; set it
 to `0` to disable inbound idle detection.
 
-Reverse connection failures retry after 5, 10, 20, then at most 30 seconds;
-receiving a valid session token resets the next retry to 5 seconds. A closed
+Reverse connection retries use the configured exponential backoff (5–30 seconds by default). A valid Session Token resets the backoff. A closed
 connection or invalid identity is reported with its actual failure reason.
 Bind remains a listening service rather than a dial/retry loop.

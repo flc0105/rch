@@ -80,4 +80,4 @@ Process Supervisor **不遍历系统全部进程**，也不读取 Local 心跳�
 
 ## 恢复后上线通知
 
-Supervisor 检测到 Client 进程死亡，按原有退避策略启动下一代 Client 时，仅向子进程传递一次性 `RCH_CLIENT_RECOVERY_SOURCE=process_recovery_watchdog`。Client 首次成功握手后，Server 继续发布原有 `connection_online`，对应即时提示与历史记录显示 `recovered by Process Recovery Watchdog`。它不负责故障发生时另发 SSE；没有恢复成功上线时也没有新的上线通知。独立启动、普通网络重连、主动退出、更新与 Remote Relaunch 不应被误标为 Process 恢复。
+Supervisor 检测到 Client 进程死亡，按原有退避策略启动下一代 Client 时，仅向子进程传递一次性 `RCH_CLIENT_RECOVERY_SOURCE=process_recovery_watchdog`。Client 首次成功握手后，Server 继续发布原有 `connection_online`，对应即时提示与历史记录显示 `recovered by Process Recovery Watchdog`。它不负责故障发生时另发 WebSocket；没有恢复成功上线时也没有新的上线通知。独立启动、普通网络重连、主动退出、更新与 Remote Relaunch 不应被误标为 Process 恢复。

@@ -1,136 +1,60 @@
-# Vue 3 + Vite
+# RCH Web Frontend
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+The Vue 3 / Vite frontend provides the RCH device console, Terminal and management tools. Element Plus supplies shared UI components; Monaco provides text editing and xterm provides PTY interaction.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## Development and deployment
 
-## Frontend feature APIs
+```bash
+npm ci
+npm run dev
+```
 
-HTTP request URLs, methods, headers, and payload construction live in
-`src/api/<feature>Api.js`. Dialogs and composables own UI state, current-Client
-context checks, confirmation prompts, and user-facing results. Shared request
-helpers live in `src/api/http.js`; existing API modules keep their specific
-response contracts.
+Start the Server separately with `python backend/run_web.py` from the project root. The default HTTP port is 8085 and the WebSocket port is HTTP port + 1. Use the same `RCH_WEB_PORT` on the Server and Vite when overriding the port:
 
-Remote Files uses `remoteFilesApi.js` for directory, ZIP and file operations,
-`remotePinsApi.js` for pinned paths, and the shared `transferApi.js` for uploads.
-These remote-file APIs return the native `Response` so dialogs can check whether
-the selected Client or active request changed before processing results.
-
-Script Library uses `scriptLibraryApi.js` for catalog, folder and script editing,
-upload, delete, and execution submission. Command History uses
-`commandHistoryApi.js` for Quick History, Activity Center, pinned commands and
-scoped deletion. Both APIs return native `Response` to their dialogs so UI
-feedback, pagination, and request-generation checks stay in the components;
-command completion and task-result recovery also use `commandHistoryApi.js`.
-
-Background Jobs uses `backgroundJobsApi.js` for its per-Client catalog, running
-jobs, job details and lifecycle requests, plus server-side Job script editing.
-Artifact Manager uses `artifactsApi.js` for Saved Files / Shared Files, virtual folders,
-search and device filtering, Shared Files creation/upload, file editing, Send To and deletion.
-Saved Files are created by explicit capture, download, clipboard, Script/Job or output-saving operations. Connection Info, Preview and output-saving components reuse
-those APIs; responses remain native `Response` objects for the existing UI handlers.
-
-Keychains uses `keychainsApi.js` for machine-scoped credential listing,
-reading, saving and deletion across the manager and parameter picker. Agent
-Builder, Agent Outputs and One-liners share `agentApi.js` for platform metadata,
-build submission, output management and download URLs. These APIs return native
-`Response` objects; validation, scope checks, and user-facing feedback remain
-in the calling dialogs.
-
-The Toolbar, More menu, and Toolbox honor explicit `false` values in the
-selected Client’s `feature_manifest`. For example, `remote_files`, `scripts`,
-and `jobs` suppress their associated launch actions and Script shortcuts.
-Missing declarations from older Clients retain their previous behavior.
-
-## Terminal history and performance
-
-The Web Terminal saves complete output per signed-in user, browser tab and Client
-in IndexedDB. It renders a bounded recent window and loads earlier or later
-records automatically while scrolling. Browser refresh restores the recent
-window. `Clear` deletes the entire selected Client's stored transcript, while
-Copy and Save to Artifact read the complete transcript, including hidden rows.
-Command-level output actions also resolve their full stored command block.
-
-All display and storage tuning values live in
-`src/data/terminalHistoryConfig.js`: initial window, scroll load batch, visible
-row/byte caps, hot-memory cache, per-record display segment size, IndexedDB
-chunk size, write debounce and scroll thresholds. The limits constrain **DOM
-rendering**, not the saved transcript. Very long individual lines are stored
-as lossless display segments and rejoined for exports. Bursts of Web Task
-output arrive in bounded batches; all records are persisted, while Terminal
-viewport updates are coalesced to one per animation frame. Programmatic layout
-changes do not disable bottom-follow; a user scroll away from the end does.
-Submitting a new command in Terminal resumes bottom-follow and reloads the latest
-history window when older output is visible; dialog-only commands do not move it.
-
-History is local to the browser profile; browser storage deletion, private mode
-or quota errors can affect persistence. The UI reports an unavailable history
-store rather than silently discarding unsaved output. Sign out clears that
-user/tab's browser terminal history. Large complete exports remain subject to
-browser clipboard/memory and existing Artifact upload limits.
-
-## Log Viewer and sign-in
-
-Log Viewer reads remote Client files. Its Browse button and remote path occupy the first toolbar row, with the remaining controls on the second row. Wrap is enabled by default, and the gutter displays line numbers relative to the currently loaded log buffer (search results retain those numbers). Watchdog log links appear immediately after each file path.
-
-Administrator sign-in sends only a lightweight reversible masked password field, not a plaintext password field. It works with existing HTTP deployments and does not require a secure browser context. This is payload obfuscation only, **not** protection against interception on HTTP. The login page distinguishes credential errors, network errors, and server errors.
-
-## Banner utilities
-
-The right side of the banner shows Online Nodes, followed by Transfers, Notifications, and a Utilities dropdown. The Utilities menu opens One-liners or Build Agent without requiring a selected online Client. Sign out stays separate from the icon group.
-
-## Production asset delivery
-
-Build with `npm run build`, then copy **the entire** `frontend/dist/` directory
-(including `assets/*.gz`) to `backend/static/`. Flask automatically serves the
-precompressed JavaScript and CSS when the browser supports gzip. Vite-generated
-hashed assets use a long-lived browser cache; deploy all new assets before
-updating `index.html` and retain old hashed assets while older tabs may still be
-open.
-
-Optional dialogs download in priority order after the page's first paint during
-browser idle time: External Tools, Command History, PTY, Background Jobs,
-Processes, Keychains, then Preview and Documents (including Monaco). Moving the
-pointer over a supported toolbar, More-menu, or Toolbox action can preload its
-dialog earlier.
-
-Element Plus is installed globally with its complete stylesheet so all component
-styles, child-component styles, directives, and layout rules match the original UI.
-Programmatic message/confirmation/notification APIs remain imported directly where
-used. The Vite auto-registration plugin is not required.
-
-## Local development ports
-
-The Server HTTP listener is configured by `RCH_WEB_PORT` (default `8085`);
-its WebSocket listener always uses the next port. Start the Vite developer
-server with **the same** `RCH_WEB_PORT` environment value as the Server:
-
-```sh
+```bash
 RCH_WEB_PORT=9090 python3 backend/run_web.py
-# From frontend/ in a second terminal:
+```
+
+In a separate terminal at `frontend/`:
+
+```bash
 RCH_WEB_PORT=9090 npm run dev
 ```
 
-Vite forwards `/api` to the configured HTTP port and `/ws` to HTTP port + 1.
-Browser uploads use `/api/...` URLs on the current page origin, so the dev
-server proxy is applied without browser CORS changes. The PTY, Screen and
-notification WebSocket paths all use the same browser URL helper.
-The Vite listening port can be overridden with `RCH_VITE_PORT` (default `5173`).
-When Vite is published through a same-origin TCP/HTTP reverse proxy (for example
-FRP forwarding external `15173` to local `5173`), expose only the frontend
-port: Vite forwards `/api` and `/ws` internally. The proxy must preserve the
-browser-facing `Host` and support WebSocket Upgrade. WebSocket authorization
-checks the browser's Origin against the forwarded Host and the authenticated
-session, not against the private Vite port number. A direct built frontend still
-requires access to the Server WebSocket port as described below.
+`RCH_VITE_PORT` defaults to 5173. Vite proxies same-origin `/api` and `/ws` to the Server. A reverse proxy in front of Vite must preserve the browser-facing Host and support WebSocket Upgrade. In production, the built page is served by the Server's HTTP service and browser WebSocket connections use the next port.
 
-In production, RCH serves the built frontend on its HTTP port; the browser
-connects WebSocket directly to that HTTP port + 1.
+```bash
+npm run build
+```
 
-On browsers that restrict clipboard access over non-HTTPS origins (notably
-mobile Safari), Terminal Copy uses a synchronous selection fallback for the
-currently loaded Terminal window. Saving Terminal output to Artifact continues
-to use the full local History, including rows not currently loaded onscreen.
+Deploy the entire `dist/` directory contents to `backend/static/`, including compressed assets. Publish new assets before switching `index.html`; retain hashed resources still needed by open tabs. See [Web Frontend Loading](../backend/docs/web_frontend_loading.md).
 
-Agent Outputs 以 `python`、`go`、`go_loader` 为正式 Builder ID，显示为 Python Bundle、Go、Go Loader；输出文件名固定以 `rchclient` 为前缀，Build Version 使用 Builder 名；两者共用构建时间与八位哈希后缀。列表展示 Filename、Connection、Transport、Size，支持 Builder、Mode 筛选；Info 显示构建来源、目标平台、端点及构建时间，Utilities 中可直接进入。
+## UI architecture
+
+`src/api/` owns HTTP request contracts and shared authentication/request helpers. Components and composables own current-device context, UI state, user confirmation and presentation. Shared dialogs, pickers, parameter schemas and formatters support consistent behavior across tools. The Server owns business validation, command catalogs and execution.
+
+Toolbar, More and Toolbox use the shared tool catalog and the selected Client's Feature Manifest. Settings manages global preferences and Server functions. Agent Builder, Agent Outputs and One-liners are available without a selected online Client. See [Toolbox](../backend/docs/toolbar_toolbox.md) and [Listeners](../backend/docs/listeners.md).
+
+WebSocket events provide live connection, task, notification and operation updates. Reconnect refreshes authoritative state; persistently recorded output can be recovered through Activity History. See [Command Execution](../backend/docs/command_execution.md) and [WebSocket Notifications](../backend/docs/websocket_notifications.md).
+
+## Terminal history and performance
+
+The Web Terminal stores output per signed-in user, browser tab and Client in IndexedDB. It renders a bounded recent window and loads earlier/later records while scrolling. Long lines are preserved as segments and rejoined for complete exports. Clear removes the selected Client's stored transcript; Copy and Save to Artifact read the complete transcript where the browser permits. Some non-HTTPS browser clipboard environments require a selection-based fallback for the visible window.
+
+Output events are batched for rendering and persisted in order. A manual scroll away from the end pauses bottom-follow; a new Terminal command resumes it. Browser storage deletion, private-mode restrictions and quota errors can affect persistence; sign-out clears that user/tab's local transcript. Server Activity History follows its independent recording policy.
+
+## Authentication and operations
+
+The sign-in page uses the Server administrator Session. Password payload masking is obfuscation; protect the actual HTTP and WebSocket connections with HTTPS/WSS or a trusted network. See [Administrator Authentication](../backend/docs/admin_auth.md).
+
+Device Dashboard, Processes and Log Viewer use managed monitor sessions; Remote Files, Transfers, PTY, Screen View and other tools retain their own lifecycle and cancellation behavior. See the [RCH documentation index](../README.md#documentation).
+
+## Tests
+
+Run the frontend regression suite from `frontend/`:
+
+```bash
+node --test tests/*.test.mjs
+```
+
+Use the production build and a real browser for interaction, responsive layout, authentication, asset loading and Server/Client integration checks.

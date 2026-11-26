@@ -25,6 +25,7 @@ from client.runtime.sdk import context
 
 
 ALLOWED_ROOTS = frozenset({'backend', 'frontend', 'tools', 'desktop_notifier'})
+ALLOWED_ROOT_FILES = frozenset({'README.md', 'zip_project.py'})
 MAX_ENTRIES = 3000
 MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
 
@@ -71,7 +72,9 @@ def inspect_patch(project, zip_path):
             parts = name.rstrip('/').split('/')
             if (not name or name.startswith('/') or '\\' in name or '\x00' in name
                     or any(part in ('', '.', '..') for part in parts)
-                    or parts[0] not in ALLOWED_ROOTS or len(parts) < 2):
+                    or not ((len(parts) == 1 and parts[0] in ALLOWED_ROOT_FILES
+                             and not info.is_dir())
+                            or (len(parts) >= 2 and parts[0] in ALLOWED_ROOTS))):
                 raise ValueError(f'Unsafe ZIP entry: {name!r}')
             mode = stat.S_IFMT(info.external_attr >> 16)
             if mode not in (0, stat.S_IFREG, stat.S_IFDIR):

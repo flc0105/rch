@@ -41,7 +41,7 @@ RCH 为 iOS 选择独立的平台能力实现，但保留 Server / Client 的统
 
 ### Command、Script 和 Job 的实际边界
 
-在 iOS 实机使用反馈中，RCH 的 **Command、Job、Script 已有大量可正常运行的场景**。这些能力分别沿着以下执行路径工作：
+iOS 的 Command、Job、Script 使用以下执行路径：
 
 - **Command** 可以分派到 RCH 内置的跨平台或 iOS 专用操作，它们可以直接调用 Python 库、Socket 或 iOS API；未匹配的系统 Shell 回退会明确返回不支持，Web Terminal 继续执行已注册的 iOS 命令和脚本。
 - **Python Script** 可以在当前解释器内运行，使用标准库和已有第三方包处理数据、文件及网络。若脚本自身再要求运行系统可执行文件，仍会受 iOS 限制；执行模式切换到“子进程”不会解除该限制。
@@ -60,13 +60,13 @@ Pythonista 提供文本、图片剪贴板接口，实际能力由模块和系统
 
 屏幕、进程监测、系统级自恢复和外部程序运行等功能具有更强的平台依赖。它们可能要求 iOS 不提供的系统 API、进程权限、持久后台执行或原生可执行文件；应按当前设备实际返回的能力和错误判断，不宜照搬桌面端的功能预期。参见 [Device Monitor](device_monitor.md)、[Process Recovery Watchdog](process_recovery_watchdog.md)。
 
-在 iOS / Pythonista 上，`external_tool` 和 `process_monitor` 默认关闭，Web 不显示相应工具入口；Log Viewer 的日志读取无需 `psutil`。有效 `feature_manifest.watchdog=false`；Client 不加载 Watchdog 实现。`set` 中三个 Watchdog 开关的值可以保留，运行时不会启用相应监督进程。Web Watchdog 面板保留 HTTP Control 三个操作入口并显示功能不可用的原因。
+在 iOS / Pythonista 上，`external_tool` 和 `process_monitor` 默认关闭，Web 不显示相应工具入口；Log Viewer 的日志读取无需 `psutil`。有效 `feature_manifest.watchdog=false`；Client 不加载 Watchdog 实现。Configuration 中三个 Watchdog 开关的值可以保留，运行时不会启用相应监督进程。Web Watchdog 面板保留 HTTP Control 三个操作入口并显示功能不可用的原因。
 
 ## iOS Dashboard
 
 Connection Info → Dashboard 在 iOS 上使用独立的 Pythonista 采样视图。打开页面后每 5 秒读取电池、低电量模式、温控状态、屏幕亮度、iOS Data Volume 的重要用途可用容量与总容量、设备运行时长、网络接口、音频输出及当前音量，并显示 CPU 核心数。音量优先读取系统音乐播放器的音量值，并在接口不可用时通过音频会话读取。系统内存使用率来自 Mach VM 计数器：占用量为 `total - (free + inactive)`，支持与桌面 Dashboard 相似的使用率进度条，同时显示 Pythonista 进程驻留内存。照片、歌曲、联系人分别仅统计授权可访问的数量，并每 120 秒刷新缓存；无权限或采集失败显示 `—`，不影响其他指标。采样通过 `objc_util` 和标准库完成，不需要 `psutil`。采集失败或权限不可用的单项信息显示为空值。
 
-Dashboard 使用现有 Monitor Session 协议；其他平台继续显示原来的桌面 Dashboard。iOS 的 Log Viewer 仍然使用独立的 `log_file` Channel 读取客户端可访问的日志文件。
+Dashboard 使用现有 Monitor Session 协议；桌面平台使用对应的 Dashboard。iOS 的 Log Viewer 仍然使用独立的 `log_file` Channel 读取客户端可访问的日志文件。
 
 ## 沙盒存储、网络与系统权限
 
@@ -102,4 +102,3 @@ Pythonista 与 Shortcuts、分享扩展的集成适合触发**有限时长、有
 - [Pythonista 官方文档：内置模块与使用环境](https://www.omz-software.com/pythonista/docs-3.4/py3/contents.html)
 - [Pythonista 3 — App Store 官方介绍](https://apps.apple.com/us/app/pythonista-3/id1085978097)
 - [Apple：App 进入后台时的运行与挂起机制](https://developer.apple.com/documentation/uikit/preparing-your-ui-to-run-in-the-background)
-

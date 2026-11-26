@@ -12,15 +12,15 @@ Bind Client 仅在本机监听，不预置 Server Web 地址。Server 完成 `in
 
 Client 的 Server Web API 统一由 `client/http/client_api.py` 提供方法，`client/http/server_endpoint.py` 根据本次会话解析 Base URL。独立的 Script、Job、Watchdog 进程通过原子更新的本机运行态快照读取同一地址；Client 断开连接后撤销本次快照。该地址不写回持久的 Agent Profile，也不修改 Reverse 的既有配置。
 
-## Python Client Bind TCP
+## Bind 连接
 
-Connections 设备栏统一展示实时会话、离线 Reverse 最近设备和持久 Bind 连接目标。Reverse 在线按 Client Session 显示，离线按机器去重；Bind 按保存的 Host/Port 目标独立保留，断线后若存在最近一次 Client 会话，可点击查看该会话的历史内容；尚未建立过会话的保存目标点击时提示 `Connect first`。可右键手动 Connect、编辑目标；离线时可使用 Remove Connection 删除保存目标，不会自动拨号。保存目标的显示名优先于机器别名和主机名。首次手动 Connect 成功会保存该目标，也可先保存目标再连接。设备栏恢复原有 Listener Tag：Reverse 显示 Listener 名称和原有灰色样式，Bind 显示 `Bind` 并使用蓝色边框和文字；TLS 项显示锁图标。操作系统信息缺失时显示 `-`；设备列表使用细窄、透明轨道的低对比度滚动条。
+Connections 设备栏统一展示实时会话、离线 Reverse 最近设备和持久 Bind 连接目标。Reverse 在线按 Client Session 显示，离线按机器去重；Bind 按保存的 Host/Port 目标独立保留，断线后若存在最近一次 Client 会话，可点击查看该会话的历史内容；尚未建立过会话的保存目标点击时提示 `Connect first`。可右键手动 Connect、编辑目标；离线时可使用 Remove Connection 删除保存目标，不会自动拨号。保存目标的显示名优先于机器别名和主机名。首次手动 Connect 成功会保存该目标，也可先保存目标再连接。设备栏的 Listener Tag：Reverse 显示 Listener 名称，Bind 显示 `Bind` 并使用蓝色边框和文字；mTLS 项显示锁图标。操作系统信息缺失时显示 `-`；设备列表使用细窄、透明轨道的低对比度滚动条。
 
-源码 Client 默认 `connection_mode=reverse`；构建后的 Bundle 无参数启动使用构建时选定的 Reverse 或 Bind 默认配置。也可在启动时使用 `--connection-mode bind` / `--connection-mode reverse` 覆盖默认模式，或用 `--profile bind` 选择源码 Profile。Bind 模式：Client 在配置的 `bind_host:bind_port` 监听，Server 从设备栏 **More → Connect to Client** 填写目标地址和端口主动连接。默认 profile 监听 `0.0.0.0:9443`，本轮使用普通 TCP。 同一 Host/Port 已存在活动 Bind 会话时，Connect API 返回 `already_connected` 和原 Client ID，前端提示 `Client already connected`，不会额外发起连接；首次连接成功时返回 `connected`。
+源码 Client 默认 `connection_mode=reverse`；构建后的 Bundle 无参数启动使用构建时选定的 Reverse 或 Bind 默认配置。也可在启动时使用 `--connection-mode bind` / `--connection-mode reverse` 覆盖默认模式，或用 `--profile bind` 选择源码 Profile。Bind 模式：Client 在配置的 `bind_host:bind_port` 监听，Server 从设备栏 **More → Connect to Client** 填写目标地址和端口主动连接。默认 Bind Profile 监听 `0.0.0.0:9443`，使用 TCP；mTLS Profile 需要先安装 Identity。 同一 Host/Port 已存在活动 Bind 会话时，Connect API 返回 `already_connected` 和原 Client ID，前端提示 `Client already connected`，不会额外发起连接；首次连接成功时返回 `connected`。
 
-TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。Server 主动断开前为当前 Session 记录 `server_requested_disconnect`，随后关闭会话 Socket；Connection History 将本次主动断开归类为 Server requested disconnect。Server 主动断开后立即再次连接同一目标时，会短暂重试以等待旧会话释放。设备菜单按连接方向提供操作：Bind 的 **Disconnect** 关闭会话并保留监听进程，**Reconnect** 在旧会话清理完毕后重新拨号到当前会话的原地址，保留保存目标；两种方向的 **Kill Instance** 均使用独立 Session 结束控制终止 Client 进程。Reverse 另提供 **Duplicate Instance** 和 **Restart Instance**。Terminal Toolbar 的 Disconnect 保留原有方向相关行为。`pause_connection` 暂停接入，本地 Resume 恢复监听。
+TCP 接通后由 Client 发出第一条 `info`，复用原 RCH 帧、会话、心跳、命令、PTY 和 Transfer 控制。Client 监听 Socket 属于进程；每次接入 Socket 属于一个会话。单实例同时保留一条会话，断线后释放占用并继续监听，Server 通过设备栏再次连接即可使用同一个 Client PID 和 ID。Server 主动断开前为当前 Session 记录 `server_requested_disconnect`，随后关闭会话 Socket；Connection History 将本次主动断开归类为 Server requested disconnect。Server 主动断开后立即再次连接同一目标时，会短暂重试以等待旧会话释放。设备菜单按连接方向提供操作：Bind 的 **Disconnect** 关闭会话并保留监听进程，**Reconnect** 在旧会话清理完毕后重新拨号到当前会话的原地址，保留保存目标；两种方向的 **Kill Instance** 均使用独立 Session 结束控制终止 Client 进程。Reverse 另提供 **Duplicate Instance** 和 **Restart Instance**。Terminal Toolbar 的 Disconnect 按连接方向执行。`pause_connection` 暂停接入，本地 Resume 恢复监听。
 
-监听端口暂时被占用时，Client 按现有连接恢复间隔重试创建监听 Socket；端口释放后恢复监听，无需重新启动进程。固定监听端口的更新由 Client Update 负责进程交接。Bind 不支持 Duplicate Instance 和 Restart Instance；`spawn_instance`、`spawn_elevated_instance`、`relaunch_instance` 返回明确提示。部署与操作见 [Server Runtime — Bind TCP](server_runtime.md#bind-tcp-主动连接)。
+Bind 监听启动失败（包括端口占用或 Identity 配置错误）会结束启动；修正原因后重新启动 Client。固定端口的版本更新由 Client Update 负责交接。Bind 不提供 Duplicate Instance 和 Restart Instance。部署见 [Server Runtime — Bind 主动连接](server_runtime.md#bind-主动连接)。
 
 ## Python Client 的主动连接暂停
 
@@ -32,7 +32,7 @@ Server HTTP Control 已支持向原 `client_id` 投递 `resume`：独立 Watchdo
 
 ## 异常断线后的重连
 
-Python Client 的主连接因 Socket 关闭、传输错误或接收超时而意外中断时，先等待 `RECONNECT_INTERVAL_SECONDS`（默认 5 秒），再清理旧连接并重新拨号。后续拨号或握手失败仍按该间隔继续重试；这样端口可建立 TCP 连接、但对方拒绝应用协议（例如明文 TCP 误连 TLS Listener）时也不会高速反复拨号。手动 `pause_connection` 不自动重连。
+Reverse Python / Go Client 遇到网络中断或暂时连接失败时按指数退避重新拨号，初始和最大间隔由 `RECONNECT_BACKOFF_MIN_SECONDS`（默认 5 秒）与 `RECONNECT_BACKOFF_MAX_SECONDS`（默认 30 秒）设置。成功取得 Session Token 后重置退避；明确的身份验证或配置错误会停止重试，修正后重新启动。Bind 在正常断线后继续监听。Python Client 的主动 Pause 不自动恢复连接。
 
 ### Client 工作目录失效
 
@@ -310,39 +310,27 @@ ORDER BY connected_at_ms DESC LIMIT 12;
 
 ## 运行参数与调整位置
 
-连接维护的参数散布在实际负责该行为的层次中。修改时应先明确目标是心跳发送速率、判定阈值、Web 刷新频率，还是 Client 断线重连；这些不是一个统一的配置值。
+| 参数 | 默认值 | 调整方式 |
+|---|---|---|
+| `RCH_SOCKET_PORT` | 9999 | Server 启动环境；其他 Listener 在 Web 管理 |
+| Server Heartbeat Interval | 30 秒 | Server 配置 |
+| Server Stale Threshold | 45 秒 | Server 连接状态策略 |
+| `RECONNECT_BACKOFF_MIN_SECONDS` | 5 秒 | Client Configuration / `config` |
+| `RECONNECT_BACKOFF_MAX_SECONDS` | 30 秒 | Client Configuration / `config` |
+| `SERVER_INBOUND_TIMEOUT_SECONDS` | 120 秒 | Client Configuration / `config`；0 禁用入站空闲检测 |
 
-| 要调整的行为 | 当前值 | 修改位置与生效方式 |
-| --- | --- | --- |
-| Server TCP Socket 监听端口 | `9999` | 启动前设置环境变量 `RCH_SOCKET_PORT`，由 `backend/server/config/config.py` 读取；Client 连接地址必须同步修改，重启 Server 后生效 |
-| Server 心跳发送周期 | `30` 秒 | `backend/server/config/config.py` 的 `HEARTBEAT_INTERVAL_SECONDS`；修改代码后重启 Server |
-| Server 设备 Stale 阈值 | `45` 秒 | `backend/server/application/connection/connection_service.py` 的 `WebConnectionService.STALE_AFTER_SECONDS`；修改代码后重启 Server，Web 通常读取 Server 返回的阈值 |
-| Web 设备状态重算频率 | `30` 秒 | `frontend/src/App.vue` 的 `statusTickTimer`，修改前端并重新加载相应构建 |
-| Web 缺少阈值时的回退值 | `45` 秒 | `frontend/src/composables/useConnections.js` 等连接展示逻辑；正常请求优先使用服务端返回值 |
-| Python Client 重连等待 | `5` 秒 | `backend/client/config/runtime_config.py` 的 `RECONNECT_INTERVAL_SECONDS`，支持通过 Client Runtime Config 的 `set` 命令覆盖 |
-| Python Client 入站消息空闲超时 | `120` 秒 | `backend/client/config/runtime_config.py` 的 `SERVER_INBOUND_TIMEOUT_SECONDS`，可通过 `set` 调整；`0` 禁用 Client 主动入站空闲超时 |
-| Go Client 拨号失败等待 | `5` 秒 | `backend/client-go/connection/client.go` 中的重试循环，需重建并部署 Go Client |
+重连退避与 Server 心跳独立，最小值须为正整数且不大于最大值。修改 Client 配置影响下一次退避计算；详见 [Runtime Configuration](config.md)。Server 心跳与 Stale 阈值应保持合理的时间预算。
 
-例如，在目标 Python Client 的命令上下文中运行：
-
-```text
-config set RECONNECT_INTERVAL_SECONDS 8
-```
-
-会通过 Runtime Config 保存覆盖值，并尝试同步更新正在运行的 `Client.RECONNECT_INTERVAL`。查询 `set` 可以看到配置来源；`config reset RECONNECT_INTERVAL_SECONDS` 恢复默认值。这一 Client 设置**不是 Server 心跳发送周期**，也不会更改 Server 的 45 秒 Stale 阈值。
-
-对于进入后台后可能长时间挂起的 iOS Client，可以在该 Client 上执行 `config set SERVER_INBOUND_TIMEOUT_SECONDS 0`，避免仅因挂起期间未处理 Server 消息而主动重连。此配置会写入该设备的 `runtime_config.json`；需要恢复默认检测时运行 `config reset SERVER_INBOUND_TIMEOUT_SECONDS`。Socket 断开和接收异常仍沿用原有重连逻辑。
-
-服务器的 Heartbeat Interval 和 Stale Threshold 当前是代码常量，并没有对应的可直接修改的 Server 环境变量。不能假设设置一个同名环境变量就会生效。调整它们时宜保持一致的时间预算：如果心跳间隔远大于 Stale 阈值，即使正常设备也可能周期性出现 Stale。
+对于可能在后台挂起的 iOS Client，可按实际需要通过 `config set SERVER_INBOUND_TIMEOUT_SECONDS 0` 禁用入站空闲检测；`config reset SERVER_INBOUND_TIMEOUT_SECONDS` 恢复默认。
 
 ## 运行状态的判读与排查
 
 看到某台机器显示 Stale，第一步应查看 `last_seen_at` 与 `last_heartbeat_ack_at` 是否停滞、TCP Session 是否尚在、`last_heartbeat_sent_at` 是否仍推进。Server 持续发送而 ACK 不更新，通常意味着消息无法及时往返或 Client 处理链路出现问题；只有传输层确认关闭才会进入正常的断开清理流程。不要仅通过延迟变长判断 Client 已断开。
 
-当 RTT 为空时，先确认 Client 是否返回可解析的 `server_ts`；Go Client 的当前 ACK 格式本身就不会提供该字段。RTT 数值长期不变时，同时检查最后 ACK 时间，避免把旧值误当成最新响应。如果 Server 仍记录 Online，而浏览器已经显示 Stale，还应检查浏览器时间、最后一次 WebSocket 更新、`statusNowTick` 刷新和展示覆盖条件。Server 时间以无时区偏移的 ISO 字符串序列化，跨时区浏览器的 `Date.parse()` 可能带来时间差偏差；不能把这种环境问题简单归因为设备断线。
+当 RTT 为空时，先确认 Client 是否返回可解析的 `server_ts`；Python 和 Go 均回传 Server 时间戳。RTT 数值长期不变时，同时检查最后 ACK 时间，避免把旧值误当成最新响应。如果 Server 仍记录 Online，而浏览器已经显示 Stale，还应检查浏览器时间、最后一次 WebSocket 更新、设备状态刷新。Server 时间以无时区偏移的 ISO 字符串序列化，跨时区浏览器的 `Date.parse()` 可能带来时间差偏差；不能把这种环境问题简单归因为设备断线。
 
 如果设备已经 Offline 但仍留在列表，应查看它是否来自 Recent Device 缓存。若历史出现 Interrupted，应检查历史会话的恢复核对，而不是寻找所谓第四种实时连接状态。
 
 最后，下面两种看起来也叫 Heartbeat 的机制与这里的 TCP Socket 心跳不同：
 
-**Watchdog** 依靠 Client 本地心跳文件或独立 HTTP 控制链来监视和管理 Client 主进程，使用自己的周期与超时，不计算设备列表的 Socket RTT；详见 [Watchdog](watchdog.md)。**WebSocket Ping** 用于浏览器与 Server 之间的 WebSocket 流保活，不能替代 Client 的 TCP ACK；详见 [WebSocket Notifications](sse_notifications.md)。连接相关的执行记录和历史命令属于另外的数据模型，详见 [Command History](command_history.md)。
+**Watchdog** 依靠 Client 本地心跳文件或独立 HTTP 控制链来监视和管理 Client 主进程，使用自己的周期与超时，不计算设备列表的 Socket RTT；详见 [Watchdog](watchdog.md)。**WebSocket Ping** 用于浏览器与 Server 之间的 WebSocket 流保活，不能替代 Client 的 TCP ACK；详见 [WebSocket Notifications](websocket_notifications.md)。连接相关的执行记录和历史命令属于另外的数据模型，详见 [Command History](command_history.md)。

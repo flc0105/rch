@@ -1,6 +1,6 @@
 # Device Monitor：远程监控会话与实时视图
 
-Device Monitor 用于在用户打开监控界面时，按需从指定 Client 采集系统或进程状态，并持续将结果送到当前浏览器。它以 **Monitor Session** 为工作单位：Server 建立会话并绑定设备与浏览器标签页，Client 在独立工作线程中采样，Server 再通过定向 SSE 推送 Snapshot。监控过程不占用普通命令的 Foreground Command Slot，也不要求前端反复执行 Shell-like 命令。
+Device Monitor 用于在用户打开监控界面时，按需从指定 Client 采集系统或进程状态，并持续将结果送到当前浏览器。它以 **Monitor Session** 为工作单位：Server 建立会话并绑定设备与浏览器标签页，Client 在独立工作线程中采样，Server 再通过定向 WebSocket 推送 Snapshot。监控过程不占用普通命令的 Foreground Command Slot，也不要求前端反复执行 Shell-like 命令。
 
 当 Client 明确声明 `feature_manifest.device_monitor=false`，Dashboard 显示不支持提示，不启动 Monitor Session，也不展示空白指标；监控会话上报错误时，Dashboard 显示原始错误信息并隐藏尚未取得数据的指标。Go Client 当前不提供 Device Monitor，Python Client 仍按其 Monitor Session 实现工作。
 
@@ -21,7 +21,7 @@ Client Monitor Manager ── Session 采样线程 ── psutil / 平台能力
        │  Client Socket：monitor_opened / monitor_snapshot / monitor_error / monitor_closed
        ▼
 Server WebEventBus
-       │  SSE：device_monitor_snapshot / device_monitor_status（定向 tab_id）
+       │  WebSocket：device_monitor_snapshot / device_monitor_status（定向 tab_id）
        ▼
 当前浏览器中的对应监控组件
 ```
@@ -45,7 +45,7 @@ Session 信息由 Server 和 Client 分别保存在内存中。Monitor Session �
 iOS Dashboard 的状态徽标使用 Monitor Open 返回的 `intervals.ios_dashboard` 展示实际采样周期，刷新时间由最近一次 Snapshot 的 `collected_at` 计算；默认采样间隔为 5 秒。
 
 
-一次 Snapshot 的主要字段包括会话 ID、采集 Channel、递增的 `seq`、结构化的 `data` 和 `collected_at`（Unix 秒级时间戳）。Server 在转发时补充 `client_id` 和事件时间，将其包装成 `device_monitor_snapshot` SSE：
+一次 Snapshot 的主要字段包括会话 ID、采集 Channel、递增的 `seq`、结构化的 `data` 和 `collected_at`（Unix 秒级时间戳）。Server 在转发时补充 `client_id` 和事件时间，将其包装成 `device_monitor_snapshot` WebSocket：
 
 ```json
 {
@@ -65,7 +65,7 @@ iOS Dashboard 的状态徽标使用 Monitor Open 返回的 `intervals.ios_dashbo
 }
 ```
 
-`seq` 在 **单个 Session** 内递增，不是全项目的全局序号。`collected_at` 记录 Client 采样时间，不代表浏览器收到数据的时间。Server 仅在会话存在且 Channel 合法时转发，并通过 `target_tab_id` 指定 SSE 接收方。打开、关闭和失败则产生 `device_monitor_status`，带有 `state` 与会话基本信息；页面不能把 Snapshot 流和状态流当作同一种数据。
+`seq` 在 **单个 Session** 内递增，不是全项目的全局序号。`collected_at` 记录 Client 采样时间，不代表浏览器收到数据的时间。Server 仅在会话存在且 Channel 合法时转发，并通过 `target_tab_id` 指定 WebSocket 接收方。打开、关闭和失败则产生 `device_monitor_status`，带有 `state` 与会话基本信息；页面不能把 Snapshot 流和状态流当作同一种数据。
 
 ### 采样周期与实际到达时间
 
@@ -107,7 +107,7 @@ Dashboard 将变化速度不同的数据拆到不同 Channel，使用的配置�
 
 iOS Collector 只在采样时导入 Pythonista 的 `objc_util`，从 `NSProcessInfo`、`UIDevice`、`UIScreen` 和 `AVAudioSession` 读取 CPU 核心数、总内存、运行时长、电池、低电量模式、温控状态、屏幕和音频输出／音量。通过 Darwin Mach `host_statistics(HOST_VM_INFO)` 取得系统内存页面计数，以 `total - (free + inactive)` 计算占用量和百分比，并读取 Pythonista 进程的驻留内存。存储容量使用 Pythonista Documents 所在 iOS Data Volume 的 Important Usage 可用容量及总容量，路由 IP 与部分 IPv4 接口来自 socket / Darwin `getifaddrs`。该 Channel 不导入 `psutil`；采集时不可读取的值会以空值呈现。
 
-iOS 存储卡片使用十进制 GB，与 iOS 设置中的容量单位相同。iOS 视图采用独立卡片布局，展示电池、系统内存进度、剩余存储、运行时长、硬件（含温控）、单独的显示信息、网络、音频及媒体库数量。照片、歌曲与联系人的计数只读取当前授权范围，不返回具体清单；单项失败时显示空值。计数每 120 秒更新一次，其余设备指标保持每 5 秒采样。设备名称、型号和 OS 版本等已经存在于 Basic Info 的静态字段不再重复显示为 Dashboard 指标。该视图复用 Monitor 的生命周期与 SSE 协议，不引入独立的 HTTP 路由。
+iOS 存储卡片使用十进制 GB，与 iOS 设置中的容量单位相同。iOS 视图采用独立卡片布局，展示电池、系统内存进度、剩余存储、运行时长、硬件（含温控）、单独的显示信息、网络、音频及媒体库数量。照片、歌曲与联系人的计数只读取当前授权范围，不返回具体清单；单项失败时显示空值。计数每 120 秒更新一次，其余设备指标保持每 5 秒采样。设备名称、型号和 OS 版本等已经存在于 Basic Info 的静态字段不再重复显示为 Dashboard 指标。该视图复用 Monitor 的生命周期与 WebSocket 协议，不引入独立的 HTTP 路由。
 
 ## 4. Process Manager：进程、图形应用与详情
 
@@ -139,7 +139,7 @@ Processes 和 Apps 都可以通过界面执行 Terminate，但这不是向 Monit
 
 ## 5. 为新监控视图接入相同机制
 
-新视图不需要自行轮询某条 Shell 命令。它只需要创建 Session、记录服务端返回的 ID、订阅通用 SSE 事件，并在必要时配置或关闭会话。以下接口工作在基础 Web/API 服务上，**不是** 8086 文件传输接口：
+新视图不需要自行轮询某条 Shell 命令。它只需要创建 Session、记录服务端返回的 ID、订阅通用 WebSocket 事件，并在必要时配置或关闭会话。以下接口工作在基础 Web/API 服务上，**不是** 8086 文件传输接口：
 
 | 方法 | 地址 | 语义 |
 |---|---|---|

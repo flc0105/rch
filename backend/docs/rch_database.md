@@ -43,7 +43,7 @@ Server 使用 API / Service / Store（或 Catalog）分层。API 负责请求和
 | Background Jobs | `background_jobs`、`background_job_messages`、`background_job_files` | Job 实例状态、输出消息、生成文件的引用 |
 | Artifact Manager → Saved / Shared Files | `artifact_entries`、`artifact_folders` | 文件索引、九种 Saved 分类及 Shared 逻辑目录；文件字节保留在磁盘 |
 | Agent Outputs | `agent_outputs` | 构建记录、构建时 Listener 快照、平台与连接信息；二进制构建产物保留在磁盘 |
-| **旧执行记录结构** | `command_executions` | 当前仍可能存在，但**不是现行 Activity Center 的读取来源** |
+| 保留的数据库结构 | `command_executions` | 基础 Schema 中的保留表；Activity Center 使用 `activity_records` |
 
 以下每组“字段”列举的均为实际数据库列。**主键（PK）**决定记录唯一性；“引用”是业务关联，不一定存在数据库外键约束。
 
@@ -57,20 +57,14 @@ Bind 连接在 Server 手动连接成功后按 Host/Port 保存一条记录，�
 | --- | --- |
 | `target_id` | 目标的稳定主键，独立于 `machine_id`、`client_id` |
 | `host`、`port` | 连接的目标地址和端口，两者组合唯一（Host 不区分大小写） |
+| `transport` | `tcp` 或 `mtls_tcp`，用于建立及重新连接目标 |
 | `server_web_base_url` | Bind 连接时提供给 Client 的 Server Web origin |
 | `name` | 用户保存的目标显示名，设备栏优先于机器别名和主机名显示 |
 | `last_client_id` | 最近一次成功连接的 Client ID，离线时可选中原会话并查看历史 |
 | `machine_id`、`hostname`、`os_type`、`os_ver`、`integrity` | 最近一次连接成功后的设备信息快照；首次保存时可为空 |
 | `last_seen_at`、`created_at`、`updated_at` | 连接成功时间、创建时间及最近修改时间 |
 
-Schema 初始化在现有规范数据库中事务化补齐该表或其新增的 `last_client_id` 列，保留已保存的连接目标和其他业务记录，不创建独立版本管理字段。可以在停止 Server 后显式运行带备份的迁移命令：
-
-```bash
-cd backend
-python3 -m server.persistence.migrate_saved_bind_targets runtime/rch.db
-```
-
-命令会在同目录建立 `rch.db.before-bind-targets.bak`（文件存在时拒绝覆盖），使用 SQLite Backup API 保存 WAL 一致性快照，然后验证 Schema 和数据库完整性。若自定义了 `RCH_SERVER_RUNTIME_DIR`，应改为该目录中的实际 `rch.db`。不需要把保存目标塞进 `settings` 命名空间。
+数据库初始化和验证由统一持久化层负责。备份与恢复见本文相关章节。
 
 ## Transfer Center 传输历史表
 
@@ -234,24 +228,9 @@ python3 -m server.persistence.migrate_saved_bind_targets runtime/rch.db
 
 **与 Quick History 的关系：** 两者有不同的写入时机和记录规则。删除 Activity 不删除 Quick Recent 或 Pins；清除 Quick Recent 也不删除 Activity。实际录入范围、输出长度限制、敏感信息边界见 [Command History](command_history.md)。
 
-### `command_executions` — 保留的旧执行结构
+### `command_executions` — Schema 保留表
 
-**前台对应：当前没有直接对应的活动列表。** 这是基础数据库结构里仍然存在的旧命令执行表，但现行 Activity Center 已改用 `activity_records`；不能因为看到 `command_executions` 就认为其中的数据会显示在 Activity Center，也不能把它当成后者的备份。
-
-| 字段 | 含义 |
-| --- | --- |
-| `entry_id`（PK） | 旧执行记录标识。 |
-| `machine_id`、`client_id` | 记录归属的设备和 Client。 |
-| `hostname`、`addr` | 当时的主机与连接地址信息。 |
-| `command`、`raw_command` | 命令文本与原始命令文本。 |
-| `source`、`status` | 来源与记录状态。 |
-| `created_at`、`started_at`、`started_at_ms`、`updated_at`、`finished_at` | 旧记录中的生命周期时间。 |
-| `cwd_start`、`cwd_end` | 执行前后的工作目录。 |
-| `output_line_count`、`output_chunk_count`、`output_char_count`、`output_truncated` | 输出统计与是否截断。 |
-| `output_records_json` | 旧执行输出的 JSON 记录。 |
-| `files_json` | 旧执行关联的文件引用。 |
-
-它目前仍由基础数据库结构保留，但**不是当前 Web History 的读写主路径**。本文仅说明现状，不把它描述成可通过当前 UI 管理的新功能。
+该表属于当前基础 Schema 的保留结构。Activity Center 的执行记录以 `activity_records` 为准。
 
 ## 通知与界面偏好
 
@@ -290,7 +269,7 @@ python3 -m server.persistence.migrate_saved_bind_targets runtime/rch.db
 
 连接上下文字段与工具栏 Action 的完整目录均由前端统一管理；Server 只对设置对象结构和字段 ID 格式进行校验并持久化，不另行维护一份可选项名单。浏览器内的偏好更新通过统一状态入口同步给 Settings、Toolbar 与 Terminal Connection Context。
 
-这里的设置由 Server 共享，不按 `machine_id` 建独立行。`toolbox_shortcuts` 是快捷入口引用，并不保存 Script 正文或 Alias 定义。`notifications` 保存的是**实际通知历史**，`notification_preferences` 仅决定通知投递偏好；详见 [Toolbox](toolbar_toolbox.md) 和 [SSE Notifications](sse_notifications.md)。浏览器自己的临时选中状态或交互状态，不一定存入 `rch.db`。
+这里的设置由 Server 共享，不按 `machine_id` 建独立行。`toolbox_shortcuts` 是快捷入口引用，并不保存 Script 正文或 Alias 定义。`notifications` 保存的是**实际通知历史**，`notification_preferences` 仅决定通知投递偏好；详见 [Toolbox](toolbar_toolbox.md) 和 [WebSocket Notifications](websocket_notifications.md)。浏览器自己的临时选中状态或交互状态，不一定存入 `rch.db`。
 
 ## Remote Files 与 External Tools
 

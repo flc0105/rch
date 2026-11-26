@@ -294,7 +294,7 @@ FFmpeg Package 的 `ffmpeg.screen-record` 是 Daemon Module，用现有 Start / 
 
 录像默认保存为该 Daemon 实例运行目录中的 `recording.mp4`；可通过 Module 的 **Output Filename** 参数指定文件名（例如 `recording-02.mp4`）。同一实例重复录制时应先填写一个未使用过的文件名，不必重建实例；使用普通文件名，不填写路径分隔符。External Tools 的文本参数可填写 `${rch:timestamp}` 等 Client 变量；Server 生成执行参数后，由目标 Client 在执行前展开，并支持 `${env:*}`、`${path:*}`、`${var:*}`。`stdout.log` 记录 FFmpeg 日志。命令使用 `-n`，已有录像时不会静默覆盖；Stop 后**不**自动上传录像，实例文件也不会自动删除。Remove Instance 会删除实例目录，**因此包含其中的录像**，应在删除前自行转存或上传。
 
-停止通过现有 Daemon `lifecycle.stop` 发出 `INT`，等待最多 15 秒后可能强制终止。在 macOS/POSIX 上 FFmpeg 可以处理 SIGINT 并结束封装；Windows 当前的分离进程实现尚不支持可靠的 FFmpeg graceful stop，Stop 可能直接结束进程。录像采用 fragmented MP4（`frag_keyframe+empty_moov+default_base_moof`），提高意外中断后的解码机会，但不保证完整尾帧，也可能与部分播放器不兼容。这**不是**已完成的 Windows 优雅停止方案，录制结束后应核实实际文件可播放。
+停止通过现有 Daemon `lifecycle.stop` 发出 `INT`，等待最多 15 秒后可能强制终止。在 macOS/POSIX 上 FFmpeg 可以处理 SIGINT 并结束封装；Windows 当前的分离进程实现尚不支持可靠的 FFmpeg graceful stop，Stop 可能直接结束进程。录像采用 fragmented MP4（`frag_keyframe+empty_moov+default_base_moof`），提高意外中断后的解码机会，但不保证完整尾帧，也可能与部分播放器不兼容。Windows 录制结束后应核实实际文件可播放。
 
 长时间录制会持续占用磁盘；远程断线不会自动停止已启动的 Daemon。需要稳定的 Windows 优雅停止与自动上传时，应扩展 External Tools 的受控停止、完成状态/文件交付契约，不宜通过 Oneshot 超时或不受控的强制结束伪装实现。
 
@@ -316,7 +316,7 @@ FFmpeg Package 的 `ffmpeg.screen-record` 是 Daemon Module，用现有 Start / 
 }
 ```
 
-这里的数字与输出是结构示例，并非本次运行记录。退出码为 0 且没有超时才算成功；非 0 或超时标记失败。超时以 `runtime.timeout_sec` 等显式设置为准，未声明时请求构建使用 60 秒默认值；Web 会等进程结束再弹出结果，不会把它列为一个可 Start/Stop 的常驻实例。
+退出码为 0 且没有超时才算成功；非 0 或超时标记失败。超时以 `runtime.timeout_sec` 等显式设置为准，未声明时请求构建使用 60 秒默认值；Web 会等进程结束再弹出结果，不会把它列为一个可 Start/Stop 的常驻实例。
 
 Oneshot 的 `run_id` 可用于确定本次请求的运行上下文，但不要与 Daemon 的 `instance_id` 混淆；常规 Oneshot 返回 `stdout` / `stderr`，并未按 Daemon 模式建立可供 Instances 页独立管理的运行记录。
 
@@ -488,7 +488,7 @@ Daemon 默认将 stdout 写入 `stdout.log`，stderr 可配置为合并到 stdou
 
 单次增量日志读取设置了大小上限（最多约 256 KiB），不会一次性把完整日志全部加载到浏览器。Streaming 开关是前端轮询该增量接口，并不是让目标进程改用 WebSocket 推送每一行日志。
 
-Server 会在安装成功/失败、卸载成功/失败，以及 Daemon 启动、停止或发生相关错误时发布 External Tool 生命周期事件。这些事件可进入 SSE 通知与通知中心；Oneshot 的执行结果主要由本次运行请求返回并展示在结果弹窗中。Manager 会合并同时到来的完整刷新请求；同一浏览器标签页中，针对同一 Client 的安装状态、实例列表查询依次提交。查询恰好碰到其他标签页或生命周期操作占用 Client 前台执行槽时，仅对这些只读查询做有限等待与重试；启动、停止、安装等操作仍按单次请求执行。生命周期通知说明执行路径的结果，服务端口和业务健康需另行检查。
+Server 会在安装成功/失败、卸载成功/失败，以及 Daemon 启动、停止或发生相关错误时发布 External Tool 生命周期事件。这些事件可进入 WebSocket 事件与 Notification Center；Oneshot 的执行结果主要由本次运行请求返回并展示在结果弹窗中。Manager 会合并同时到来的完整刷新请求；同一浏览器标签页中，针对同一 Client 的安装状态、实例列表查询依次提交。查询恰好碰到其他标签页或生命周期操作占用 Client 前台执行槽时，仅对这些只读查询做有限等待与重试；启动、停止、安装等操作仍按单次请求执行。生命周期通知说明执行路径的结果，服务端口和业务健康需另行检查。
 
 ## 部署一致性及异常恢复
 
@@ -533,7 +533,7 @@ Client's operation result is checked again before reporting success.
 State-changing `xt` operations publish the existing `external_tool_lifecycle`
 events only after a Client mutation has been dispatched. Invalid syntax, missing
 arguments, invalid parameters and preflight no-op rejections are ordinary CLI
-errors and do not generate lifecycle notifications. Notification Center persists the corresponding events, and SSE/Desktop
+errors and do not generate lifecycle notifications. Notification Center persists the corresponding events, and WebSocket
 notification delivery uses the existing per-event notification preferences.
 Instance creation adds the `external_tool_daemon_created` preference; queries
 (`list`, `status`, `logs`) do not generate lifecycle notifications.
@@ -545,7 +545,7 @@ the log reader exits and the daemon instance continues running.
 
 ## XT 列表的终端布局
 
-`xt exec list`、`xt package list`、`xt module list` 和 `xt instance list` 默认每行输出一个标识。Instance 使用 `module_id/instance_id` 区分不同模块的同名实例。`--format table` 显示原完整表格，`--format records` 显示纵向记录，`--format table` 显示横向表格，`--format json` / `--json` 输出原有结构化字段与布尔值。所有列表共用现有 Server Builtin Spec 和 Core Renderer，平台过滤、安装状态与生命周期不改变。
+`xt exec list`、`xt package list`、`xt module list` 和 `xt instance list` 默认每行输出一个标识。Instance 使用 `module_id/instance_id` 区分不同模块的同名实例。`--format records` 显示纵向记录，`--format table` 显示横向表格，`--format json` / `--json` 输出原有结构化字段与布尔值。所有列表共用现有 Server Builtin Spec 和 Core Renderer，平台过滤、安装状态与生命周期不改变。
 
 ## 可选的专用 TCP Port Tunnel
 

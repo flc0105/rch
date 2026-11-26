@@ -107,7 +107,7 @@ Web 会在设备列表对 `outdated` 的在线设备显示更新标记，并在�
 
 当前 Launch Context 确认 Client 属于真实运行中的 LaunchAgent / LaunchDaemon 后，Update 通过该 job 本身执行一次性交接。首次接管时将原 plist 的启动命令改成位于共享 Bundle 根目录的固定 Launcher，同时保留其他 job 配置；后续更新只修改**该 job 专属的版本指向**，不再重写 plist。由 launchd 启动候选，Reverse 以 Session Token 验收，Bind 以监听成功验收；失败时恢复旧入口并重新启动服务。单独启动的普通进程不会使用这个 Launcher。
 
-Linux systemd 和 Windows Service / Task Scheduler 的自动服务交接本阶段不支持，Update 在构建前明确返回错误。其他 Windows/Linux 普通进程仍支持自动更新。
+Linux systemd 和 Windows Service / Task Scheduler 的自动服务交接不受支持，Update 在构建前明确返回错误。其他 Windows/Linux 普通进程仍支持自动更新。
 
 ### iOS / Pythonista
 
@@ -142,7 +142,7 @@ Reverse 的 `Updated` 表示新进程已取得 Server Session Token 并通过存
 **默认全选**；用户可以取消任意类别。`clean --no-confirm` 不使用 Interaction
 Broker，直接执行同一套清理扫描计划，供纯 CLI 调用。现有清理类别及新增的临时残留类别继续完整扫描，
 命令输出逐项列出每个类别、检查过的目录、候选路径及跳过项；空类别也会输出
-`(empty)`，而不是只显示 `Nothing to clean`。旧版清理后移除空临时目录的行为保留。
+`(empty)`，而不是只显示 `Nothing to clean`。清理后移除空临时目录。
 
 Release 清理不再要求 Client 从默认 Bundle 路径启动：如果当前不在
 `releases/` 目录下，清理其中全部非保护子目录；如果正从某个 Release
@@ -181,7 +181,7 @@ Agent Output 或其他构建产物。删除不可恢复，应在批准 Preview �
 
 遇到更新提示没有出现时，先确认目标设备当前是否真正 Online、Client 是否提交了 `client_revision`、是否在源码模式下尚未重启，以及 Server 当前是否运行在预期的源码目录。若整体 Revision 不同却没有逐文件差异，检查握手中是否提供了 `client_revision_files`。这些诊断信息都依赖当前连接快照，而不是历史设备缓存。
 
-更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对其配置的 Web 地址及端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 TCP/TLS 连接地址可达。安装验证需要同时检查 HTTP 下载端口与 Client 的 TCP Socket 连接端口。Update Bundle 沿用 Client 配置的连接地址、端口和 Web 地址；FRP/NAT 转发后的访问端口不需要与 Server 本地监听端口一致。TCP Update 不要求匹配唯一 Listener；TLS/TCP Update 仍需匹配 Server 的证书指纹。
+更新失败可按请求构建、下载、解压、启动与交接的实际阶段定位：构建依赖 Server 的构建能力与源码文件；下载依赖目标 Client 对其配置的 Web 地址及端口的访问；新 Release 启动还依赖目标系统的 Python 解释器、所需第三方依赖及 TCP 或 mTLS/TCP 连接地址可达。安装验证需要同时检查 HTTP 下载端口与 Client 的 TCP Socket 连接端口。Update Bundle 沿用 Client 配置的连接地址、端口和 Web 地址；FRP/NAT 转发后的访问端口不需要与 Server 本地监听端口一致。TCP Update 不要求匹配唯一 Listener；TLS/TCP Update 仍需匹配 Server 的证书指纹。
 
 Reverse 的注册超时、Bind 的监听失败和交接超时均有明确错误状态。新版启动健康检查覆盖交接时刻；长时间运行期间的连接波动仍由 Client 原有生命周期处理。
 

@@ -13,7 +13,7 @@ RCH 的 Server 与 Client 都保留原有的控制台日志输出，同时尝试
 | 日志位置 | `<Server Runtime>/server.log` |
 | 轮转方式 | 单个文件约 10 MiB 时按大小轮转 |
 | 保留数量 | 当前文件 + 最多 5 个备份（`.1` ～ `.5`） |
-| 记录范围 | 项目 Python Logging、Uvicorn 服务和 HTTP Access Log，以及正常传递到统一日志系统的其他记录 |
+| 记录范围 | 项目 Python Logging、Flask/Werkzeug HTTP 服务与 WebSocket 服务日志，以及正常传递到统一日志系统的其他记录 |
 | 启动失败处理 | 无法创建或打开 Server 日志文件时，启动会报错，避免静默丢失预期的持久日志 |
 
 日志备份按轮转顺序编号。普通轮转空间上限约为 **60 MiB**，但这不包括 `nohup` 等启动工具另行保存的输出文件，也不包括 Server 的其他数据和日志目录。

@@ -116,7 +116,7 @@ run_bg ./my-program --config "settings with spaces.json"
 
 `shell_bg` 仍提供 Shell 命令执行方式，并在 Shell 退出后回收进程状态；返回的 PID 可能属于 Shell 中间进程。两种命令都只确认启动成功，不等待程序最终完成。
 
-Shell 的七个执行入口定义为 `client/commands/shell/common/execution.py` 的模块函数：它们直接使用 `process_execution_service` 执行托管进程操作，以及 `python_execution_service` 执行 Python 策略。两个服务由既有 `ExecutionResources` 按需创建；Script 复用相同的 Python 服务，SDK、External Tool 和平台服务直接复用进程服务，不再经由 `PythonProcessExecutionMixin` 的转发方法。
+Shell 的七个执行入口定义为 `client/commands/shell/common/execution.py` 的模块函数：它们直接使用 `process_execution_service` 执行托管进程操作，以及 `python_execution_service` 执行 Python 策略。两个服务由既有 `ExecutionResources` 按需创建；Script 复用相同的 Python 服务，SDK、External Tool 和平台服务直接复用进程服务，。
 
 Python 执行也有收集输出与流式输出两种入口，其运行模式由 Client 的 Python Runtime Configuration 决定。`inproc` 在当前解释器中执行，不可强制杀停；`subprocess_pipe` 在受管理子进程中运行，支持取消与进程终止。执行策略会在运行时设置相应的取消能力，而不是仅靠命令名称判断。这些入口仍属于普通命令体系，但和 `script` 协议的完整脚本运行流程不是同一件事。
 
@@ -259,7 +259,7 @@ __json__:<base64url-encoded-json>
 
 ## 前台任务的输出与终止语义
 
-Client 为每次命令建立带 `command_id` 的独立执行上下文。上下文保存开始时间、有效超时预算、取消事件、取消策略以及清理回调；命令返回或抛出异常后才进入最终完成状态并释放上下文。Server 以相同命令 ID 关联请求、中间输出、最终结果以及取消反馈，Web Terminal 则利用任务事件和 SSE 展示执行过程。
+Client 为每次命令建立带 `command_id` 的独立执行上下文。上下文保存开始时间、有效超时预算、取消事件、取消策略以及清理回调；命令返回或抛出异常后才进入最终完成状态并释放上下文。Server 以相同命令 ID 关联请求、中间输出、最终结果以及取消反馈，Web Terminal 则利用任务事件和 WebSocket 展示执行过程。
 
 ### 超时预算与输出流
 

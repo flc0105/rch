@@ -10,8 +10,8 @@
 |---|---|---|
 | macOS / Linux，已有 Python 3.10+ | One-liners → Python | 请求生成通用 Python Bootstrap，安装 Bundle，独立启动 Client |
 | Windows | One-liners → PowerShell / Python | 可以按环境使用本地 Python 或支持的 Windows Embed 运行时 |
-| Windows / macOS / Linux，需要预先分发一个执行文件 | Agent Builder → Go (Loader) | 先构建平台对应的 Loader，目标端再取得 Python Bundle |
-| **iOS / Pythonista** | **[iOS 专用 Bootstrap 示例](examples/ios_bootstrap.py)** | 不启动子进程，使用当前解释器运行 Bundle 中的 Client |
+| Windows / macOS / Linux，需要预先分发一个执行文件 | Agent Builder → Go Loader | 先构建平台对应的 Loader，目标端再取得 Python Bundle |
+| **iOS / Pythonista** | **[iOS 专用 Bootstrap 示例](../../tools/ios_bootstrap.py)** | 不启动子进程，使用当前解释器运行 Bundle 中的 Client |
 
 首次部署在**目标设备本地**执行。设备通过 Server Web 端口构建并下载 Bundle，再通过配置的 Socket 端口连接；部署开始时目标 Client 尚可处于离线状态。
 
@@ -32,7 +32,7 @@ Banner → Utilities → One-liners
                       └─ 启动独立 Client 进程 → Bootstrap 退出
 ```
 
-Go Loader 的独立流程为 `Agent Builder → Go (Loader) 构建 → 下载可执行文件 → 目标设备运行 → 请求 Bundle → 校验安装 → 启动 Python Client`，它不经过动态生成的 Python/PowerShell Bootstrap 文本。
+Go Loader 的独立流程为 `Agent Builder → Go Loader 构建 → 下载可执行文件 → 目标设备运行 → 请求 Bundle → 校验安装 → 启动 Python Client`，它不经过动态生成的 Python/PowerShell Bootstrap 文本。
 
 **One-liners 用于首次安装。**在目标设备的 Python 或 PowerShell 环境执行复制的启动命令，下载、安装并启动 Client；之后在 Server Connections 中确认该设备上线。
 
@@ -85,9 +85,9 @@ iwr "http://$($ip):$p/api/agent/bootstrap/ps1" -Method Post -ContentType "applic
 
 ### Go Loader：独立可执行程序启动
 
-Go Loader 与 Python / PowerShell One-liner 的**部署目的相同，但交付入口不同**：前两者在目标设备运行一段从 Server 动态取得的 Bootstrap 脚本；Go Loader 则先由 Server 编译一个注入连接配置的 Go 可执行程序，再将这个可执行文件放到目标设备运行。**当前 One-liners 菜单只提供 Python 和 PowerShell 模板**；Go Loader 通过 Agent Builder 的 **Go (Loader)** 模式构建和下载，而不是假装工具栏还有一个现成的 Go 命令。
+Go Loader 与 Python / PowerShell One-liner 的**部署目的相同，但交付入口不同**：前两者在目标设备运行一段从 Server 动态取得的 Bootstrap 脚本；Go Loader 则先由 Server 编译一个注入连接配置的 Go 可执行程序，再将这个可执行文件放到目标设备运行。**当前 One-liners 菜单只提供 Python 和 PowerShell 模板**；Go Loader 通过 Agent Builder 的 **Go Loader** 模式构建和下载，而不是假装工具栏还有一个现成的 Go 命令。
 
-在 Agent Builder 选择 Go (Loader)，指定目标操作系统、架构、Server Socket 地址与端口、Web 地址与端口后发起构建。Server 使用 Go 工具链交叉编译目标程序（`CGO_ENABLED=0`），将这些连接参数编入 Loader；Go Loader 支持的构建系统为 `win`、`mac`、`linux`，架构为 `amd64`、`arm64`。目标设备无需安装 Go 编译器，但**最终启动的仍是 Python Client，因此需要可用的 Python 3.10+ 运行环境**。
+在 Agent Builder 选择 Go Loader，指定目标操作系统、架构、Server Socket 地址与端口、Web 地址与端口后发起构建。Server 使用 Go 工具链交叉编译目标程序（`CGO_ENABLED=0`），将这些连接参数编入 Loader；Go Loader 支持的构建系统为 `win`、`mac`、`linux`，架构为 `amd64`、`arm64`。目标设备无需安装 Go 编译器，但**最终启动的仍是 Python Client，因此需要可用的 Python 3.10+ 运行环境**。
 
 如果通过 API 构建，下面是 Linux amd64 的示例（请把示例 Server 地址替换成真实可达地址）：
 
@@ -197,12 +197,12 @@ Bootstrap 最终打印各阶段日志并结束自己的启动流程。它报告�
 
 **iOS 有两项和桌面系统不同的边界：**Pythonista 等 iOS Python 运行环境通常不支持创建系统子进程；Client 必须运行在已有 Python 解释器内。此外，Bundle 在 iOS 上的标准目录是 `~/Documents/client_bundle/`，而不是桌面系统的 `~/client_bundle/`。通用 Python Bootstrap 在 iOS 上使用当前解释器；独立脚本提供另一种可直接运行的安装方式。
 
-本仓库提供一个可以直接复制到 iOS Python 环境执行的示例：**[`examples/ios_bootstrap.py`](examples/ios_bootstrap.py)**。此脚本仅使用 Python 3.10+ 标准库，不依赖 `requests`，也不调用 `subprocess`。它不是新的 Server API，也不替代已连接 Client 的在线更新机制。
+本仓库提供一个可以直接复制到 iOS Python 环境执行的示例：**[`tools/ios_bootstrap.py`](../../tools/ios_bootstrap.py)**。此脚本仅使用 Python 3.10+ 标准库，不依赖 `requests`，也不调用 `subprocess`。
 
 ### 运行步骤
 
 1. 确认 iOS 上的 Pythonista 或其他 Python 环境支持 Python **3.10+**，可访问目标 Server 的 Web 端口、Socket 端口，并且允许在 `Documents` 下写入文件。还需要有运行 Client 所需的第三方依赖；Bootstrap 本身不负责为 Client 安装依赖。
-2. 将 [`ios_bootstrap.py`](examples/ios_bootstrap.py) 保存到设备的 Python 脚本目录。在文件开头设置 `WEB_HOST`、`WEB_PORT`、`WEB_SCHEME`、`SERVER_HOST`、`SERVER_PORT`。当 Web 与 Socket 使用不同域名或 IP 时，分别填写；不要直接照用示例局域网地址。
+2. 将 [`ios_bootstrap.py`](../../tools/ios_bootstrap.py) 保存到设备的 Python 脚本目录。在文件开头设置 `WEB_HOST`、`WEB_PORT`、`WEB_SCHEME`、`SERVER_HOST`、`SERVER_PORT`。当 Web 与 Socket 使用不同域名或 IP 时，分别填写；不要直接照用示例局域网地址。
 3. 在该设备的 Python 环境中**作为脚本运行** `ios_bootstrap.py`。它请求 Server 构建 Bundle、检查返回数据与 SHA-256、下载 ZIP、检查归档路径，然后解压到独立的暂存目录，安装完成后才启动 Client。
 4. 查看控制台的 `[bootstrap]` 输出。脚本显示启动线程成功后，再在 Server 的 Connections 页面确认 Client 是否真正上线。只看到“handoff complete”并不代表 Socket 已握手成功。
 

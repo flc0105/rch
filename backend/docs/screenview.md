@@ -137,7 +137,7 @@ Control 开关关闭时，Server 会阻止后续正常输入消息，并通知 C
 | Quality | 60 | 20～95 | 当前会话可实时修改 |
 | Control | 开启 | 开 / 关 | 当前会话即时切换，需 WebSocket 可用 |
 
-**切换帧策略**需要在 Client 命令通道使用 `set`。例如，希望在屏幕内容变化较小时减少发送的数据，可以设置：
+**切换帧策略**需要在 Client 命令通道使用 `config set`。例如，希望在屏幕内容变化较小时减少发送的数据，可以设置：
 
 ```text
 config set SCREEN_FRAME_STRATEGY keyframe_delta
@@ -222,7 +222,7 @@ Server 发送的消息以 `frames` 和 `status` 为主。`frames` 包含状态�
 | `closed` | Client 已关闭，或 Client 连接断开后被结束 |
 | `error` | 打开或截图过程出现错误，无法继续正常采集 |
 
-关闭窗口时，浏览器会尝试关闭远程会话。WebSocket 断开也会触发 Server 的关闭处理；Client 断线时，Server 会将该 Client 尚未结束的屏幕会话标为 `closed`，并停止允许远程输入。Server 通过生命周期事件发布启动、关闭和错误通知，供 SSE/通知中心使用。
+关闭窗口时，浏览器会尝试关闭远程会话。WebSocket 断开也会触发 Server 的关闭处理；Client 断线时，Server 会将该 Client 尚未结束的屏幕会话标为 `closed`，并停止允许远程输入。Server 通过生命周期事件发布启动、关闭和错误通知，供 WebSocket/通知中心使用。
 
 结束及错误会话的状态会在 Server 内存中保留一段时间。**超过 300 秒的旧记录是在创建新会话时顺带清理**，不是独立计时器每隔 300 秒执行清理；因此某些旧记录可能存留更久。
 

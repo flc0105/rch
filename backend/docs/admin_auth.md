@@ -61,7 +61,7 @@ RCH_WEB_SESSION_COOKIE_NAME=rch_admin_session python run_web.py
 
 上面是 POSIX Shell 的设置方式；Windows PowerShell 可先设置 `$env:RCH_WEB_PORT = '9000'` 等变量，再运行 `python run_web.py`。由于环境变量是在模块导入时读取的，改变它们需要重启 Server。Web Host 当前固定为 `0.0.0.0`，不能通过上述变量改为仅本地监听。
 
-**管理员身份凭据从 `auth.json` 加载，不从启动环境读取或覆盖。** 启动环境仅配置上表列出的监听与 Web Session 运行选项。管理员密码可以在已登录 Web 界面的账户菜单中直接修改；API Token、Session Secret 或用户名的手工维护仍通过受保护的 `auth.json` 完成，并在重启 Server 后装载。Desktop Notifier 通过自己的 `RCH_NOTIFIER_TOKEN` 读取连接 Token，不会改变 Server 的认证配置。
+**管理员身份凭据从 `auth.json` 加载，不从启动环境读取或覆盖。** 启动环境仅配置上表列出的监听与 Web Session 运行选项。管理员密码可以在已登录 Web 界面的账户菜单中直接修改；API Token、Session Secret 或用户名的手工维护仍通过受保护的 `auth.json` 完成，并在重启 Server 后装载。
 
 ### 密码与密钥的维护
 
@@ -152,7 +152,7 @@ unset RCH_API_TOKEN
 
 `RCH_API_TOKEN` 在这里只是示例 Shell 变量名称，**不是 Server 读取的配置环境变量**。默认服务地址是 8085；若前面修改了 Web 端口，应同步调整 URL。实际部署中也应使用 HTTPS，避免 Token 在网络上明文传输。
 
-Desktop Notifier 是这个 Token 的实际使用场景。Notifier 会携带相同的 `Authorization: Bearer ...` 访问 `/api/notifications/stream`，并支持在其独立的 `config.json` 配置 `token`，或通过 **Notifier 进程自己的** `RCH_NOTIFIER_TOKEN` 环境变量注入。该环境变量不会生成或修改 RCH Server 的 `auth.json`。Notifier 虽然只读取通知流，但使用的仍是管理员 Token，配置文件的保存权限应按管理员凭据处理。
+独立通知消费者使用管理员 Bearer Token 订阅 `/ws/notifications`。当前 Desktop Notifier 的本地配置及联机限制见 [Desktop Notifier](desktop_notifier.md)。
 
 8085 Flask Web API 采用管理员 Session/Token 或 Client Session Token（仅允许的 Client API）认证；受控浏览器原始文件上传和部分 Client 传输路径依靠各自的一次性令牌或原有 HTTP 访问策略。8086 的浏览器实时 WebSocket 检查管理员 Session/Token，PTY/Screen 则使用对应会话的一次性 WebSocket Ticket。
 

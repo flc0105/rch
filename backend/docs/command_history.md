@@ -8,7 +8,7 @@ Activity 只有一个生命周期所有者：`ActivityCoordinator`，负责操�
 
 系统只通过**两种事件适配方式**接入：
 
-- `CommandDispatchAdapter`：普通命令、Alias、全部 Control Domain 及尚未迁移的 External Tool。Control 记录资格来自 Action 的 ActivityPolicy，业务入口只提供必要展示元数据，通用命令通道在消息成功交付传输层后确认派发；最终 Result/EOF 结束记录。
+- `CommandDispatchAdapter`：普通命令、Alias、全部 Control Domain 及 External Tool。Control 记录资格来自 Action 的 ActivityPolicy，业务入口只提供必要展示元数据，通用命令通道在消息成功交付传输层后确认派发；最终 Result/EOF 结束记录。
 - `LifecycleAdapter`：PTY、Screen View、Transfer，以及已登记 Artifact 对当前命令的关联。监听明确的 Session/Request/Transfer ID 和 Client 回执；早到回执、重复 Close、断线和超时仅更新原有 Activity。文件上传在 Browser→Server 暂存阶段不记 Activity，Client 转交确认后才创建。
 
 Application 装配层提供语义绑定，API 负责转发业务请求，业务会话服务负责运行状态，Client 传输层只负责发送和接收。**这些层不负责创建或结束 Activity，也不持有历史 ID 状态机**。Activity 记录失败不可反向阻断已经有效的业务操作；未发生 Client 派发的操作不得生成持久记录。Server 重启后遗留的 `running` Activity 统一结束为 `interrupted`，不建立额外表或协议兼容层。
@@ -74,7 +74,7 @@ Process Manager 主动终止单个进程或应用时使用 `kind=process, action
 
 `invocation.command` 是入口的原始命令，UI 直接操作的 Invocation 为 `{}`。`resolved` 在实际请求派发后生成，按 Control 动作省略文件保存正文及脚本源码。`summary` 是操作标题，`result_summary` 是简短的结束说明。`result` 按接收顺序保存实际收到的 Client Result 对象，超预算的正文字段省略。断线和重启更新 Activity 状态。`references` 保存 Artifact、Job 关联；详情中的 `files` 由 Artifact References 得到。
 
-状态：`running`、`cancelling`、`success`、`error`、`cancelled`、`interrupted`、`timed_out`。运行中的任务收到 Cancel 请求后进入 `cancelling`，最终状态由执行结果决定；明确超时或连接中断可单独归类，不能把所有无法证明成功的情况都写成成功。将来 Job 可能使用 `stopping/stopped`，本版不接入。Script Cancel 只更新原 `run` Activity，不单独新增 Stop 记录。Errors 筛选匹配 `error/cancelled/interrupted/timed_out`。没有明确执行证据的 `pending` 只表示内部提交准备，不在“已派发后才持久化”的第一版中制造额外记录。
+状态：`running`、`cancelling`、`success`、`error`、`cancelled`、`interrupted`、`timed_out`。运行中的任务收到 Cancel 请求后进入 `cancelling`，最终状态由执行结果决定；明确超时或连接中断可单独归类，不能把所有无法证明成功的情况都写成成功。Script Cancel 只更新原 `run` Activity，不单独新增 Stop 记录。Errors 筛选匹配 `error/cancelled/interrupted/timed_out`。`pending` 表示内部提交准备；Activity 在实际派发后才持久化。
 
 ### 输出与 Artifact
 
@@ -108,7 +108,7 @@ Activity 列表展示类型、操作摘要、状态、时间、简短结果和�
 
 ### 记录策略所覆盖的执行
 
-Control 的记录依据为 Action 目录的 ActivityPolicy 与实际派发事实。未迁移的 External Tool 继续沿用原有语义适配器、预检及查询规则（见上文 xt 章节）；Job CLI 和 Web Manager 使用 `kind=job`、实际协议 Action。Stop All 保留批量计数；Start 完成后，Job 自身的运行和退出仍由 Job History 负责。Script SDK 的内部调用归属于外层 Script。
+Control 的记录依据为 Action 目录的 ActivityPolicy 与实际派发事实。External Tool 使用所属的语义适配器、预检及查询规则（见上文 xt 章节）；Job CLI 和 Web Manager 使用 `kind=job`、实际协议 Action。Stop All 保留批量计数；Start 完成后，Job 自身的运行和退出仍由 Job History 负责。Script SDK 的内部调用归属于外层 Script。
 
 ### 命令收藏与路径收藏
 

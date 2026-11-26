@@ -42,13 +42,13 @@ Web Jobs / Job Detail · 状态、消息、文件
 
 Job Start 请求保留业务参数 `payload.params`，不增加无意义的 `params.params` 包装层。Job 的只读查询也使用同一 Control 信封，但不产生 Activity。
 
-Job Control 最终使用统一 `result(event_type=completed)`，包含 `status`、可选 `message/data/references`；中间进度发送 `progress/chunk`，Socket 不再发送 `display/eof`。**调用方**根据动作选择终端视图：`start/stop/stop_all` 显示简短 Message，JSON 为 `status/message`；`ps` 使用 Table、`status` 使用 Flat，成功查询的 Text 与 JSON 使用相同业务数据，不添加执行外壳。失败显示具体错误；空 `ps` 的 JSON 为 `[]`，Text 提示当前无运行 Job。Web 直接消费完整 Control `data`，与终端呈现互不强制；Job ID 和 worker 仍保留在业务数据中。过程日志不混入终端的单份 `--json` 结果，业务状态与唯一终态由公共 Result 管线传递。
+Job Control 最终使用统一 `result(event_type=completed)`，包含 `status`、可选 `message/data/references`；中间进度发送 `progress/chunk`，**调用方**根据动作选择终端视图：`start/stop/stop_all` 显示简短 Message，JSON 为 `status/message`；`ps` 使用 Table、`status` 使用 Flat，成功查询的 Text 与 JSON 使用相同业务数据，不添加执行外壳。失败显示具体错误；空 `ps` 的 JSON 为 `[]`，Text 提示当前无运行 Job。Web 直接消费完整 Control `data`，与终端呈现互不强制；Job ID 和 worker 仍保留在业务数据中。过程日志不混入终端的单份 `--json` 结果，业务状态与唯一终态由公共 Result 管线传递。
 
 Job Start 的过程消息分别说明从 Server 下载模块和已保存到 Client 临时路径；这些进度不是最终 `message` 的组成部分。Web Start/Stop API 返回简短的最终 `message`，Job Manager 的成功提示不额外拼接细节。Activity Detail 中的 Output Records 从 Result 生成；顶部 Result 卡片查看完整结果，Job 引用仍关联真实 ID。Job 长期运行状态、消息和文件的持久化上报继续使用原有 HTTP 通道。
 
 启动模式的默认值统一来自 Job Metadata 的 `execution_mode`；显式传入的 `execution_mode` 仍由应用服务按允许模式校验，Client JobManager 会再次验证自身运行限制。Job start/stop/stop_all 占用一次前台任务槽；Job Runtime 启动后释放此槽并独立运行。Job ps/status 使用 Independent Control 查询，不占 Client 前台执行槽；Terminal 提交仍沿用 Terminal 的任务交互规则。
 
-用户主动发起的 Job 管理操作另记录到 Activity Center：`kind=background_job`；`job start` / Web Start 为 `start_job`，`job stop` / Web Stop 为 `stop_job`，`job stop-all` 为一条 `stop_all_jobs`。Activity 在真实派发 Client 后创建，Client 反馈已建立 Job Runtime / 已接受 Stop 请求后终结；不等待 Job 长期运行结束。Stop 不会修改先前成功的 Start Activity。原有 Job History 继续存储运行生命周期、消息和文件，不与 Activity 互相删除。纯查询 `job list/ps/status` 仅按普通终端输入规则保留 Quick，不建立 Activity；来自 Web 的操作不写 Quick。内部 `control(domain=job)` 消息不记录成 Command，也不持久化 Job 参数正文、Python 模块源码或内部结构化 Payload。Start / Stop 的真实 `job_id` 可以在 Activity Details 关联，批量 Stop All 保留实际停止对象与失败详情；部分失败沿用 `error`，不新增状态。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 SSE 事件供浏览器刷新。
+用户主动发起的 Job 管理操作另记录到 Activity Center：`kind=background_job`；`job start` / Web Start 为 `start_job`，`job stop` / Web Stop 为 `stop_job`，`job stop-all` 为一条 `stop_all_jobs`。Activity 在真实派发 Client 后创建，Client 反馈已建立 Job Runtime / 已接受 Stop 请求后终结；不等待 Job 长期运行结束。Stop 不会修改先前成功的 Start Activity。原有 Job History 继续存储运行生命周期、消息和文件，不与 Activity 互相删除。纯查询 `job list/ps/status` 仅按普通终端输入规则保留 Quick，不建立 Activity；来自 Web 的操作不写 Quick。内部 `control(domain=job)` 消息不记录成 Command，也不持久化 Job 参数正文、Python 模块源码或内部结构化 Payload。Start / Stop 的真实 `job_id` 可以在 Activity Details 关联，批量 Stop All 保留实际停止对象与失败详情；部分失败沿用 `error`，不新增状态。长时间运行的任务自行上报消息和状态；Server 通过 SQLite 保存执行记录，再发布 WebSocket 事件供浏览器刷新。
 
 模块存放在 Server 的 Job 资源目录中。Web 可以创建、编辑、上传或删除 Python 模块；Client 启动任务时从 Server 取得 Job 模块；**目标环境需预先安装该 Job 使用的第三方依赖**。
 
@@ -157,7 +157,7 @@ Job 的模块管理、执行查询和运行控制分属不同操作。模块目�
 
 启动请求的核心字段是 `job_name`、`params` 和 `execution_mode`，停止操作则根据模块运行标识请求目标 Client 停止。在 Web Start API 中，未传 `execution_mode` 时由 Job Service 根据 Job Metadata 解析默认执行模式；终端与 Web 使用相同的默认值和允许模式校验。
 
-终端的 Job 用户入口统一由 **Server Builtin `job`** 提供，不再通过 Client 公开的 `start_job`、`stop_job`、`jobs`、`jobs_ps`、`job_status`、`stop_all_jobs` 命令方法执行。这些旧方法已经移除，Client Manifest/Help 不再列出它们；Client 仍使用 `JobManager` 来执行、停止和上报运行状态。Server Web Job API 使用同一个 `control(domain=job)` 消息类型，而非旧 Client 命令文本。
+终端 Job 入口统一为 Server Builtin `job`，Web Background Jobs 与终端使用同一 Job Control 契约及 Client Job Manager。
 
 | 命令 | 执行位置与语义 |
 |---|---|
@@ -195,10 +195,10 @@ Server Builtin `job` 的命令候选来自 `SERVER_COMMAND_REGISTRY`，不纳入
 
 Subprocess 只能隔离 Python 任务进程，不能替代操作系统访问控制或自动安装缺失依赖。Job 的动态 Python 模块来自 Server，能在 Client 上执行实际代码，因此编辑、上传和运行权限应与项目的 Web 管理和部署信任边界一起考虑。当前 `/api/background-jobs/report` 允许匿名访问，Server 会据报告内容建立或更新 Job 记录；该路由没有强制把上报方的 `client_id` 与独立身份凭据绑定，部署时应限制不可信网络访问，不宜把请求自带的身份字段当成已完成的强身份认证。
 
-如需细化参数校验、事件通知或 Artifact/JSON 展示，分别参考 [Parameter Schema](parameter_schema.md)、[Device Event Emit](event_emit.md)、[SSE Notifications](sse_notifications.md) 与 [Structured Command Output](structured_output.md)。
+如需细化参数校验、事件通知或 Artifact/JSON 展示，分别参考 [Parameter Schema](parameter_schema.md)、[Device Event Emit](event_emit.md)、[WebSocket Notifications](websocket_notifications.md) 与 [Structured Command Output](structured_output.md)。
 
 ### 终端 Job 列表范围
 
-`job`、`job list` 和 `job list --json` 只展示 Metadata `platforms` 对当前设备适用的资源；没写 `platforms` 或声明为空时不显示在终端 Job 列表及补全中，不再读取目录名推断平台。`job start` 的名称补全复用相同的过滤。它只控制 Server 终端命令目录，不收窄 Background Jobs Web 管理 UI Catalog，也不修改 Client 的 JobManager 执行协议。
+`job`、`job list` 和 `job list --json` 只展示 Metadata `platforms` 对当前设备适用的资源；没写 `platforms` 或声明为空时不显示在终端 Job 列表及补全中，平台范围由 Metadata 明确声明。`job start` 的名称补全复用相同的过滤。它只控制 Server 终端命令目录，不收窄 Background Jobs Web 管理 UI Catalog，也不修改 Client 的 JobManager 执行协议。
 
-Job Detail 的 Files 列表显示关联时刻 `background_job_files.linked_at`（不是 Artifact 的 `saved_at` 或已废弃的文件关联 `created_at`）。原始文件被删除后仍可根据精简快照保留名称与大小。
+Job Detail 的 Files 列表显示关联时刻 `background_job_files.linked_at`。原始文件被删除后仍可根据精简快照保留名称与大小。
