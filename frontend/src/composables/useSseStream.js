@@ -516,6 +516,10 @@ this.appendOutput(payload.client_id, `${TERMINAL_BACKGROUND_PREFIX} ${payload.te
                 await this.refreshArtifactsIfOpen?.();
             });
 
+            es.addEventListener('artifact_batch_uploaded', async () => {
+                await this.refreshArtifactsIfOpen?.();
+            });
+
             es.addEventListener('artifact_created', async (event) => {
                 const payload = JSON.parse(event.data || '{}');
                 if (!payload.artifact_id) return;

@@ -29,6 +29,9 @@ class WebTransferApi:
         conflict_policy=None,
         tab_id: str = '',
         operation_id: str = '',
+        batch_id: str = '',
+        batch_total=0,
+        batch_index=0,
         origin: str = 'web_api',
         feature: str = 'remote_files',
     ):
@@ -44,6 +47,11 @@ class WebTransferApi:
 
         if conflict_policy is not None and conflict_policy not in ('stop', 'replace', 'keep_both'):
             raise ValueError('Invalid upload conflict policy')
+        if batch_id:
+            if not isinstance(batch_id, str) or len(batch_id) > 128 or not batch_id.isascii():
+                raise ValueError('Invalid upload batch')
+            if not (1 <= int(batch_total) <= 1000 and 0 <= int(batch_index) < int(batch_total)):
+                raise ValueError('Invalid upload batch size')
 
         transfer = self.transfer_service.create_transfer(
             client_id=normalized_client_id,
@@ -57,6 +65,7 @@ class WebTransferApi:
                 'source': 'remote_file_upload',
                 'browser_stage': True,
                 'operation_id': operation_id,
+                **({'batch_id': batch_id, 'batch_total': int(batch_total), 'batch_index': int(batch_index)} if batch_id else {}),
             },
         )
         transfer_id = str(transfer.get('transfer_id') or '').strip()
@@ -80,6 +89,21 @@ class WebTransferApi:
             'browser_upload_token': upload_token,
             **({'operation_id': operation_id} if operation_id else {}),
         }
+
+    def finalize_browser_upload_batch(self, *, client_id: str, batch_id: str,
+                                      tab_id: str, folder_count=0, error: str = ''):
+        client_id = str(client_id or '').strip()
+        batch_id = str(batch_id or '').strip()
+        if not client_id or not tab_id or not batch_id or len(batch_id) > 128 or not batch_id.isascii():
+            raise ValueError('Invalid browser upload batch')
+        folder_count = int(folder_count)
+        if folder_count < 0 or folder_count > 10000:
+            raise ValueError('Invalid folder count')
+        self.transfer_service.event_bus.publish('file_transfer_batch_finalized', {
+            'client_id': client_id, 'batch_id': batch_id, 'folder_count': folder_count,
+            'error': str(error or '')[:256],
+        }, target_tab_id=tab_id)
+        return {'batch_id': batch_id}
 
     def consume_browser_upload_grant(self, transfer_id: str, token: str) -> dict | None:
         normalized_id = str(transfer_id or '').strip()

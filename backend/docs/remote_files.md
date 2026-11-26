@@ -55,7 +55,7 @@ Client（远程设备）
 | 文件名搜索与递归搜索 | 支持 | 不提供 |
 | 显示隐藏文件开关 | 支持 | 不提供，固定隐藏 |
 | 保存和管理 Pinned Paths | 支持 | 不提供 Pins 管理 |
-| 上传文件 | 支持 | 支持单文件上传 |
+| 上传文件 | 支持单文件 Upload，以及 More → Drag Upload 的文件/目录混合上传 | 支持单文件上传 |
 | 新建目录 | 支持 | 支持（New Folder） |
 | 下载、删除、复制、移动、ZIP、预览编辑 | 支持 | 不提供 |
 | 将选中路径回填到 Script / Job / Tool 参数 | 不作为主要用途 | 核心用途 |
@@ -133,7 +133,7 @@ Browser 的 Copy、Cut 和 Paste 使用的是**界面内部的远程路径列表
 - **Cut**：目标目录 Paste 时将源文件或目录移动过去。
 - **Copy Path**：仅将所选远程路径字符串复制到浏览器所在机器的剪贴板，不复制文件内容。
 
-文件和目录行的 More 中也可选择 **Copy To / Move To**，打开 Remote File Picker 选择目标目录。确认后直接执行原有复制/移动及冲突处理，不切换 Browser 当前目录或 Client CWD，也不改变待 Paste 的路径列表。
+文件和目录行的 More 中可选择 **Copy To / Move To**；选中多个文件或目录后，也可从 Browser 的 More 选择 **Copy To / Move To**。两者打开同一个 Remote File Picker 选择目标目录，并以相同的 `paths` 数组调用复制/移动与冲突处理；不切换 Browser 当前目录、Client CWD 或待 Paste 列表。
 
 例如从 `/tmp` 选中 `a.txt`、`b.txt` 并 Copy，到 `/tmp/backup` Paste，会在目标目录创建相同名称的文件。默认情况下，目标已有同名项会报告冲突，不覆盖原文件；启用全局冲突询问后，可在执行前选择停止、替换或保留两个，同名目录还可以合并。源目录与目标目录相同、或试图把一个目录放进它自身或其子目录，仍会受到路径安全校验。
 
@@ -161,7 +161,7 @@ Web Remote Files 的真正远程文件修改动作会在 Client 命令成功派�
 
 ### 远端到 Server 的文件搬运
 
-Browser 可以选择文件上传，也可拖放文件到当前目录。上传由 Server 创建传输记录和临时上传凭证，浏览器通过独立文件传输端点传送二进制，随后由 Client 接收并写入指定远程路径。界面报告 **Upload started** 表示上传任务已创建。查看 Transfer Center 的终态，再刷新远程目录以确认文件已保存。上传同名文件时，设置关闭一律拒绝上传并报错（Python、Go Client 一致）；开启冲突询问后可选 Stop、Replace、Keep Both，传输落盘时由 Client 再次校验选择的策略。Artifact Manager 的 **Send to Current Device** 使用同一个全局设置与冲突询问流程；Server 的文件上传命令不经过 Browser 询问时默认拒绝同名目标。
+Browser 的普通 **Upload** 保持单文件选择。**More → Drag Upload** 提供共享的拖放上传面板，点击拖拽区可选择多个文件，也可直接混合拖入文件与文件夹；目录层级由 Client 的既有新建目录控制请求重建，文件以有界顺序逐个交给现有 Browser Upload Transfer 通道；每个文件仍有独立的进度与取消操作。现有同名目录可复用；新文件逐项执行原上传冲突策略。拖放目录可保留空目录，浏览器原生文件夹选择器只提供其中的文件。上传由 Server 创建传输记录和临时上传凭证，浏览器通过独立文件传输端点传送二进制，随后由 Client 接收并写入指定远程路径。界面报告 **Upload started** 表示上传任务已创建；Drag Upload 启动时只显示一条提示，文件仍分别发送 Transfer 进度 SSE、保留独立的进度及取消操作；整批已提交的 Transfer 全部结束后，Notification Center 显示一条汇总结果（成功数、失败数及 Open Transfers 入口）；该批次通知默认启用，普通单文件传输的通知偏好保持独立。查看 Transfer Center 的终态，再刷新远程目录以确认文件已保存。上传同名文件时，设置关闭一律拒绝上传并报错（Python、Go Client 一致）；开启冲突询问后可选 Stop、Replace、Keep Both，传输落盘时由 Client 再次校验选择的策略。Artifact Manager 的 **Send to Current Device** 使用同一个全局设置与冲突询问流程；Server 的文件上传命令不经过 Browser 询问时默认拒绝同名目标。
 
 下载方向相反：
 

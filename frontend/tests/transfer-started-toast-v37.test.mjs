@@ -82,7 +82,9 @@ test('App offers a single opener to nested dialogs, including remote picker and 
     }
     assert.match(component, /this\.openTransferCenterFromToast/)
     if (file === 'RemoteFilesDialog.vue' || file === 'RemoteFilePicker.vue') {
-      assert.match(component, /onStarted:\s*\(\)\s*=>\s*showTransferStartedToast/)
+      assert.match(component, file === 'RemoteFilesDialog.vue'
+        ? /onStarted:\s*\(\)\s*=>\s*\{[\s\S]*?showTransferStartedToast/
+        : /onStarted:\s*\(\)\s*=>\s*showTransferStartedToast/)
       assert.equal((component.match(/showTransferStartedToast\(`Upload started:/g) || []).length, 1)
     }
   }

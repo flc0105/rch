@@ -4,11 +4,14 @@
     :title="title"
     width="560px"
     class="drag-upload-dialog"
+    :close-on-click-modal="!loading"
+    :close-on-press-escape="!loading"
+    :show-close="!loading"
     @update:model-value="handleVisibleChange"
   >
     <div
       class="drag-upload-dropzone"
-      :class="{ 'is-dragging': dragging, 'is-loading': loading }"
+      :class="{ 'is-dragging': dragging, 'is-loading': loading || scanning }"
       role="button"
       tabindex="0"
       @click="openFilePicker"
@@ -34,23 +37,23 @@
     />
 
     <div
-      v-if="selectedFiles.length"
+      v-if="selectedItems.length"
       class="drag-upload-file-panel"
     >
       <div class="drag-upload-file-header">
-        <span>Selected files</span>
-        <span>{{ selectedFiles.length }}</span>
+        <span>Selected items</span>
+        <span>{{ selectedItems.length }}</span>
       </div>
 
       <div class="drag-upload-file-list">
         <div
-          v-for="(file, index) in selectedFiles"
-          :key="selectedFileKey(file, index)"
+          v-for="(file, index) in selectedItems"
+          :key="selectedItemKey(file, index)"
           class="drag-upload-file-row"
         >
           <div class="drag-upload-file-main">
             <div class="drag-upload-file-name">{{ file.name }}</div>
-            <div class="drag-upload-file-size">{{ formatFileSize(file.size) }}</div>
+            <div class="drag-upload-file-size">{{ file.kind === 'directory' ? `Folder · ${file.files.length} files` : formatFileSize(file.file?.size) }}</div>
           </div>
 
           <el-button
@@ -58,7 +61,7 @@
             link
             type="danger"
             :disabled="loading"
-            @click.stop="removeSelectedFile(index)"
+            @click.stop="removeSelectedItem(index)"
           >
             Remove
           </el-button>
@@ -67,16 +70,16 @@
     </div>
 
     <template #footer>
-      <el-button @click="closeDialog">Cancel</el-button>
+      <el-button :disabled="loading" @click="closeDialog">Cancel</el-button>
       <el-button
-        :disabled="!selectedFiles.length || loading"
-        @click="clearSelectedFiles"
+        :disabled="!selectedItems.length || loading || scanning"
+        @click="clearSelectedItems"
       >
         Clear
       </el-button>
       <el-button
         type="primary"
-        :disabled="!selectedFiles.length"
+        :disabled="!selectedItems.length || scanning"
         :loading="loading"
         @click="submitUpload"
       >
@@ -88,6 +91,8 @@
 
 <script>
 import { formatBytesHuman } from '../utils/formatters.js'
+import { collectTransferAttachments } from '../utils/browserFileEntries.js'
+import { ElMessage } from 'element-plus'
 export default {
   name: 'DragUploadDialog',
 
@@ -98,6 +103,7 @@ export default {
     buttonText: { type: String, default: 'Upload' },
     accept: { type: String, default: '' },
     multiple: { type: Boolean, default: false },
+    allowDirectories: { type: Boolean, default: false },
     loading: { type: Boolean, default: false },
   },
 
@@ -107,7 +113,9 @@ export default {
     return {
       dragging: false,
       dragDepth: 0,
-      selectedFiles: [],
+      scanning: false,
+      scanSeq: 0,
+      selectedItems: [],
     }
   },
 
@@ -121,6 +129,7 @@ export default {
 
   methods: {
     handleVisibleChange(value) {
+      if (this.loading && !value) return
       this.$emit('update:modelValue', value)
       if (!value) {
         this.resetAllState()
@@ -132,7 +141,7 @@ export default {
     },
 
     openFilePicker() {
-      if (this.loading) return
+      if (this.loading || this.scanning) return
       const input = this.$refs.fileInputRef
       if (!input) return
       input.value = ''
@@ -158,55 +167,67 @@ export default {
       }
     },
 
-    handleDrop(event) {
-      if (this.loading) return
-      const files = Array.from(event?.dataTransfer?.files || [])
+    async handleDrop(event) {
+      if (this.loading || this.scanning) return
       this.resetDragState()
-      this.addSelectedFiles(files)
+      this.scanning = true
+      const scanSeq = this.scanSeq
+      try {
+        const attachments = this.allowDirectories
+          ? await collectTransferAttachments(event?.dataTransfer)
+          : Array.from(event?.dataTransfer?.files || []).map(file => ({ kind: 'file', name: file.name, file }))
+        if (this.modelValue && scanSeq === this.scanSeq) this.addSelectedItems(attachments)
+      } catch (error) {
+        if (this.modelValue && scanSeq === this.scanSeq) {
+          ElMessage.error(error.message || 'Failed to read dropped files')
+        }
+      } finally {
+        if (scanSeq === this.scanSeq) this.scanning = false
+      }
     },
 
     handleInputChange(event) {
       const files = Array.from(event?.target?.files || [])
-      this.addSelectedFiles(files)
+      this.addSelectedItems(files.map(file => ({ kind: 'file', name: file.name, file })))
       if (event?.target) event.target.value = ''
     },
 
-    addSelectedFiles(files) {
+    addSelectedItems(files) {
       const validFiles = files.filter(file => file && typeof file.name === 'string')
       if (!validFiles.length) return
 
       if (!this.multiple) {
-        this.selectedFiles = [validFiles[0]]
+        this.selectedItems = [validFiles[0]]
         return
       }
 
-      const nextFiles = [...this.selectedFiles, ...validFiles]
+      const nextFiles = [...this.selectedItems, ...validFiles]
       const fileMap = new Map()
 
       nextFiles.forEach(file => {
-        fileMap.set(this.selectedFileKey(file), file)
+        fileMap.set(this.selectedItemKey(file), file)
       })
 
-      this.selectedFiles = Array.from(fileMap.values())
+      this.selectedItems = Array.from(fileMap.values())
     },
 
     submitUpload() {
-      if (!this.selectedFiles.length || this.loading) return
-      this.$emit('upload', [...this.selectedFiles])
+      if (!this.selectedItems.length || this.loading) return
+      this.$emit('upload', [...this.selectedItems])
     },
 
-    removeSelectedFile(index) {
+    removeSelectedItem(index) {
       if (this.loading) return
-      this.selectedFiles = this.selectedFiles.filter((_, fileIndex) => fileIndex !== index)
+      this.selectedItems = this.selectedItems.filter((_, fileIndex) => fileIndex !== index)
     },
 
-    clearSelectedFiles() {
+    clearSelectedItems() {
       if (this.loading) return
-      this.selectedFiles = []
+      this.selectedItems = []
     },
 
-    selectedFileKey(file, index = '') {
-      return [file?.name || '', file?.size || 0, file?.lastModified || 0, index].join('-')
+    selectedItemKey(file, index = '') {
+      return [file?.kind || 'file', file?.name || '', file?.file?.size || 0, file?.file?.lastModified || 0, index].join('-')
     },
 
     formatFileSize(value) {
@@ -219,8 +240,10 @@ export default {
     },
 
     resetAllState() {
+      this.scanSeq += 1
+      this.scanning = false
       this.resetDragState()
-      this.selectedFiles = []
+      this.selectedItems = []
     },
   },
 }

@@ -107,7 +107,7 @@ test('Picker discards directory responses from an old device',async()=>{
 
 test('Copy To and Move To share paste preflight and mutation, preserve clipboard and browser path',async()=>{
   const calls=[]; let stop=false, refresh=0
-  const c=component('../src/components/RemoteFilesDialog.vue',{OPEN_TRANSFER_CENTER_KEY:'transfer',RemotePinsDialog:{},RemoteFilePicker:{},MoreFilled:{},ElMessage:messages,
+  const c=component('../src/components/RemoteFilesDialog.vue',{OPEN_TRANSFER_CENTER_KEY:'transfer',RemotePinsDialog:{},RemoteFilePicker:{},DragUploadDialog:{},MoreFilled:{},ElMessage:messages,
     preparePasteConflicts:async(id,req)=>{calls.push(['inspect',id,plain(req)]);return stop?false:{conflict_policies:['keep_both']}},
     pasteRemoteFiles:async(id,req)=>{calls.push(['paste',id,plain(req)]);return {ok:true,json:async()=>({code:0,data:{succeeded:1,failed:0}})}},
   })

@@ -72,6 +72,10 @@ WebEventBus 发布时生成一份临时事件对象：
 
 前台 Task 是实时运行态，不进行通知持久化。`foreground_task_changed` 广播中的 `task` 是当前会话状态快照，所有标签页均可直接使用；事件丢失后由浏览器在 WebSocket 连接建立及重连时调用已有的连接 Task 查询接口重新同步。其他同步命令来源也在共用执行槽上发出相同事件，避免用周期性 HTTP 轮询补漏。
 
+## Remote Files 批量上传通知
+
+Remote Files 的 Drag Upload 使用独立的文件 Transfer 记录，每个文件继续发送实时 `transfer_updated` 和 `file_transfer_lifecycle` 事件，Transfer Center 可分别跟踪进度、失败和取消。Server 在浏览器结束本批提交、并且本批所有已创建的 Transfer 到达终态后，生成一条 **File Upload Completed** 或 **File Upload Incomplete** 通知，展示完成数及 Open Transfers 入口。批次通知使用独立的 `file_transfer_batch_finished` 偏好（默认启用）；普通单文件 Transfer 的通知开关和默认值不变。Shared Files 的 Batch Upload 继续通过 `artifact_batch_uploaded` 生成一次 Files Ready 通知。
+
 ## 独立 Client 启动日志通知
 
 命令的结构化完成结果携带 `type=log_file` 的 Client 日志引用时，Server 默认投影 **Client Instance Started** 通知并附带 **View Log** 操作。点击后使用通知中的 Client ID 与日志路径打开现有 Log Viewer；Terminal 的常规结果动作区同时提供 **[ View Log ]**。`spawn_instance`、`spawn_elevated_instance` 和 `update --observe` 均使用同一通知行为。`update --observe` 的完成结果还提供指向原 Client 的 **[ Kill Instance ]**，用于确认新版状态后结束旧实例。普通 `update` 与 `relaunch_instance` 继续执行原有生命周期。通知是否以 Toast 展示仍受现有设备事件通知偏好控制。

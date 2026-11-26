@@ -1,3 +1,4 @@
+import json
 import os
 import mimetypes
 
@@ -28,6 +29,23 @@ def create_artifacts_blueprint(server_instance):
             lambda: artifact_api.list_artifacts(artifact_type=artifact_type, machine_id=machine_id, **filters),
             default_error_status=500,
         )
+
+    @blueprint.post('/api/artifacts/shared/batch-upload')
+    def upload_shared_batch():
+        def execute():
+            files = request.files.getlist('files')
+            try:
+                paths = json.loads(request.form.get('paths') or '[]')
+                directories = json.loads(request.form.get('directories') or '[]')
+            except (ValueError, TypeError) as exc:
+                raise ValueError('Invalid Shared upload manifest') from exc
+            if not isinstance(paths, list) or not isinstance(directories, list):
+                raise ValueError('Invalid Shared upload manifest')
+            return artifact_api.upload_shared_batch(
+                files=files, paths=paths, directories=directories,
+                parent_folder_id=request.form.get('folder_id') or '',
+            )
+        return responder.json_endpoint(execute)
 
     @blueprint.post('/api/artifacts/folders')
     def create_artifact_folder():

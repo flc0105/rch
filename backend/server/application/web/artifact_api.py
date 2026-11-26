@@ -134,7 +134,7 @@ class WebArtifactApi:
 
     def save_http_uploaded_file(self, upload, artifact_type: str = ArtifactType.SAVED.value, client_id: str = '',
                                 hostname: str = '', machine_id: str = '', job_id: str = '', source_command_id=None, transfer_buffer_size=None, extra=None,
-                                category: str | None = None, folder_id: str = '', folder: str = ''):
+                                category: str | None = None, folder_id: str = '', folder: str = '', publish_event: bool = True):
         expected_type = ArtifactType(artifact_type)
         if expected_type == ArtifactType.SAVED:
             if folder or folder_id:
@@ -169,12 +169,75 @@ class WebArtifactApi:
         )
         if job_id and self.background_job_store and self.background_job_store.get_job_for_scope(job_id):
             self.background_job_store.link_artifact(job_id, artifact)
-        try:
-            self.publish_artifact_created(artifact)
-        except Exception:
-            pass
+        if publish_event:
+            try:
+                self.publish_artifact_created(artifact)
+            except Exception:
+                pass
         return artifact
 
+
+    def upload_shared_batch(self, *, files, paths, directories, parent_folder_id=''):
+        """Save a browser folder selection under one Shared root and emit one batch event."""
+        if len(files) != len(paths) or len(files) > 1000 or len(directories) > 2000:
+            raise ValueError('Invalid Shared upload batch')
+        if not files and not directories:
+            raise ValueError('Empty Shared upload batch')
+
+        def parts_of(path):
+            if not isinstance(path, str) or not path or '\\' in path or '\x00' in path:
+                raise ValueError('Invalid Shared upload path')
+            parts = path.split('/')
+            if any(not part or part in ('.', '..') or len(part) > 120 or any(ord(ch) < 32 for ch in part) for part in parts):
+                raise ValueError('Invalid Shared upload path')
+            return parts
+
+        explicit_dirs = { '/'.join(parts_of(path)) for path in directories }
+        file_paths = [ '/'.join(parts_of(path)) for path in paths ]
+        if len(file_paths) != len(set(file_paths)):
+            raise ValueError('Duplicate Shared upload path')
+        if any(upload.filename != path.rsplit('/', 1)[-1] for upload, path in zip(files, file_paths)):
+            raise ValueError('Shared upload filename mismatch')
+        for path in file_paths:
+            parts = path.split('/')
+            for i in range(1, len(parts)):
+                explicit_dirs.add('/'.join(parts[:i]))
+        if explicit_dirs.intersection(file_paths):
+            raise ValueError('File and folder share the same path')
+        directory_paths = sorted(explicit_dirs, key=lambda value: (value.count('/'), value))
+        catalog = self.artifact_service.registry_service.catalog
+        if parent_folder_id:
+            catalog.get_folder(parent_folder_id)
+        folders = catalog.list_folders(artifact_type='shared')
+        known = {(row.get('parent_id') or '', row['name'].casefold()): row['folder_id'] for row in folders}
+        created = 0
+        saved = 0
+        by_path = {}
+        try:
+            for path in directory_paths:
+                parent_path, _, name = path.rpartition('/')
+                parent_id = by_path[parent_path] if parent_path else parent_folder_id
+                key = (parent_id or '', name.casefold())
+                folder_id = known.get(key)
+                if not folder_id:
+                    folder_id = self.create_folder('shared', name, parent_id or '')['folder_id']
+                    known[key] = folder_id
+                    created += 1
+                by_path[path] = folder_id
+            for upload, path in zip(files, file_paths):
+                parent_path, _, filename = path.rpartition('/')
+                folder_id = by_path[parent_path] if parent_path else parent_folder_id
+                # Use the real browser filename, not the relative path, for the Artifact object.
+                self.save_http_uploaded_file(
+                    upload, artifact_type='shared', folder_id=folder_id or '', publish_event=False,
+                )
+                saved += 1
+        except Exception as exc:
+            raise ValueError(f'Shared upload stopped after {saved} file(s): {exc}') from exc
+        self.event_bus.publish('artifact_batch_uploaded', {
+            'artifact_type': 'shared', 'file_count': saved, 'folder_count': created,
+        })
+        return {'files_uploaded': saved, 'folders_created': created}
 
     def allocate_command_output_artifact_path(self, *, output_kind: str, machine_id: str, source_command: str) -> dict:
         return self.artifact_service.allocate_command_output_artifact_path(

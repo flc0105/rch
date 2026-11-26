@@ -29,6 +29,9 @@ def create_transfers_blueprint(server_instance):
                 client_id=payload.get('client_id') or '',
                 filename=payload.get('filename') or '',
                 total_bytes=payload.get('total_bytes'),
+                batch_id=payload.get('batch_id') or '',
+                batch_total=payload.get('batch_total') or 0,
+                batch_index=payload.get('batch_index') or 0,
                 operation_id=get_optional_operation_id(),
                 destination_path=payload.get('destination_path') or '',
                 conflict_policy=payload.get('conflict_policy'),
@@ -37,6 +40,19 @@ def create_transfers_blueprint(server_instance):
                 feature=request.headers.get('X-RCH-Feature') if request.headers.get('X-RCH-Feature') in ('remote_files', 'remote_file_picker') else 'remote_files',
             )
 
+        return responder.json_endpoint(_execute, default_error_status=500)
+
+    @blueprint.post('/api/transfers/browser-upload-batch/finalize')
+    def finalize_browser_upload_batch():
+        def _execute():
+            payload = get_json_payload()
+            return transfer_api.finalize_browser_upload_batch(
+                client_id=payload.get('client_id') or '',
+                batch_id=payload.get('batch_id') or '',
+                folder_count=payload.get('folder_count') or 0,
+                error=payload.get('error') or '',
+                tab_id=get_optional_tab_id(),
+            )
         return responder.json_endpoint(_execute, default_error_status=500)
 
     @blueprint.post('/api/transfers/<transfer_id>/cancel')

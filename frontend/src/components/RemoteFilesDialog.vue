@@ -46,7 +46,8 @@
                   <el-dropdown-item command="refresh">Refresh</el-dropdown-item>
                   <el-dropdown-item command="up" :disabled="!remoteFilesParentPath">Parent Directory</el-dropdown-item>
                   <el-dropdown-item command="new_folder">New Folder</el-dropdown-item>
-                  <el-dropdown-item command="upload" :disabled="remoteUploadLoading">Upload</el-dropdown-item>
+                  <el-dropdown-item command="upload" :disabled="remoteUploadLoading || dragUploadLoading">Upload</el-dropdown-item>
+                  <el-dropdown-item command="drag_upload" :disabled="remoteUploadLoading || dragUploadLoading || !remoteFilesCurrentPath">Drag Upload</el-dropdown-item>
                   <el-dropdown-item command="set_cwd" :disabled="!remoteFilesCurrentPath">Set as CWD</el-dropdown-item>
                   <el-dropdown-item command="open_pty" :disabled="!remoteFilesCurrentPath">Open PTY Here</el-dropdown-item>
                   <el-dropdown-item command="toggle_pin">{{ remotePinButtonText }}</el-dropdown-item>
@@ -79,6 +80,8 @@
                   </el-dropdown-item>
                   <el-dropdown-item command="copy" :disabled="!hasRemoteSelection">Copy Selected</el-dropdown-item>
                   <el-dropdown-item command="cut" :disabled="!hasRemoteSelection">Cut Selected</el-dropdown-item>
+                  <el-dropdown-item command="copy_to_selected" :disabled="!hasRemoteSelection">Copy To</el-dropdown-item>
+                  <el-dropdown-item command="move_to_selected" :disabled="!hasRemoteSelection">Move To</el-dropdown-item>
                   <el-dropdown-item command="create_zip" :disabled="!hasRemoteSelection || remoteZipCreating">Create ZIP</el-dropdown-item>
                   <el-dropdown-item command="paste" :disabled="!hasRemoteClipboard">Paste</el-dropdown-item>
                   <el-dropdown-item command="clear_clipboard" :disabled="!hasRemoteClipboard">Clear Clipboard</el-dropdown-item>
@@ -183,6 +186,7 @@
               <el-button
                   size="small"
                   :loading="remoteUploadLoading"
+                  :disabled="dragUploadLoading"
                   @click="triggerRemoteUpload"
               >
                 Upload
@@ -225,6 +229,7 @@
 
                 <template #dropdown>
                   <el-dropdown-menu>
+                    <el-dropdown-item command="drag_upload" :disabled="remoteUploadLoading || dragUploadLoading || !remoteFilesCurrentPath">Drag Upload</el-dropdown-item>
                     <el-dropdown-item command="set_cwd" :disabled="!remoteFilesCurrentPath">Set as CWD</el-dropdown-item>
                   <el-dropdown-item command="open_pty" :disabled="!remoteFilesCurrentPath">Open PTY Here</el-dropdown-item>
                     <el-dropdown-item command="toggle_pin">
@@ -251,6 +256,9 @@
                         ({{ remoteSelectedPaths.length }})
                       </span>
                     </el-dropdown-item>
+
+                    <el-dropdown-item command="copy_to_selected" :disabled="!hasRemoteSelection">Copy To</el-dropdown-item>
+                    <el-dropdown-item command="move_to_selected" :disabled="!hasRemoteSelection">Move To</el-dropdown-item>
 
                     <el-dropdown-item
                         command="create_zip"
@@ -856,6 +864,15 @@
       @set-active-task="(...args) => $emit('set-active-task', ...args)"
       @upload-started="handleDestinationPickerUploadStarted"
   />
+  <DragUploadDialog
+      v-model="dragUploadVisible"
+      title="Drag Upload"
+      helper-text="Upload files and folders to the current remote directory."
+      :multiple="true"
+      :allow-directories="true"
+      :loading="dragUploadLoading"
+      @upload="handleDragUpload"
+  />
   <RemotePinsDialog
       v-model="pinManagerVisible"
       :selected-id="remoteFilesClientId"
@@ -869,7 +886,7 @@
 
 <script>
 import { copyTextFallback } from '../utils/clipboard.js'
-import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteEntries } from '../api/remoteFilesApi.js'
+import { listRemoteDirectory, getRemoteSystemPaths, pasteRemoteFiles, createRemoteZip, extractRemoteZip, renameRemoteFile, downloadRemoteFile, downloadRemoteZip, deleteRemoteEntries, makeRemoteDirectory } from '../api/remoteFilesApi.js'
 import { listRemotePinnedPaths, saveRemotePinnedPath, deleteRemotePinnedPath } from '../api/remotePinsApi.js'
 import {ElMessage, ElMessageBox} from 'element-plus'
 import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
@@ -878,9 +895,11 @@ import { formatTerminalCommandFinishedLine } from '../composables/terminalMarker
 import { MoreFilled } from '@element-plus/icons-vue'
 import RemotePinsDialog from './RemotePinsDialog.vue'
 import RemoteFilePicker from './RemoteFilePicker.vue'
+import DragUploadDialog from './DragUploadDialog.vue'
+import { flattenUploadAttachments } from '../utils/browserFileEntries.js'
 import { promptCreateRemoteFolder } from '../utils/remoteFolderCreation.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
-import { uploadRemoteFileToClient } from '../api/transferApi.js'
+import { uploadRemoteFileToClient, finalizeBrowserUploadBatch } from '../api/transferApi.js'
 import { preparePasteConflicts, prepareExtractConflict, prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { sendCommand } from '../api/connectionsApi.js'
 
@@ -891,6 +910,7 @@ export default {
   components: {
     RemotePinsDialog,
     RemoteFilePicker,
+    DragUploadDialog,
     MoreFilled,
   },
 
@@ -938,6 +958,8 @@ export default {
       remoteSearchTimer: null,
 
       remoteUploadLoading: false,
+      dragUploadVisible: false,
+      dragUploadLoading: false,
       showHiddenFiles: false,
       remoteSelectedPaths: [],
       remoteZipDownloading: false,
@@ -1205,6 +1227,7 @@ export default {
       this.abortRemoteDirectoryRequest()
       this.destinationPickerVisible = false
       this.destinationRequest = null
+      this.dragUploadVisible = false
       this.remoteFilesContextSeq += 1
       this.remoteFilesClientId = clientId
       this.visible = true
@@ -1228,6 +1251,7 @@ export default {
     },
 
     triggerRemoteUpload() {
+      if (this.dragUploadLoading) return
       if (!this.remoteFilesClientId) {
         ElMessage.warning('Please select a device')
         return
@@ -1239,6 +1263,100 @@ export default {
       }
 
       this.$emit('request-upload')
+    },
+
+    triggerDragUpload() {
+      if (!this.remoteFilesClientId) return ElMessage.warning('Please select a device')
+      if (!this.remoteFilesCurrentPath) return ElMessage.warning('Current directory is empty')
+      this.dragUploadVisible = true
+    },
+
+    // Keep the remote directory's path style when targeting Windows clients.
+    joinUploadRemotePath(root, relativePath) {
+      const separator = root.includes('\\') ? '\\' : '/'
+      const base = root.replace(/[\\/]+$/, '')
+      return `${base}${separator}${relativePath.split('/').join(separator)}`
+    },
+
+    async ensureUploadRemoteDirectory(clientId, path) {
+      const response = await makeRemoteDirectory(clientId, path)
+      const result = await response.json()
+      if (response.ok && result.code === 0) return
+      // An existing destination folder can be reused; verify that it is browsable.
+      const existing = await listRemoteDirectory(clientId, { path, page: 1, pageSize: 1 })
+      const info = await existing.json()
+      if (!existing.ok || info.code !== 0 || !info.data?.current_path) {
+        throw new Error(result.message || `Cannot create directory: ${path}`)
+      }
+    },
+
+    async handleDragUpload(attachments) {
+      if (this.dragUploadLoading || this.remoteUploadLoading) return
+      let plan
+      try {
+        plan = flattenUploadAttachments(attachments)
+      } catch (error) {
+        return ElMessage.error(error.message || 'Invalid upload selection')
+      }
+      if (!plan.directories.length && !plan.files.length) return
+
+      const context = this.captureRemoteFilesContext()
+      const root = this.remoteFilesCurrentPath
+      if (!context.clientId || !root) return
+      const stillActive = () => this.isRemoteFilesContextActive(context) && this.remoteFilesCurrentPath === root
+      const batchId = createTerminalOperation({ kind: 'transfer', action: 'upload_files',
+        clientId: context.clientId }).operation_id
+      const headers = { ...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui',
+        'X-RCH-Feature': 'remote_files' }
+      let started = 0
+      let batchError = ''
+      this.dragUploadLoading = true
+      try {
+        for (const dir of plan.directories) {
+          if (!stillActive()) throw new Error('Remote upload context changed')
+          await this.ensureUploadRemoteDirectory(context.clientId, this.joinUploadRemotePath(root, dir))
+        }
+        for (const [index, { file, relativePath }] of plan.files.entries()) {
+          if (!stillActive()) throw new Error('Remote upload context changed')
+          const parent = relativePath.split('/').slice(0, -1).join('/')
+          const destinationDir = parent ? this.joinUploadRemotePath(root, parent) : root
+          const conflictPolicy = await prepareUploadConflict(context.clientId, destinationDir, file.name)
+          if (conflictPolicy === false) throw new Error(`Upload cancelled: ${relativePath}`)
+          const result = await uploadRemoteFileToClient({
+            file, clientId: context.clientId, destinationPath: destinationDir,
+            conflictPolicy, headers, batchId, batchTotal: plan.files.length, batchIndex: index,
+            onStarted: () => {
+              if (index === 0) showTransferStartedToast(
+                `Upload started: ${plan.files.length} file(s)`, this.openTransferCenterFromToast)
+            },
+          })
+          started++
+          if (index === plan.files.length - 1) {
+            this.$emit('upload-started', { taskId: result.task_id || '', clientId: context.clientId,
+              path: destinationDir, source: 'remote_files_drag_upload' })
+          }
+        }
+        if (stillActive()) {
+          this.dragUploadVisible = false
+          await this.refreshRemoteDirectory()
+          ElMessage.success(`Started ${started} file transfer(s), ${plan.directories.length} folder(s) ready`)
+        }
+      } catch (error) {
+        batchError = error.message || 'Upload failed'
+        if (stillActive()) ElMessage.error(`${error.message || 'Upload failed'} (${started}/${plan.files.length} started)`)
+      } finally {
+        if (plan.files.length) {
+          try {
+            await finalizeBrowserUploadBatch({
+              clientId: context.clientId, batchId, folderCount: plan.directories.length,
+              error: batchError || (started < plan.files.length ? 'Incomplete upload batch' : ''),
+            }, headers)
+          } catch (error) {
+            if (stillActive()) ElMessage.error(error.message || 'Failed to finalize upload batch')
+          }
+        }
+        this.dragUploadLoading = false
+      }
     },
 
     async handleUploadChange(event) {
@@ -1256,13 +1374,14 @@ export default {
         return
       }
 
-      const targetPath = this.remoteFilesCurrentPath
+      const targetPath = event?.destinationPath || this.remoteFilesCurrentPath
+      const rootPath = event?.rootPath || targetPath
       this.remoteUploadLoading = true
 
       let operation = null
       try {
         const conflictPolicy = await prepareUploadConflict(clientId, targetPath, file.name)
-        if (conflictPolicy === false || String(this.remoteFilesClientId || '') !== clientId || this.remoteFilesCurrentPath !== targetPath) return
+        if (conflictPolicy === false || String(this.remoteFilesClientId || '') !== clientId || this.remoteFilesCurrentPath !== rootPath) return false
         operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
           invocation: { source: 'remote_files', filename: file.name, destination: targetPath }, replay: null })
         this.$emit('append-output', clientId, `> [Remote Upload] ${file.name} -> ${targetPath}`,
@@ -1270,7 +1389,13 @@ export default {
         const result = await uploadRemoteFileToClient({
           file, clientId, destinationPath: targetPath, conflictPolicy,
           headers: operationHeaders(operation, {...this.getTabScopedHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_files'}),
-          onStarted: () => showTransferStartedToast(`Upload started: ${file.name}`, this.openTransferCenterFromToast),
+          onStarted: () => {
+            if (event?.batchToast) {
+              if (!event.suppressToast) showTransferStartedToast(event.batchToast, this.openTransferCenterFromToast)
+            } else {
+              showTransferStartedToast(`Upload started: ${file.name}`, this.openTransferCenterFromToast)
+            }
+          },
         })
         const taskId = result.task_id
 
@@ -1280,6 +1405,7 @@ export default {
           clientId,
           path: targetPath || '',
         })
+        return true
 
       } catch (e) {
         if (e?.name === 'AbortError' && operation) {
@@ -1288,7 +1414,7 @@ export default {
             event_type: 'completed', execution_status: 'cancelled', execution_success: false,
           })
           ElMessage.info('Upload cancelled')
-          return
+          return false
         }
         const failedDuringPreflight = !operation
         const title = `[Remote Upload] ${file.name} -> ${targetPath}`
@@ -1305,6 +1431,7 @@ export default {
         }
 
         ElMessage.error(e.message || 'Upload failed')
+        return false
       } finally {
         this.remoteUploadLoading = false
         if (event?.target) event.target.value = ''
@@ -1586,9 +1713,14 @@ export default {
     },
 
     openDestinationPicker(row, operation) {
+      if (!row?.path || row.is_parent_entry) return
+      this.openDestinationPickerForPaths([row.path], operation)
+    },
+
+    openDestinationPickerForPaths(paths, operation) {
       const context = this.captureRemoteFilesContext()
-      if (!this.isRemoteFilesContextActive(context) || !row?.path || row.is_parent_entry) return
-      this.destinationRequest = { context, paths: [row.path], operation }
+      if (!this.isRemoteFilesContextActive(context) || !paths.length || !['copy', 'move'].includes(operation)) return
+      this.destinationRequest = { context, paths: [...paths], operation }
       this.destinationPickerInitialPath = this.remoteFilesCurrentPath
       this.destinationPickerVisible = true
     },
@@ -1703,6 +1835,7 @@ export default {
       if (command === 'up') return this.goToRemoteParent()
       if (command === 'new_folder') return this.createRemoteDirectory()
       if (command === 'upload') return this.triggerRemoteUpload()
+      if (command === 'drag_upload') return this.triggerDragUpload()
       if (command === 'download_selected') return this.downloadSelectedRemoteEntries()
       if (command === 'delete_selected') return this.deleteSelectedRemoteEntries()
       if (command === 'view_card') {
@@ -1722,6 +1855,12 @@ export default {
     },
 
     handleRemoteToolbarMoreCommand(command) {
+      if (command === 'drag_upload') return this.triggerDragUpload()
+      if (command === 'copy_to_selected' || command === 'move_to_selected') {
+        return this.openDestinationPickerForPaths(this.remoteSelectedPaths,
+          command === 'move_to_selected' ? 'move' : 'copy')
+      }
+
       if (command === 'set_cwd') return this.setRemoteDirectoryAsCwd(this.remoteFilesCurrentPath)
       if (command === 'open_pty') return this.openRemotePtyHere(this.remoteFilesCurrentPath)
       if (command === 'toggle_pin') {
@@ -2577,6 +2716,7 @@ export default {
       this.pinManagerVisible = false
       this.destinationPickerVisible = false
       this.destinationRequest = null
+      this.dragUploadVisible = false
       this.clearRemoteClipboard()
       this.clearTableSelection()
     },

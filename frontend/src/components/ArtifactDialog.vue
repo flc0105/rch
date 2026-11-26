@@ -343,9 +343,10 @@
   <DragUploadDialog
     v-model="sharedFileUploadDialogVisible"
     title="Upload Shared Files"
-    helper-text="Drag files here or choose files to upload to the selected file space."
+    helper-text="Files and folders are uploaded with their directory structure."
     button-text="Upload"
     :multiple="true"
+    :allow-directories="true"
     :loading="sharedFileUploading"
     @upload="uploadSharedFiles"
   />
@@ -404,7 +405,7 @@
 </template>
 
 <script>
-import { listArtifacts, getArtifactDetail, uploadArtifact, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts, createArtifactFolder, renameArtifactFolder, deleteArtifactFolder, moveArtifactToFolder } from '../api/artifactsApi.js'
+import { listArtifacts, getArtifactDetail, uploadSharedBatch, renameArtifact as requestRenameArtifact, sendArtifactToClient, deleteArtifact as deleteArtifactRequest, clearArtifacts, createArtifactFolder, renameArtifactFolder, deleteArtifactFolder, moveArtifactToFolder } from '../api/artifactsApi.js'
 import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { formatTerminalCommandFinishedLine } from '../composables/terminalMarkers.js'
@@ -412,6 +413,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { setRemoteClipboardArtifactFile } from '../api/clipboardApi.js'
 import { formatBytes as formatBytesValue } from '../utils/formatters.js'
 import DragUploadDialog from './DragUploadDialog.vue'
+import { flattenUploadAttachments } from '../utils/browserFileEntries.js'
 import { File, Folder, FolderOpen } from '@lucide/vue'
 import { ARTIFACT_TYPE, ARTIFACT_FOLDER_ALL } from '../data/artifactConstants.js'
 
@@ -994,43 +996,35 @@ export default {
       this.sharedFileUploadDialogVisible = true
     },
 
-    async uploadSingleSharedFile(file) {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('artifact_type', 'shared')
-      if (this.selectedFolderId) formData.append('folder_id', this.selectedFolderId)
-
-      const res = await uploadArtifact(formData, this.buildJsonHeaders())
-      const json = await res.json()
-
-      if (!res.ok || json.code !== 0) {
-        throw new Error(json.message || `Upload failed: ${file.name}`)
+    async uploadSharedFiles(attachments) {
+      if (!this.isSharedFilesTab || this.sharedFileUploading) return
+      let plan
+      try {
+        plan = flattenUploadAttachments(attachments)
+      } catch (error) {
+        ElMessage.error(error.message || 'Invalid upload selection')
+        return
       }
+      if (!plan.files.length && !plan.directories.length) return
 
-      return json.data || {}
-    },
-
-    async uploadSharedFiles(files) {
-      if (!this.isSharedFilesTab) return
-      const uploadFiles = Array.isArray(files) ? files.filter(Boolean) : []
-      if (!uploadFiles.length) return
+      const formData = new FormData()
+      formData.append('folder_id', this.selectedFolderId || '')
+      formData.append('directories', JSON.stringify(plan.directories))
+      formData.append('paths', JSON.stringify(plan.files.map(item => item.relativePath)))
+      for (const entry of plan.files) formData.append('files', entry.file, entry.file.name)
 
       this.sharedFileUploading = true
-
       try {
-        for (const file of uploadFiles) {
-          await this.uploadSingleSharedFile(file)
-        }
-
-        const message = uploadFiles.length === 1
-          ? `Uploaded: ${uploadFiles[0].name}`
-          : `Uploaded ${uploadFiles.length} file(s)`
-        ElMessage.success(message)
+        const response = await uploadSharedBatch(formData, this.buildJsonHeaders())
+        const json = await response.json()
+        if (!response.ok || json.code !== 0) throw new Error(json.message || 'Upload failed')
+        const result = json.data || {}
+        ElMessage.success(`Uploaded ${result.files_uploaded || 0} file(s), ${result.folders_created || 0} folder(s)`)
         this.sharedFileUploadDialogVisible = false
-        await this.loadArtifacts()
-      } catch (e) {
-        ElMessage.error(e.message || 'Upload failed')
+      } catch (error) {
+        ElMessage.error(error.message || 'Upload failed')
       } finally {
+        await this.loadArtifacts()
         this.sharedFileUploading = false
       }
     },

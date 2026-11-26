@@ -29,6 +29,14 @@ export function moveArtifactToFolder(artifactId, folderId) {
   return fetch(artifactUrl(artifactId, '/move'), jsonRequestOptions('POST', { folder_id: folderId }))
 }
 
+export function uploadSharedBatch(formData, headers) {
+  return fetch('/api/artifacts/shared/batch-upload', {
+    method: 'POST',
+    ...(headers === undefined ? {} : { headers }),
+    body: formData,
+  })
+}
+
 export function uploadArtifact(formData, headers) {
   return fetch('/api/files/upload', {
     method: 'POST',

@@ -14,6 +14,7 @@ DEFAULT_NOTIFICATION_PREFERENCES = {
         'artifact_created': True,
         'file_transfer_started': False,
         'file_transfer_stopped': False,
+        'file_transfer_batch_finished': True,
         'file_transfer_error': True,
         'pty_opened': True,
         'pty_closed': True,

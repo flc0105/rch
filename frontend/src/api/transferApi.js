@@ -36,6 +36,15 @@ export async function createBrowserUploadTransfer(payload = {}, headers = {}) {
   return parseApiResponse(res, 'Failed to initialize upload transfer')
 }
 
+export async function finalizeBrowserUploadBatch({ clientId, batchId, folderCount = 0, error = '' }, headers = {}) {
+  const res = await fetch('/api/transfers/browser-upload-batch/finalize', {
+    method: 'POST',
+    headers: normalizeHeaders({ 'Content-Type': 'application/json', ...headers }),
+    body: JSON.stringify({ client_id: clientId, batch_id: batchId, folder_count: folderCount, error }),
+  })
+  return parseApiResponse(res, 'Failed to finalize upload batch')
+}
+
 export function buildBrowserUploadContentUrl(transfer = {}) {
   const path = String(transfer?.browser_upload_path || '').trim()
   if (!path) {
@@ -47,12 +56,13 @@ export function buildBrowserUploadContentUrl(transfer = {}) {
 }
 
 // Shared browser -> Server -> Client upload path used by both remote file dialogs.
-export async function uploadRemoteFileToClient({file, clientId, destinationPath, conflictPolicy = null, headers = {}, onStarted = null}) {
+export async function uploadRemoteFileToClient({file, clientId, destinationPath, conflictPolicy = null, headers = {}, onStarted = null, batchId = '', batchTotal = 0, batchIndex = 0}) {
   const transfer = await createBrowserUploadTransfer({
     client_id: clientId,
     filename: file.name,
     total_bytes: file.size,
     destination_path: destinationPath,
+    ...(batchId ? { batch_id: batchId, batch_total: batchTotal, batch_index: batchIndex } : {}),
     ...(conflictPolicy !== null ? { conflict_policy: conflictPolicy } : {}),
   }, headers)
   const transferId = String(transfer?.transfer_id || '').trim()

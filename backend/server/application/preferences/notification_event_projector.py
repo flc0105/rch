@@ -1,6 +1,8 @@
 from core.utils.formatting import format_bytes_precise
 from core.protocol.references import LOG_FILE_REFERENCE_TYPE
 from datetime import datetime, timezone
+import threading
+import time
 
 
 class NotificationEventProjector:
@@ -11,12 +13,14 @@ class NotificationEventProjector:
         'external_tool_lifecycle',
         'agent_build_lifecycle',
         'file_transfer_lifecycle',
+        'file_transfer_batch_finalized',
         'connection_online',
         'connection_offline',
         'background_job_lifecycle',
         'pty_lifecycle',
         'screen_view_lifecycle',
         'artifact_created',
+        'artifact_batch_uploaded',
         'device_event',
         'command_result',
         'command_result_batch',
@@ -28,6 +32,8 @@ class NotificationEventProjector:
     def __init__(self, *, history_store, server):
         self.history_store = history_store
         self.server = server
+        self._batch_lock = threading.RLock()
+        self._transfer_batches = {}
 
     def record_event(self, event_type: str, payload: dict, event_id: str, target_tab_id: str = ''):
         del target_tab_id
@@ -232,6 +238,30 @@ class NotificationEventProjector:
         )
 
     def _build_file_transfer_lifecycle(self, payload):
+        batch = payload.get('metadata') if isinstance(payload.get('metadata'), dict) else {}
+        batch_id = str(batch.get('batch_id') or '').strip()
+        if batch_id:
+            # Transfer SSE stays per-file. Notification history receives one
+            # summary only after the browser closes the batch and all files end.
+            with self._batch_lock:
+                # Abandoned browser batches must not accumulate for the Server lifetime.
+                now = time.monotonic()
+                for stale_id, stale in list(self._transfer_batches.items()):
+                    if now - stale['seen_at'] > 3600:
+                        self._transfer_batches.pop(stale_id, None)
+                group = self._transfer_batches.setdefault(batch_id, {
+                    'seen_at': now,
+                    'client_id': payload.get('client_id'), 'total': int(batch.get('batch_total') or 0),
+                    'transfers': {}, 'finalized': False, 'error': '',
+                })
+                group['seen_at'] = now
+                transfer_id = str(payload.get('transfer_id') or '')
+                if transfer_id:
+                    if str(payload.get('lifecycle') or '').lower() == 'started':
+                        group['transfers'].setdefault(transfer_id, 'running')
+                    else:
+                        group['transfers'][transfer_id] = str(payload.get('state') or 'failed').lower()
+                return self._finish_transfer_batch(batch_id, group)
         lifecycle = str(payload.get('lifecycle') or '').strip().lower()
         if lifecycle not in {'started', 'stopped', 'error'}:
             return None
@@ -279,6 +309,44 @@ class NotificationEventProjector:
             )
         context['error'] = error_text
         return self._notification('file_transfer_error', 'File Transfer Error', f'{filename} · {route}{f": {error_text}" if error_text else ""}', 'error', context, actions)
+
+    def _build_file_transfer_batch_finalized(self, payload):
+        batch_id = str(payload.get('batch_id') or '').strip()
+        if not batch_id:
+            return None
+        with self._batch_lock:
+            group = self._transfer_batches.get(batch_id)
+            if not group or group['client_id'] != payload.get('client_id'):
+                return None
+            group['finalized'] = True
+            group['error'] = str(payload.get('error') or '').strip()
+            group['folders'] = max(0, int(payload.get('folder_count') or 0))
+            return self._finish_transfer_batch(batch_id, group)
+
+    def _finish_transfer_batch(self, batch_id, group):
+        if not group['finalized'] or any(state not in {'completed', 'failed', 'cancelled', 'interrupted'}
+                                        for state in group['transfers'].values()):
+            return None
+        transfers = list(group['transfers'].values())
+        succeeded = transfers.count('completed')
+        total = group['total']
+        failed = total - succeeded
+        ok = not failed and not group['error']
+        self._transfer_batches.pop(batch_id, None)
+        context = {'batch_id': batch_id, 'client_id': group['client_id'],
+                   'file_count': total, 'completed': succeeded, 'failed': failed}
+        message = f'{succeeded}/{total} files uploaded'
+        if group.get('folders'):
+            message += f' · {group["folders"]} folders'
+        if group.get('error'):
+            message += f' · {group["error"][:120]}'
+        return self._notification(
+            'file_transfer_batch_finished',
+            'File Upload Completed' if ok else 'File Upload Incomplete',
+            message,
+            'success' if ok else 'warning', context,
+            [{'id': 'open-transfers', 'type': 'open_transfers', 'label': 'Open Transfers', 'url': ''}],
+        )
 
     def _build_background_job_lifecycle(self, payload):
         state = str(payload.get('state') or payload.get('status') or '').strip().lower()
@@ -354,6 +422,16 @@ class NotificationEventProjector:
             message = f'Screen view ended on {device}: {error_text}' if error_text else f'Screen view ended with an error on {device}'
             return self._notification('screen_view_error', 'Screen View Error', message, 'error', context)
         return None
+
+    def _build_artifact_batch_uploaded(self, payload):
+        files = int(payload.get('file_count') or 0)
+        folders = int(payload.get('folder_count') or 0)
+        return self._notification(
+            'artifact_created', 'Files Ready',
+            f'{files} file(s), {folders} folder(s) uploaded', 'success',
+            {'artifact_type': 'shared', 'file_count': files, 'folder_count': folders},
+            [{'id': 'open-artifacts', 'type': 'open_artifacts', 'label': 'Open Artifacts', 'url': ''}],
+        )
 
     def _build_artifact_created(self, payload):
         artifact_id = str(payload.get('artifact_id') or '').strip()

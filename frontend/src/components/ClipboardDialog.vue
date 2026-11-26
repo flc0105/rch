@@ -193,6 +193,7 @@
 
 <script>
 import { formatBytesHuman } from '../utils/formatters.js'
+import { collectTransferAttachments } from '../utils/browserFileEntries.js'
 import { ElMessage } from 'element-plus'
 import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
 import { Loading } from '@element-plus/icons-vue'
@@ -493,80 +494,8 @@ export default {
         && attachments[0]?.kind === 'file'
         && String(attachments[0]?.file?.type || '').startsWith('image/')
     },
-    async collectTransferAttachments(transfer) {
-      const transferItems = Array.from(transfer?.items || []).filter((item) => item?.kind === 'file')
-      const entries = transferItems
-        .map((item) => (typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null))
-        .filter(Boolean)
-
-      if (entries.length) {
-        const attachments = []
-        for (const entry of entries) {
-          const attachment = await this.collectFileSystemEntry(entry)
-          if (attachment) attachments.push(attachment)
-        }
-        if (attachments.length) return attachments
-      }
-
-      return Array.from(transfer?.files || []).map((file) => ({
-        kind: 'file',
-        name: file.name,
-        file,
-      }))
-    },
-    async collectFileSystemEntry(entry) {
-      if (entry?.isFile) {
-        const file = await this.readFileSystemFile(entry)
-        return file ? { kind: 'file', name: file.name, file } : null
-      }
-
-      if (!entry?.isDirectory) return null
-
-      const directories = []
-      const files = []
-      const rootName = String(entry.name || 'folder')
-      await this.walkFileSystemDirectory(entry, rootName, directories, files)
-      return {
-        kind: 'directory',
-        name: rootName,
-        directories,
-        files,
-      }
-    },
-    async walkFileSystemDirectory(entry, relativePath, directories, files) {
-      directories.push(relativePath)
-      const children = await this.readFileSystemDirectoryEntries(entry)
-
-      for (const child of children) {
-        const childPath = `${relativePath}/${child.name}`
-        if (child.isDirectory) {
-          await this.walkFileSystemDirectory(child, childPath, directories, files)
-          continue
-        }
-        if (!child.isFile) continue
-
-        const file = await this.readFileSystemFile(child)
-        if (file) files.push({ file, relativePath: childPath })
-      }
-    },
-    readFileSystemFile(entry) {
-      return new Promise((resolve, reject) => {
-        entry.file(resolve, reject)
-      })
-    },
-    async readFileSystemDirectoryEntries(entry) {
-      const reader = entry.createReader()
-      const entries = []
-
-      while (true) {
-        const batch = await new Promise((resolve, reject) => {
-          reader.readEntries(resolve, reject)
-        })
-        if (!batch.length) break
-        entries.push(...batch)
-      }
-
-      return entries
+    collectTransferAttachments(transfer) {
+      return collectTransferAttachments(transfer)
     },
     openFilePicker() {
       const input = this.$refs.fileInputRef
