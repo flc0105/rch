@@ -37,13 +37,27 @@
     />
 
     <div v-if="allowDirectories" class="drag-upload-picker-actions">
-      <el-button :disabled="loading || scanning" @click="openFolderPicker">Choose folder</el-button>
-      <span class="drag-upload-desc">Drag folders to include empty subfolders.</span>
+      <div class="drag-upload-picker-buttons">
+        <el-button :disabled="loading || scanning" @click="openFilePicker">Choose files</el-button>
+        <el-button :disabled="loading || scanning" @click="openFolderPicker">Choose folders</el-button>
+      </div>
+      <span class="drag-upload-desc">Choose again to add more files or folders. Drag folders to include empty subfolders.</span>
       <input ref="folderInputRef" type="file" webkitdirectory multiple class="drag-upload-input" @change="handleFolderInputChange" />
     </div>
-    <div v-if="loading && stage" class="drag-upload-file-panel" role="status">
-      <div class="drag-upload-file-header"><span>{{ stage }}</span></div>
-      <el-progress v-if="progress !== null" :percentage="progress" />
+    <div v-if="loading && stage" class="drag-upload-progress" role="status" aria-live="polite">
+      <div class="drag-upload-progress-heading">
+        <span>{{ stage }}</span>
+        <span v-if="displayProgress !== null" class="drag-upload-progress-percent">{{ displayProgress }}%</span>
+      </div>
+      <el-progress
+        :percentage="displayProgress ?? 35"
+        :aria-hidden="displayProgress === null"
+        :indeterminate="displayProgress === null"
+        :duration="2"
+        :stroke-width="5"
+        :show-text="false"
+        :aria-label="stage"
+      />
     </div>
     <div v-if="scanning" role="status" class="drag-upload-desc">Scanning files…</div>
     <div
@@ -133,6 +147,10 @@ export default {
   },
 
   computed: {
+    displayProgress() {
+      return this.progress !== null && Number.isFinite(this.progress)
+        ? Math.round(Math.max(0, Math.min(100, this.progress))) : null
+    },
     selectionSummary() {
       try { return flattenUploadAttachments(this.selectedItems) }
       catch (_) { return { files: [], directories: [], totalBytes: 0 } }
@@ -176,6 +194,7 @@ export default {
 
     handleFolderInputChange(event) {
       try {
+        if (!this.modelValue || this.loading || this.scanning) return
         const attachments = collectDirectoryPickerAttachments(Array.from(event.target.files || []))
         this.addSelectedItems(attachments)
       } catch (error) { ElMessage.error(error.message || 'Failed to read selected folder') }
@@ -222,7 +241,7 @@ export default {
 
     handleInputChange(event) {
       const files = Array.from(event?.target?.files || [])
-      this.addSelectedItems(files.map(file => ({ kind: 'file', name: file.name, file })))
+      if (this.modelValue && !this.loading && !this.scanning) this.addSelectedItems(files.map(file => ({ kind: 'file', name: file.name, file })))
       if (event?.target) event.target.value = ''
     },
 
@@ -285,7 +304,22 @@ export default {
 </script>
 
 <style scoped>
-.drag-upload-picker-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.drag-upload-picker-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 12px; }
+.drag-upload-picker-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.drag-upload-picker-buttons :deep(.el-button + .el-button) { margin-left: 0; }
+.drag-upload-progress {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-fill-color-light);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.drag-upload-progress-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 13px; color: var(--el-text-color-primary); font-weight: 500; }
+.drag-upload-progress-percent { color: var(--el-color-primary); font-variant-numeric: tabular-nums; }
+.drag-upload-progress :deep(.el-progress-bar__outer) { background: var(--el-fill-color-darker); }
 .drag-upload-dropzone {
   min-height: 190px;
   border: 1px dashed rgba(148, 163, 184, 0.75);
@@ -355,6 +389,8 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   padding: 10px 14px;
   background: rgba(248, 250, 252, 0.95);
   color: var(--muted, #475569);

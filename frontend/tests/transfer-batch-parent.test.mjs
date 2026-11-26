@@ -84,3 +84,31 @@ test('an older request for the same batch cannot overwrite a newer detail snapsh
   assert.equal(ui.batchMembers.length, 1)
   assert.equal(ui.batchMembers[0].percent, 80)
 })
+
+test('Info and Batch Progress are separate dialogs; switching invalidates old child loads and reopening reloads', async () => {
+  const pending = []
+  const ui = drawerInstance(() => new Promise(resolve => pending.push(resolve)))
+  const parent = { batch_id: 'batch', transfer_id: 'parent', is_batch: true, destination_path: '/root' }
+  const first = ui.openBatchDetails(parent)
+  assert.equal(ui.batchVisible, true)
+  assert.equal(ui.infoVisible, false)
+  ui.openTransferInfo(parent)
+  assert.equal(ui.batchVisible, false)
+  assert.equal(ui.infoVisible, true)
+  ui.handleTransferChildUpdate({ batch_id: 'batch', transfer_id:'stale' })
+  pending[0]({ items: [{ transfer_id:'old' }] })
+  await first
+  assert.equal(ui.batchMembers.length,0)
+  assert.equal(ui.refreshBatchDetails(),undefined)
+  const second = ui.openBatchDetails(parent)
+  pending[1]({ items: [{ transfer_id:'new', filename:'a.txt', destination_path:'/root/sub', percent:50 }] })
+  await second
+  assert.equal(ui.batchMembers.length,1)
+  assert.equal(ui.batchMemberPath(ui.batchMembers[0]), 'sub/a.txt')
+  assert.equal(ui.infoVisible,false)
+  assert.equal(ui.batchVisible,true)
+  const infoTemplate = drawer.split('title="Transfer Info"')[1].split('</el-dialog>')[0]
+  assert.doesNotMatch(infoTemplate, /orderedBatchMembers/)
+  assert.match(drawer, /v-model="batchVisible" title="Batch Progress"/)
+  assert.match(drawer, /command="batch-progress"/)
+})

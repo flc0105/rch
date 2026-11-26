@@ -38,26 +38,35 @@ export async function prepareUploadConflict(clientId, destinationDir, filename, 
 export async function prepareRemoteUploadPlan(clientId, root, plan, isActive = () => true) {
   const prompt = await conflictsEnabled()
   const preview = await expectData(await inspectRemoteUploadPlan(clientId, root, plan.files.map(entry => entry.relativePath), plan.directories), 'Upload conflict inspection')
-  const scope = {}, skipped = new Set(), reused = new Set()
-  const excluded = path => [...skipped].some(dir => path === dir || path.startsWith(`${dir}/`))
+  const scope = {}, skipped = new Set(), reused = new Set(), merged = new Set()
+  const within = (roots, path) => [...roots].some(dir => path === dir || path.startsWith(`${dir}/`))
+  const excluded = path => within(skipped, path)
   const requireActive = () => { if (!isActive()) throw new Error('Remote upload context changed') }
   const folderConflicts = [...(preview.folder_conflicts || [])].sort((a,b) => a.source.split('/').length - b.source.split('/').length)
   for (const conflict of folderConflicts) {
     requireActive()
     if (!plan.directories.includes(conflict.source)) throw new Error('Invalid folder conflict inspection result')
     if (excluded(conflict.source)) continue
-    const answer = prompt ? await chooseConflict(conflict, scope) : (conflict.allowed_actions.includes('merge') ? 'merge' : 'stop')
+    const canMerge = conflict.allowed_actions.includes('merge')
+    // Explicit Merge also applies to nested directories in the selected subtree.
+    const answer = prompt
+      ? (canMerge && within(merged, conflict.source) ? 'merge' : await chooseConflict(conflict, scope))
+      : (canMerge ? 'merge' : 'stop')
     if (!answer || answer === 'stop') return false
     if (answer === 'skip') skipped.add(conflict.source)
-    else if (answer === 'merge') reused.add(conflict.source)
-    else throw new Error('Invalid folder conflict decision')
+    else if (answer === 'merge') {
+      reused.add(conflict.source)
+      // Implicit directory reuse with prompts disabled never authorizes file replacement.
+      if (prompt) merged.add(conflict.source)
+    } else throw new Error('Invalid folder conflict decision')
   }
   const policies = new Map()
   for (const conflict of preview.conflicts || []) {
     requireActive()
     if (plan.files[conflict.index]?.relativePath !== conflict.source) throw new Error('Invalid file conflict inspection result')
     if (excluded(conflict.source)) continue
-    const answer = prompt ? await chooseConflict(conflict, scope) : 'stop'
+    const replaceInMerge = within(merged, conflict.source) && conflict.target_kind === 'file' && conflict.allowed_actions.includes('replace')
+    const answer = prompt ? (replaceInMerge ? 'replace' : await chooseConflict(conflict, scope)) : 'stop'
     if (!answer || answer === 'stop') return false
     policies.set(conflict.source, answer)
   }

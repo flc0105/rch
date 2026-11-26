@@ -94,3 +94,57 @@ test('cancel and disabled preference remain non-destructive; extraction uses the
   assert.deepEqual(plain(await disabled.prepareExtractConflict('client', {})), { conflict_policy: 'stop' })
   assert.equal(disabled.prompts.length, 0)
 })
+
+function treeResolver({ decisions, enabled = true, folders, files }) {
+  const prompts = []
+  const body = source.slice(source.indexOf('export async function prepareRemoteUploadPlan')).replace('export ', '')
+  const resolve = vm.runInNewContext(`(() => { ${body}; return prepareRemoteUploadPlan })()`, {
+    conflictsEnabled: async () => enabled,
+    expectData: async x => x,
+    inspectRemoteUploadPlan: async () => ({ folder_conflicts: folders, conflicts: files }),
+    chooseConflict: async (conflict, scope) => {
+      if (conflict.allowed_actions.includes(scope.action)) return scope.action
+      prompts.push(conflict.source)
+      const decision = decisions.shift()
+      assert.ok(decision, 'unexpected prompt')
+      assert.ok(conflict.allowed_actions.includes(decision.action))
+      if (decision.all) scope.action = decision.action
+      return decision.action
+    },
+  })
+  return { resolve, prompts }
+}
+const folderConflict = (source, actions = ['stop', 'skip', 'merge']) => ({ source, allowed_actions: actions })
+const treeFileConflict = (index, source, target_kind = 'file', actions = fileActions) => ({ index, source, target_kind, allowed_actions: actions })
+const treePlan = (directories, files) => ({ directories, files: files.map(relativePath => ({ relativePath })) })
+
+test('explicit Merge recursively reuses directories and replaces only matching ordinary files in its subtree', async () => {
+  const plan = treePlan(['root','root/sub','root-extra'], ['root/a','root/sub/b','root/new','root-extra/c','loose'])
+  const { resolve, prompts } = treeResolver({ decisions: [{ action: 'merge' }, { action: 'skip' }, { action: 'keep_both' }],
+    folders: [folderConflict('root/sub'), folderConflict('root')],
+    files: [treeFileConflict(0,'root/a'), treeFileConflict(1,'root/sub/b'), treeFileConflict(3,'root-extra/c'), treeFileConflict(4,'loose')] })
+  const result = await resolve('c','/dest',plan)
+  assert.deepEqual(prompts, ['root','root-extra/c','loose'])
+  assert.deepEqual([...result.reused], ['root','root/sub'])
+  assert.deepEqual(plain(result.files), [
+    { relativePath: 'root/a', policy: 'replace' }, { relativePath: 'root/sub/b', policy: 'replace' },
+    { relativePath: 'root/new', policy: 'stop' }, { relativePath: 'loose', policy: 'keep_both' },
+  ])
+})
+
+test('Merge Apply to all covers subsequent matching folders, but incompatible kinds still require a decision', async () => {
+  const plan = treePlan(['a','a/block','b'], ['a/x','a/block/y','a/link','b/z'])
+  const { resolve, prompts } = treeResolver({ decisions: [{ action: 'merge', all: true }, { action: 'skip' }, { action: 'keep_both' }],
+    folders: [folderConflict('a'), folderConflict('b'), folderConflict('a/block',['stop','skip'])],
+    files: [treeFileConflict(0,'a/x'), treeFileConflict(2,'a/link','link',mixedActions), treeFileConflict(3,'b/z')] })
+  const result = await resolve('c','/dest',plan)
+  assert.deepEqual(prompts, ['a','a/block','a/link'])
+  assert.deepEqual(plain(result.directories), ['a','b'])
+  assert.deepEqual(plain(result.files), [{ relativePath:'a/x',policy:'replace' }, { relativePath:'a/link',policy:'keep_both' }, { relativePath:'b/z',policy:'replace' }])
+})
+
+test('disabled prompts reuse folders without authorizing any file overwrite', async () => {
+  const { resolve, prompts } = treeResolver({ enabled: false, decisions: [], folders: [folderConflict('a')], files: [treeFileConflict(0,'a/x')] })
+  assert.equal(await resolve('c','/dest',treePlan(['a'],['a/x'])), false)
+  assert.deepEqual(prompts, [])
+})

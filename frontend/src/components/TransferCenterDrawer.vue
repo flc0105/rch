@@ -152,6 +152,7 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="info">Info</el-dropdown-item>
+                  <el-dropdown-item v-if="transfer.is_batch" command="batch-progress">Batch Progress</el-dropdown-item>
                   <template v-if="canUseArtifact(transfer)">
                     <el-dropdown-item command="preview">Preview</el-dropdown-item>
                     <el-dropdown-item command="download">Download</el-dropdown-item>
@@ -207,10 +208,31 @@
       <el-descriptions-item v-if="infoTransfer.is_batch && infoTransfer.planned_bytes == null && infoTransfer.submitted_bytes != null" label="Submitted size">{{ formatInfoBytes(infoTransfer.submitted_bytes) }}</el-descriptions-item>
       <el-descriptions-item v-if="infoTransfer.is_batch" label="Outcome">{{ infoTransfer.failed_files }} failed · {{ infoTransfer.cancelled_files }} cancelled · {{ infoTransfer.interrupted_files }} interrupted · {{ infoTransfer.unsubmitted_files }} not submitted</el-descriptions-item>
     </el-descriptions>
-    <section v-if="infoTransfer?.is_batch" class="transfer-batch-section">
+    <template v-if="infoTransfer?.is_batch" #footer>
+      <el-button @click="openBatchDetails(infoTransfer)">Batch Progress</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="batchVisible" title="Batch Progress" width="min(660px, 94vw)" append-to-body>
+    <div v-if="batchTransfer" class="transfer-batch-summary">
+      <div class="transfer-batch-summary-main">
+        <div class="transfer-batch-summary-name">{{ displayName(batchTransfer) }}</div>
+        <div class="transfer-batch-summary-meta">{{ transferSubtitle(batchTransfer) }}</div>
+      </div>
+      <span class="transfer-batch-summary-status">{{ recentStateLabel(batchTransfer) }}</span>
+      <div class="transfer-batch-summary-progress">
+        <el-progress v-if="hasProgress(batchTransfer)" :percentage="normalizedPercent(batchTransfer.percent)" :stroke-width="6" :show-text="false" />
+        <div v-else-if="batchTransfer.state === 'running'" class="transfer-indeterminate" aria-hidden="true"><span></span></div>
+        <div class="transfer-batch-summary-meta transfer-batch-summary-count">
+          <span>{{ batchTransfer.completed_files }} / {{ batchTransfer.total_files }} completed</span>
+          <span v-if="batchTransfer.planned_bytes != null">{{ formatInfoBytes(batchTransfer.completed_bytes) }} / {{ formatInfoBytes(batchTransfer.planned_bytes) }}</span>
+        </div>
+      </div>
+    </div>
+    <section v-if="batchTransfer" class="transfer-batch-section">
       <div class="transfer-batch-heading">
         <h3>File Transfers</h3>
-        <span>{{ batchMembers.length }} / {{ infoTransfer.total_files }} files</span>
+        <span>{{ batchMembers.length }} / {{ batchTransfer.total_files }} files</span>
       </div>
       <div class="transfer-batch-filters">
         <el-input v-model="batchMemberSearch" clearable placeholder="Search files or paths" aria-label="Search files or paths" />
@@ -244,6 +266,10 @@
       </div>
       <div v-if="batchMembers.length && batchMembersError" class="transfer-batch-member-error">{{ batchMembersError }}</div>
     </section>
+    <template v-if="batchTransfer" #footer>
+      <el-button @click="openTransferInfo(batchTransfer)">Info</el-button>
+      <el-button @click="batchVisible = false">Close</el-button>
+    </template>
   </el-dialog>
 </template>
 
@@ -294,6 +320,8 @@ export default {
       visible: false,
       infoVisible: false,
       infoTransfer: null,
+      batchVisible: false,
+      batchTransfer: null,
       batchMembers: [],
       batchMemberSearch: '',
       batchMemberFilter: 'all',
@@ -354,6 +382,14 @@ export default {
     transfers(items) {
       const current = items.find(item => item.transfer_id === this.infoTransfer?.transfer_id)
       if (current) this.infoTransfer = current
+      const batch = items.find(item => item.transfer_id === this.batchTransfer?.transfer_id)
+      if (batch) this.batchTransfer = batch
+    },
+    batchVisible(value) {
+      if (!value) {
+        this.batchMembersRequestId++
+        this.batchMembersLoading = false
+      }
     },
   },
 
@@ -372,9 +408,9 @@ export default {
 
     handleRecentAction(command, transfer) {
       if (command === 'info') {
-        if (transfer.is_batch) return this.openBatchDetails(transfer)
-        this.infoTransfer = transfer
-        this.infoVisible = true
+        return this.openTransferInfo(transfer)
+      } else if (command === 'batch-progress') {
+        return this.openBatchDetails(transfer)
       } else if (command === 'delete') {
         return this.deleteRecent(transfer)
       } else if (this.canUseArtifact(transfer)) {
@@ -392,40 +428,49 @@ export default {
       }
     },
 
+    openTransferInfo(transfer) {
+      this.batchVisible = false
+      this.infoTransfer = transfer
+      this.infoVisible = true
+    },
+
     refreshBatchDetails() {
-      if (this.infoVisible && this.infoTransfer?.is_batch) return this.openBatchDetails(this.infoTransfer)
+      if (this.batchVisible && this.batchTransfer) return this.openBatchDetails(this.batchTransfer)
     },
 
     async openBatchDetails(transfer) {
-      if (this.infoTransfer?.batch_id !== transfer.batch_id) {
-        this.batchMembers = []
+      if (!transfer?.is_batch || !transfer.batch_id) return
+      const sameBatch = this.batchTransfer?.batch_id === transfer.batch_id
+      if (!sameBatch || !this.batchVisible) this.batchMembers = []
+      if (!sameBatch) {
         this.batchMemberSearch = ''
         this.batchMemberFilter = 'all'
       }
-      this.infoTransfer = transfer
-      this.infoVisible = true
+      this.infoVisible = false
+      this.batchTransfer = transfer
+      this.batchVisible = true
       this.batchMembersLoading = true
       this.batchMembersError = ''
       const requestId = ++this.batchMembersRequestId
       try {
         const result = await loadBatchTransfers(transfer.batch_id, this.tabId)
-        if (requestId === this.batchMembersRequestId && this.infoTransfer?.batch_id === transfer.batch_id) {
+        if (requestId === this.batchMembersRequestId && this.batchVisible && this.batchTransfer?.batch_id === transfer.batch_id) {
           const merged = new Map((result.items || []).map(item => [item.transfer_id, item]))
           for (const item of this.batchMembers) merged.set(item.transfer_id, this.newerBatchMember(merged.get(item.transfer_id), item))
           this.batchMembers = [...merged.values()]
         }
       } catch (error) {
-        if (requestId === this.batchMembersRequestId && this.infoTransfer?.batch_id === transfer.batch_id) {
+        if (requestId === this.batchMembersRequestId && this.batchVisible && this.batchTransfer?.batch_id === transfer.batch_id) {
           this.batchMembersError = error.message || 'Failed to load batch files'
           ElMessage.error(this.batchMembersError)
         }
       } finally {
-        if (requestId === this.batchMembersRequestId && this.infoTransfer?.batch_id === transfer.batch_id) this.batchMembersLoading = false
+        if (requestId === this.batchMembersRequestId && this.batchVisible && this.batchTransfer?.batch_id === transfer.batch_id) this.batchMembersLoading = false
       }
     },
 
     handleTransferChildUpdate(file) {
-      if (!file.batch_id || this.infoTransfer?.batch_id !== file.batch_id) return
+      if (!this.batchVisible || !file.batch_id || this.batchTransfer?.batch_id !== file.batch_id) return
       const index = this.batchMembers.findIndex(item => item.transfer_id === file.transfer_id)
       if (index >= 0) this.batchMembers.splice(index, 1, this.newerBatchMember(this.batchMembers[index], file))
       else this.batchMembers.push(file)
@@ -440,7 +485,7 @@ export default {
     },
 
     batchMemberPath(file) {
-      const root = String(this.infoTransfer?.destination_path || '').replace(/\\/g, '/').replace(/\/+$/, '')
+      const root = String(this.batchTransfer?.destination_path || '').replace(/\\/g, '/').replace(/\/+$/, '')
       const directory = String(file.destination_path || '').replace(/\\/g, '/').replace(/\/+$/, '')
       const relative = root && directory.startsWith(root + '/') ? directory.slice(root.length + 1) : ''
       return [relative, file.filename || file.transfer_id || ''].filter(Boolean).join('/')
@@ -583,7 +628,8 @@ export default {
 </script>
 
 <style scoped>
-.transfer-batch-filters { display: flex; gap: 8px; margin-bottom: 10px; }
+.transfer-batch-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.transfer-batch-filters :deep(.el-input) { flex: 1; min-width: 140px; }
 .transfer-batch-filters :deep(.el-select) { width: 155px; flex-shrink: 0; }
 .transfer-center-header-actions {
   display: flex;
@@ -892,11 +938,27 @@ export default {
 <style>
 .transfer-info .el-descriptions__content { overflow-wrap: anywhere; }
 .transfer-info-path { overflow-wrap: anywhere; white-space: pre-wrap; }
-.transfer-batch-section { margin-top: 20px; }
+.transfer-batch-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 16px;
+  padding: 14px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+}
+.transfer-batch-summary-main { flex: 1; min-width: 0; }
+.transfer-batch-summary-name { color: var(--el-text-color-primary); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.transfer-batch-summary-meta, .transfer-batch-summary-status { color: var(--el-text-color-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.transfer-batch-summary-meta { margin-top: 4px; }
+.transfer-batch-summary-progress { flex: 0 0 100%; min-width: 0; }
+.transfer-batch-summary-count { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-top: 7px; }
+.transfer-batch-section { margin-top: 18px; }
 .transfer-batch-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .transfer-batch-heading h3 { margin: 0; font-size: 14px; font-weight: 650; color: var(--el-text-color-primary); }
 .transfer-batch-heading > span { color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
-.transfer-batch-members { max-height: min(340px, 45vh); overflow-y: auto; border: 1px solid var(--el-border-color); border-radius: 8px; }
+.transfer-batch-members { max-height: min(420px, 48vh); overflow-y: auto; border: 1px solid var(--el-border-color); border-radius: 8px; }
 .transfer-batch-member { padding: 10px 12px; border-bottom: 1px solid var(--el-border-color-lighter); font-size: 12px; }
 .transfer-batch-member:last-child { border-bottom: 0; }
 .transfer-batch-member-head, .transfer-batch-member-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }

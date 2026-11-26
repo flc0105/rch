@@ -1037,15 +1037,18 @@ export default {
         const json = await uploadSharedBatch(formData, this.buildJsonHeaders(), {
           signal: controller.signal,
           onProgress: (loaded, total) => {
+            if (!this.sharedUploadCanCancel) return
             this.sharedUploadProgress = total ? Math.min(100, Math.round(100 * loaded / total)) : null
             if (total !== null && loaded >= total) {
               this.sharedUploadCanCancel = false
               this.sharedUploadStage = 'Saving files…'
+              this.sharedUploadProgress = null
             }
           },
           onBodySent: () => {
             this.sharedUploadCanCancel = false
             this.sharedUploadStage = 'Saving files…'
+            this.sharedUploadProgress = null
           },
         })
         const result = json.data || {}

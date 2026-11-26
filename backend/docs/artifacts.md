@@ -11,7 +11,7 @@ Artifact Manager 有两个一级空间：
 - **Saved Files**：Server 保存的文件，可按设备、目录和名称查看。从设备工具栏打开时默认筛选当前设备；从顶部 Utilities 独立打开时默认查看全部设备。切换设备会同步更新 Saved 文件数量与列表；Shared Files 数量不受设备筛选影响。设备离线不影响 Server 上已保存的文件。
 - **Shared Files**：Server 上跨设备复用的文件，支持创建、上传与发送到指定 Client。它不按某一台设备归属。
 
-两个空间共用文件存储和 SQLite 目录机制，但用户需要明确选择共享空间才能让文件走 Shared 的发送操作；移动目录不能改变共享范围。只有 Shared Files 可以新建、重命名与删除自定义目录；Saved Files 的目录结构固定，只有预设目录。**Create File / Upload 只在 Shared Files 显示**，Saved Files 的文件仅通过截图、下载、脚本/Job 输出、剪贴板、命令/终端保存等正式保存动作产生。Shared 文件创建入口使用现有编辑器流程。Shared Files 的 Upload 使用统一拖放选择面板，可组合文件和文件夹，支持 Choose folder；浏览器遍历目录并预检后一次提交文件、相对路径及冲突策略，Server 在同一批次中建立 Shared 嵌套目录（含拖放的空目录）并保存文件。已存在的同名 Shared 文件夹直接复用；同名文件须明确 Stop、Skip 或 Keep Both（独立 Artifact ID，不替换原对象）。文件保留原目录结构，整批只发一条结果通知。发送阶段显示浏览器上传进度并允许取消；发送结束后的保存阶段不是可回滚事务，失败或中断后应核对已保存文件。原生目录选择器不能提供空目录，拖放支持空目录。
+两个空间共用文件存储和 SQLite 目录机制，但用户需要明确选择共享空间才能让文件走 Shared 的发送操作；移动目录不能改变共享范围。只有 Shared Files 可以新建、重命名与删除自定义目录；Saved Files 的目录结构固定，只有预设目录。**Create File / Upload 只在 Shared Files 显示**，Saved Files 的文件仅通过截图、下载、脚本/Job 输出、剪贴板、命令/终端保存等正式保存动作产生。Shared 文件创建入口使用现有编辑器流程。Shared Files 的 Upload 使用统一拖放选择面板，可组合文件和文件夹，支持 Choose files / Choose folders 多次追加；浏览器遍历目录并预检后一次提交文件、相对路径及冲突策略，Server 在同一批次中建立 Shared 嵌套目录（含拖放的空目录）并保存文件。已存在的同名 Shared 文件夹直接复用；同名文件须明确 Stop、Skip 或 Keep Both（独立 Artifact ID，不替换原对象）。文件保留原目录结构，整批只发一条结果通知。发送阶段显示浏览器上传进度并允许取消；发送结束后的保存阶段不是可回滚事务，失败或中断后应核对已保存文件。原生目录选择器只能选择目录且不能提供空目录；若系统选择框限制单目录，可重复选择来累计多个目录，拖放支持空目录及文件目录混合选择。
 
 Saved Files 共有九个预设分类，`category` 与目录严格一对一；分类值与显示目录名如下：
 

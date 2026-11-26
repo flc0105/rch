@@ -31,7 +31,7 @@ export async function chooseConflict(conflict, scope = {}) {
           'onUpdate:modelValue': value => { applyToAll.value = value },
           style: 'margin-top:12px',
         }, () => 'Apply to all'),
-        ...(actions.includes('merge') ? [h('p', actions.includes('replace') ? 'Merge keeps destination-only files. Replace removes them.' : 'Merge keeps destination-only files.')] : []),
+        ...(actions.includes('merge') ? [h('p', actions.includes('replace') ? 'Merge replaces matching files and keeps destination-only files. Replace removes destination-only files.' : 'Merge replaces matching files and keeps destination-only files.')] : []),
       ])
     },
   })

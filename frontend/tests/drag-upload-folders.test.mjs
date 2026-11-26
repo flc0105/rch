@@ -418,3 +418,33 @@ test('remote tree preflight inspects once and skips descendants of a conflicting
   assert.deepEqual(plain(result.directories), ['root'])
   assert.deepEqual(plain(result.files), [{ relativePath: 'root/b', policy: 'stop' }])
 })
+
+test('native folder selection accepts multiple roots and repeated picks accumulate alongside files', () => {
+  const source = read('../src/components/DragUploadDialog.vue')
+  const component = vm.runInNewContext(`(${source.match(/<script>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '').replace('export default', '')})`, {
+    collectDirectoryPickerAttachments, flattenUploadAttachments, ElMessage: { error(message) { throw Error(message) } },
+  })
+  const ui = instance(component, { modelValue: true, multiple: true, allowDirectories: true, loading: false, progress: null })
+  const change = files => ({ target: { files, value: 'chosen' } })
+  const picked = path => ({ name: path.split('/').at(-1), size: 7, webkitRelativePath: path })
+  const first = change([picked('docs/a.txt'), picked('photos/b.png')])
+  ui.handleFolderInputChange(first)
+  assert.equal(first.target.value, '')
+  ui.handleFolderInputChange(change([picked('logs/sub/c.log')]))
+  ui.handleInputChange(change([{ name:'loose.txt', size: 3 }]))
+  assert.deepEqual(plain(ui.selectedItems.map(x => x.name)), ['docs','photos','logs','loose.txt'])
+  assert.deepEqual(plain(ui.selectionSummary.directories), ['docs','logs','photos','logs/sub'])
+  assert.equal(ui.selectionSummary.totalBytes,24)
+  ui.loading = true
+  ui.handleFolderInputChange(change([picked('ignored/d')]))
+  assert.equal(ui.selectedItems.length,4)
+  assert.match(source, /webkitdirectory multiple/)
+  assert.match(source, /Choose files/)
+  assert.match(source, /Choose again to add more files or folders/)
+  assert.equal(ui.displayProgress,null)
+  ui.progress = 33.4
+  assert.equal(ui.displayProgress,33)
+  ui.progress = 108
+  assert.equal(ui.displayProgress,100)
+  assert.match(source, /:indeterminate="displayProgress === null"/)
+})
