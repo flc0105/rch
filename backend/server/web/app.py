@@ -96,7 +96,7 @@ def create_app(server_instance, lifecycle):
     app.register_blueprint(create_notification_preferences_blueprint(server_instance))
     app.register_blueprint(create_terminal_context_preferences_blueprint(server_instance))
     app.register_blueprint(create_notification_history_blueprint(server_instance))
-    app.register_blueprint(create_server_cleanup_blueprint(server_instance))
+    app.register_blueprint(create_server_cleanup_blueprint(server_instance, lifecycle))
     app.register_blueprint(create_server_maintenance_blueprint(server_instance, lifecycle))
     app.register_blueprint(create_server_preferences_blueprint(server_instance))
     app.register_blueprint(create_command_execution_blueprint(server_instance))

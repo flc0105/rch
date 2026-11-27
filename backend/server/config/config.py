@@ -69,12 +69,14 @@ def reload_admin_auth():
 SERVER_CLEANUP_START_DELAY_SECONDS = 20
 SERVER_CLEANUP_LOG_ROOT_DIR = os.path.join(SERVER_RUNTIME_DIR, 'cleanup_logs')
 SERVER_CLEANUP_ITEMS = (
-    # Notification Center history is durable and only cleared by explicit user action.
+    # Notifications, old runtime logs and orphan objects require explicit maintenance choices.
     'agent_build_temp',
     'agent_transient_outputs',
     'preview_cache',
     'upload_tmp',
     'cleanup_logs',
+    'tcp_transfer_residue',
+    'bootstrap_temp',
 )
 
 # ------------------ history ------------------ #

@@ -279,19 +279,21 @@
         <div class="settings-tab-scroll">
           <section class="settings-section">
             <div class="settings-section-title">Server Maintenance</div>
+            <ServerMaintenanceStorage :active="visible && activeTab === 'server'" :disabled="!!maintenanceAction"
+              @busy="storageMaintenanceBusy = $event" />
             <div class="server-maintenance-row">
               <div>
                 <div class="server-maintenance-title">Restart Server</div>
                 <div class="settings-note settings-note-inline">Restart the current RCH Server process.</div>
               </div>
-              <el-button :loading="maintenanceAction === 'restart'" :disabled="!!maintenanceAction" @click="confirmServerMaintenance('restart')">Restart</el-button>
+              <el-button :loading="maintenanceAction === 'restart'" :disabled="!!maintenanceAction || storageMaintenanceBusy" @click="confirmServerMaintenance('restart')">Restart</el-button>
             </div>
             <div class="server-maintenance-row">
               <div>
                 <div class="server-maintenance-title">Shutdown Server</div>
                 <div class="settings-note settings-note-inline">Stop the current RCH Server process.</div>
               </div>
-              <el-button type="danger" plain :loading="maintenanceAction === 'shutdown'" :disabled="!!maintenanceAction" @click="confirmServerMaintenance('shutdown')">Shutdown</el-button>
+              <el-button type="danger" plain :loading="maintenanceAction === 'shutdown'" :disabled="!!maintenanceAction || storageMaintenanceBusy" @click="confirmServerMaintenance('shutdown')">Shutdown</el-button>
             </div>
             <div v-if="maintenanceStatus" class="server-maintenance-status" role="status">{{ maintenanceStatus }}</div>
           </section>
@@ -355,6 +357,7 @@ import {
 import { CONNECTION_CONTEXT_ICONS } from '../data/connectionContextIcons.js'
 import { DEFAULT_SERVER_PREFERENCES, loadServerPreferences, saveServerPreferences } from '../api/serverPreferencesApi.js'
 import { getServerMaintenance, performServerMaintenance } from '../api/serverMaintenanceApi.js'
+import ServerMaintenanceStorage from './ServerMaintenanceStorage.vue'
 import { getAuthorizationInfo } from '../api/authApi.js'
 import { getIdentities, initializeIdentities, issueClientIdentity, revokeClientIdentity, downloadClientIdentity, clientIdentityInstallCommand } from '../api/identitiesApi.js'
 import { copyTextFallback } from '../utils/clipboard.js'
@@ -362,7 +365,7 @@ import { formatDateTimeLocal } from '../utils/formatters.js'
 
 export default {
   name: 'SettingsDialog',
-  components: { Key, Lock },
+  components: { Key, Lock, ServerMaintenanceStorage },
 
   emits: ['notification-saved'],
 
@@ -373,6 +376,7 @@ export default {
       identities: { initialized: false, clients: [] },
       identitiesLoading: false, identityBusy: false, newIdentityName: '', newIdentityDays: 365,
       maintenanceAction: '',
+      storageMaintenanceBusy: false,
       maintenanceStatus: '',
       serverPreferencesLoading: false,
       serverPreferencesSaving: false,
@@ -472,7 +476,7 @@ export default {
       finally { this.identityBusy = false }
     },
     async confirmServerMaintenance(action) {
-      if (this.maintenanceAction) return
+      if (this.maintenanceAction || this.storageMaintenanceBusy) return
       const restart = action === 'restart'
       try {
         await ElMessageBox.confirm(
@@ -1011,14 +1015,16 @@ export default {
   }
 }
 
-.settings-note {
+.settings-note,
+:deep(.settings-note) {
   margin-bottom: 14px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.settings-note-inline {
+.settings-note-inline,
+:deep(.settings-note-inline) {
   margin: 4px 0 0;
 }
 
@@ -1027,7 +1033,8 @@ export default {
   font-weight: 650;
 }
 
-.server-maintenance-row {
+.server-maintenance-row,
+:deep(.server-maintenance-row) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1040,7 +1047,8 @@ export default {
   border-bottom: none;
 }
 
-.server-maintenance-title {
+.server-maintenance-title,
+:deep(.server-maintenance-title) {
   font-weight: 600;
   font-size: 13px;
 }

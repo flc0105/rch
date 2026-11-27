@@ -3,6 +3,7 @@
 from datetime import datetime
 import os
 import sqlite3
+import threading
 from typing import Optional
 
 
@@ -18,6 +19,8 @@ class AgentOutputRegistry:
         self.output_dir = os.path.abspath(output_dir)
         os.makedirs(self.output_dir, exist_ok=True)
         self.database = database
+        self._cleanup_lock = threading.RLock()
+        self._cleanup_output_names = set()
 
     @staticmethod
     def _normalize_filename(filename: str) -> str:
@@ -123,14 +126,41 @@ class AgentOutputRegistry:
             results.append(self._to_record(row, size))
         return results
 
+    def startup_transient_outputs(self):
+        with self._cleanup_lock:
+            records = [row for row in self.list_outputs() if row['build_origin'] in ('update', 'bootstrap')]
+            self._cleanup_output_names = {row['file_name'] for row in records}
+            return records
+
+    def is_cleanup_output(self, filename):
+        with self._cleanup_lock:
+            return filename in self._cleanup_output_names
+
+    def get_download_path(self, filename):
+        with self._cleanup_lock:
+            record = self.get_output_record(filename)
+            self._cleanup_output_names.discard(record['file_name'])
+            return self._safe_join_output(record['file_name'])
+
+    def delete_transient_for_cleanup(self, filename, created_at, unchanged):
+        with self._cleanup_lock:
+            record = self.get_output_record(filename)
+            if (filename not in self._cleanup_output_names or record['build_origin'] not in ('update', 'bootstrap')
+                    or record['created_at'] != created_at or not unchanged()):
+                raise ValueError('Agent output changed or is in use')
+            result = self.delete_output(filename)
+            self._cleanup_output_names.discard(filename)
+            return result
+
     def delete_output(self, filename: str) -> dict:
-        filename = self._normalize_filename(filename)
-        file_path = self._safe_join_output(filename)
-        conn = self.database.connection()
-        row = conn.execute('SELECT 1 FROM agent_outputs WHERE file_name=?', (filename,)).fetchone()
-        if row is None:
-            raise FileNotFoundError('Agent output is not registered')
-        os.remove(file_path)
-        with self.database.transaction() as conn:
-            conn.execute('DELETE FROM agent_outputs WHERE file_name=?', (filename,))
-        return {'deleted': True, 'file_name': filename}
+        with self._cleanup_lock:
+            filename = self._normalize_filename(filename)
+            file_path = self._safe_join_output(filename)
+            conn = self.database.connection()
+            row = conn.execute('SELECT 1 FROM agent_outputs WHERE file_name=?', (filename,)).fetchone()
+            if row is None:
+                raise FileNotFoundError('Agent output is not registered')
+            os.remove(file_path)
+            with self.database.transaction() as conn:
+                conn.execute('DELETE FROM agent_outputs WHERE file_name=?', (filename,))
+            return {'deleted': True, 'file_name': filename}

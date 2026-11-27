@@ -45,8 +45,8 @@ class WebNotificationHistoryApi:
             })
         return {'removed_count': removed_count}
 
-    def cleanup_notifications(self, notification_ids):
-        result = self.history_store.delete_notifications(notification_ids)
+    def cleanup_notifications(self, notification_ids, *, expected=None):
+        result = self.history_store.delete_notifications(notification_ids, expected=expected)
         removed = result.get('removed') if isinstance(result, dict) else []
         removed = removed if isinstance(removed, list) else []
         removed_ids = [

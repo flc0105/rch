@@ -6,7 +6,7 @@ import vm from 'node:vm'
 const read = file => readFileSync(new URL(file, import.meta.url), 'utf8')
 const drawer = read('../src/components/TransferCenterDrawer.vue')
 const sse = read('../src/composables/useSseStream.js')
-const remote = read('../src/components/RemoteFilesDialog.vue')
+const remote = read('../src/composables/useRemoteBatchUpload.js')
 const api = read('../src/api/transferApi.js')
 
 test('Transfer Center groups parent rows and exposes file-level details without changing Cancel for singles', () => {

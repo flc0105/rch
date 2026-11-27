@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { remoteFileOptions } from './helpers/remote-file-options.mjs'
 import { joinRemotePath } from '../src/utils/remotePaths.js'
 import {
   collectTransferAttachments, collectDirectoryPickerAttachments,
@@ -46,14 +47,6 @@ test('invalid directory paths and mixed root files are validated', () => {
   assert.throws(() => flattenUploadAttachments([{ kind: 'file', name: 'x/y', file: {} }]), /Invalid upload path/)
 })
 
-function method(fileName, name, next) {
-  const source = read(`../src/components/${fileName}.vue`)
-  const start = source.indexOf(`    async ${name}(`)
-  const end = source.indexOf(`    async ${next}(`, start + 1)
-  assert.ok(start >= 0 && end > start, `method ${name} exists`)
-  return source.slice(start, end).trim().replace(/,\s*$/, '')
-}
-
 test('Shared Files submits one multipart batch for nested folders and 100 files', async () => {
   const calls = []
   const errors = []
@@ -61,7 +54,7 @@ test('Shared Files submits one multipart batch for nested folders and 100 files'
     constructor() { this.values = [] }
     append(...args) { this.values.push(args) }
   }
-  const upload = vm.runInNewContext(`({ ${method('ArtifactDialog', 'uploadSharedFiles', 'handleArtifactMoreCommand')} }).uploadSharedFiles`, {
+  const upload = vm.runInNewContext(`(${read('../src/composables/useArtifactUpload.js').replace(/^import .*$/gm, '').replace('export default', '')}).methods.uploadSharedFiles`, {
     flattenUploadAttachments, FormData: FakeFormData, AbortController,
     inspectSharedUpload: async () => ({}), expectData: async () => ({ conflicts: [] }),
     resolveConflictPolicies: async (_, count) => Array(count).fill('stop'),
@@ -96,6 +89,7 @@ function vueComponent(file, env = {}) {
     isBrowserUploadBatchCancelled: () => false,
     listRemoteDirectory: async () => ({ ok: false, json: async () => ({ code: 1 }) }),
     ...env }
+  if (file === 'RemoteFilesDialog' || file === 'RemoteFilePicker') return remoteFileOptions(file, env)
   const script = read(`../src/components/${file}.vue`).match(/<script>([\s\S]*?)<\/script>/)[1]
   return vm.runInNewContext(`(${script.replace(/^import .*$/gm, '').replace('export default', '')})`, env)
 }

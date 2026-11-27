@@ -7,6 +7,8 @@ from server.web.auth_guard import WebAuthGuard
 
 
 def _active_work(server):
+    if server.web_service.server_cleanup_api.is_busy():
+        return 'Server cleanup or database optimization'
     transfer_api = server.web_service.transfer_api
     if transfer_api.list_transfers().get('active'):
         return 'file transfers'
@@ -51,6 +53,9 @@ def create_server_maintenance_blueprint(server_instance, lifecycle):
             return responder.fail('Unable to verify active Server operations', 503)
         if busy:
             return responder.fail(f'Stop active {busy} before Server maintenance', 409)
+        # Atomically close cleanup admission, including the delayed startup timer.
+        if not server_instance.web_service.server_cleanup_api.reserve_stop():
+            return responder.fail('Server cleanup or maintenance is already pending', 409)
         if not lifecycle.reserve(action):
             return responder.fail('Server maintenance is already pending', 409)
         response, status = responder.ok({'action': action, 'accepted': True})

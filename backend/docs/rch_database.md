@@ -450,3 +450,7 @@ sqlite3 -readonly runtime/rch.db 'PRAGMA integrity_check;'
 | 新数据库里找不到 `activity_records` | 该表由基础数据库初始化统一创建；若仍缺失，应检查数据库是否为 Server 实际使用的文件及初始化是否成功。 |
 
 数据库里可能包含命令文本、传输路径、Job 参数、连接快照以及通知上下文，**应按敏感运行数据保护**。不要把完整 `rch.db`、SQL 导出或包含真实凭据的查询结果直接发到公开渠道。清理范围和自动清理行为详见 [Cleanup](cleanup.md)；相关日志不在这张数据库中，见 [Logging](logging.md)。
+
+### 空间维护
+
+删除记录后，SQLite 的空闲页通常留在数据库内供后续写入复用。Settings → Maintenance → Optimize Database 显示可复用空间、数据库及 WAL 大小，可在低负载时手动回收空间。详见 [Server Cleanup](cleanup.md)。

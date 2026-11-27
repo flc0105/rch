@@ -1,56 +1,99 @@
+"""Server-only cleanup planning, retention policy and execution."""
+import json
 import os
-import shutil
+import re
 import threading
 import time
-import tempfile
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Iterable
 
-from core.utils.filesystem import safe_file_size
 from core.utils.logger import logger
 from core.utils.formatting import format_bytes_precise
+from server.application.maintenance.cleanup_plan import Candidate
+from server.runtime.server_logging import server_rotation_lock, loader_log_lock, SERVER_LOG_BACKUP_COUNT, SERVER_LOG_FILENAME
+
+
+@dataclass(frozen=True)
+class ScanIssue:
+    message: str
+
+
+def _file_candidate(*args, **kwargs):
+    try:
+        return Candidate.file(*args, **kwargs)
+    except (ValueError, OSError) as exc:
+        return ScanIssue(str(exc))
+
+
+@dataclass(frozen=True)
+class CleanupProvider:
+    label: str
+    scan: Callable[[], Iterable[Candidate | ScanIssue]]
+    delete: Callable[[Candidate, dict], None]
+    startup_residue: bool = False
+    minimum_age_days: int = 0
+    manual_only: bool = False
 
 
 class ServerCleanupService:
-    """Server-side startup cleanup runner for transient and cache data."""
+    """One scan/plan/execute path for manual and startup maintenance."""
 
     LOG_PREFIX = 'server_cleanup_'
+    PLAN_TTL = 600
+    MAX_PLANS = 4
 
-    def __init__(
-        self,
-        *,
-        event_bus,
-        notification_history_api,
-        artifact_service,
-        agent_output_registry,
-        cleanup_items,
-        start_delay_seconds: int,
-        log_root_dir: str,
-    ):
+    def __init__(self, *, event_bus, notification_history_api, artifact_service,
+                 agent_output_registry, cleanup_items, start_delay_seconds: int,
+                 log_root_dir: str, settings_store, database, runtime_dir):
         self.event_bus = event_bus
         self.notification_history_api = notification_history_api
         self.artifact_service = artifact_service
         self.agent_output_registry = agent_output_registry
+        self.settings_store = settings_store
+        self.database = database
         self.cleanup_items = tuple(cleanup_items or ())
         self.start_delay_seconds = max(0, int(start_delay_seconds or 0))
         self.log_root_dir = os.path.abspath(log_root_dir)
+        self.runtime_dir = Path(runtime_dir).absolute()
         self._lock = threading.RLock()
-        self._startup_timer = None
+        self._operation_lock = threading.Lock()
+        self._stopping = False
         self._startup_scheduled = False
-
+        self._plans = {}
+        self._runs = {}
         os.makedirs(self.log_root_dir, exist_ok=True)
-
-        self._server_handlers = {
-            'notifications': self._cleanup_notifications,
-            'agent_build_temp': self._cleanup_agent_build_temp,
-            'agent_transient_outputs': self._cleanup_agent_transient_outputs,
-            'preview_cache': self._cleanup_preview_cache,
-            'upload_tmp': self._cleanup_upload_tmp,
-            'cleanup_logs': self._cleanup_logs,
+        self._providers = {
+            'agent_build_temp': CleanupProvider('Agent Build Temp',
+                lambda: self._paths('agent_build_temp', self.runtime_dir / 'agent_build_tmp', r'agent_build_[A-Za-z0-9_]+', directories=True), self._delete_path, True),
+            'agent_transient_outputs': CleanupProvider('Transient Agent Outputs', self._agent_outputs, self._delete_agent, True),
+            'preview_cache': CleanupProvider('Preview Cache', self._previews, self._delete_preview, True),
+            'upload_tmp': CleanupProvider('Upload Temporary Files', self._upload_residue, self._delete_upload, True),
+            'cleanup_logs': CleanupProvider('Cleanup Logs',
+                lambda: self._paths('cleanup_logs', self.log_root_dir, r'server_cleanup_[A-Za-z0-9_-]+\.log'), self._delete_path),
+            'notifications': CleanupProvider('Notifications', self._notifications, self._delete_notification),
+            'server_rotated_logs': CleanupProvider('Server Rotated Logs', self._rotated_logs, self._delete_rotated_log, minimum_age_days=1),
+            'go_loader_logs': CleanupProvider('Go Loader Logs', self._loader_logs, self._delete_loader_log, minimum_age_days=1),
+            'tcp_transfer_residue': CleanupProvider('TCP Transfer Residue', self._tcp_residue, self._delete_path, True),
+            'bootstrap_temp': CleanupProvider('Bootstrap Temporary Files',
+                lambda: self._paths('bootstrap_temp', self.runtime_dir / 'bootstrap_tmp', r'bootstrap_[A-Za-z0-9_]+\.(py|ps1)'), self._delete_path, True),
+            'orphan_artifacts': CleanupProvider('Orphan Artifact Files', self._orphan_artifacts, self._delete_orphan, True, manual_only=True),
         }
-        self._startup_snapshot, self._startup_snapshot_errors = self._capture_startup_snapshot()
+        # Capture only prior-instance candidates before starting request workers.
+        # Current-process staging, builds, previews and artifact allocations are
+        # deliberately not collected while their owners may still reference them.
+        self._startup_candidates = {}
+        self._startup_errors = {}
+        for key, provider in self._providers.items():
+            if provider.startup_residue:
+                try:
+                    self._startup_candidates[key] = list(provider.scan())
+                except Exception as exc:
+                    self._startup_errors[key] = str(exc)
 
-    def schedule_startup_cleanup(self) -> bool:
+    def schedule_startup_cleanup(self):
         with self._lock:
             if self._startup_scheduled:
                 return False
@@ -58,388 +101,388 @@ class ServerCleanupService:
             timer = threading.Timer(self.start_delay_seconds, self._run_startup_cleanup)
             timer.name = 'server-startup-cleanup'
             timer.daemon = True
-            self._startup_timer = timer
-
-        timer.start()
-        return True
+            timer.start()
+            return True
 
     def _run_startup_cleanup(self):
         try:
-            self.run_cleanup(trigger='startup')
+            self.run_cleanup()
         except Exception:
             logger.error('Server startup cleanup failed', exc_info=True)
         finally:
-            with self._lock:
-                self._startup_timer = None
+            self.database.close_thread_connection()
 
-    def run_cleanup(self, trigger: str = 'startup') -> dict:
-        run_id = self._build_run_id()
-        started_epoch = time.time()
-        started_at = self._iso_time(started_epoch)
-        item_results = []
+    def _defaults(self):
+        return {'enabled': True, 'categories': {
+            key: {'enabled': key in self.cleanup_items,
+                  'days': 30 if key in ('notifications', 'go_loader_logs') else 7 if key in ('cleanup_logs', 'server_rotated_logs') else 0}
+            for key, provider in self._providers.items() if not provider.manual_only}}
 
-        for raw_item in self.cleanup_items:
+    def get_settings(self):
+        defaults = self._defaults()
+        saved = self.settings_store.read()
+        if not saved:
+            return defaults
+        # A newly introduced category gets its explicit default, not a saved path.
+        categories = saved.get('categories', {})
+        for key in defaults['categories']:
+            if key in categories:
+                defaults['categories'][key] = categories[key]
+        defaults['enabled'] = saved.get('enabled', True)
+        return self._validate_settings(defaults)
+
+    def _validate_settings(self, payload):
+        if not isinstance(payload, dict) or type(payload.get('enabled')) is not bool:
+            raise ValueError('Invalid automatic cleanup settings')
+        categories = payload.get('categories')
+        if not isinstance(categories, dict) or set(categories) != set(self._defaults()['categories']):
+            raise ValueError('Invalid cleanup categories')
+        normalized = {}
+        for key, rule in categories.items():
+            if not isinstance(rule, dict) or type(rule.get('enabled')) is not bool or type(rule.get('days')) is not int:
+                raise ValueError('Invalid cleanup retention rule')
+            days = rule['days']
+            minimum = max(self._providers[key].minimum_age_days, 1 if key == 'notifications' else 0)
+            if not minimum <= days <= 3650:
+                raise ValueError(f'Invalid retention days for {key}')
+            normalized[key] = {'enabled': rule['enabled'], 'days': days}
+        return {'enabled': payload['enabled'], 'categories': normalized}
+
+    def save_settings(self, payload):
+        value = self._validate_settings(payload)
+        self.settings_store.write(value)
+        return value
+
+    @staticmethod
+    def _paths(category, root, pattern, directories=False):
+        root = Path(root).absolute()
+        if not root.exists():
+            return
+        if root.resolve() != root:
+            raise ValueError('Unsafe cleanup root')
+        for path in sorted(root.iterdir()):
+            if not re.fullmatch(pattern, path.name) or path.is_symlink():
+                continue
+            if (path.is_dir() if directories else path.is_file()):
+                yield _file_candidate(category, path, path)
+
+    def _agent_outputs(self):
+        for record in self.agent_output_registry.startup_transient_outputs():
+            name = record['file_name']
+            path = Path(self.agent_output_registry.output_dir) / name
+            if path.is_file():
+                yield _file_candidate('agent_transient_outputs', name, path, record=True,
+                                     signature=record['created_at'])
+
+    def _previews(self):
+        for row, path in self.artifact_service.startup_preview_entries():
+            yield _file_candidate('preview_cache', row['artifact_id'], path,
+                                 row['original_name'], record=True, signature=row['saved_at'])
+
+    def _upload_residue(self):
+        for candidate in self._paths('upload_tmp', self.artifact_service.upload_tmp_dir, r'[0-9a-f]{32}', directories=True):
+            if isinstance(candidate, ScanIssue) or not self.artifact_service.is_upload_temp_reserved(candidate.key):
+                yield candidate
+
+    def _notifications(self):
+        # Internal complete snapshot, not the Web notification page size.
+        rows = self.notification_history_api.get_history(limit=-1)['notifications']
+        for row in rows:
             try:
-                item_name = self._normalize_item_name(raw_item)
-                result = self._run_item(item_name)
+                modified = datetime.fromisoformat(row['shown_at'].replace('Z', '+00:00')).timestamp()
+            except (ValueError, TypeError, AttributeError):
+                modified = time.time()  # unknown timestamp is not eligible for age-based cleanup
+            yield Candidate('notifications', row['id'], row['title'], modified, record=True,
+                            signature=json.dumps(row, sort_keys=True), id=uuid.uuid4().hex)
+
+    def _rotated_logs(self):
+        with server_rotation_lock(self.runtime_dir):
+            yield from self._paths('server_rotated_logs', self.runtime_dir, re.escape(SERVER_LOG_FILENAME) + r'\.(?:' + '|'.join(str(i) for i in range(1, SERVER_LOG_BACKUP_COUNT + 1)) + ')')
+
+    def _loader_logs(self):
+        with loader_log_lock:
+            for candidate in self._paths('go_loader_logs', self.runtime_dir / 'logs', r'go_loader_\d{8}-\d{2}\.log'):
+                if isinstance(candidate, ScanIssue) or candidate.name != datetime.now().strftime('go_loader_%Y%m%d-%H.log'):
+                    yield candidate
+
+    def _tcp_residue(self):
+        for path in self.artifact_service.maintenance_residue_paths('tcp'):
+            yield _file_candidate('tcp_transfer_residue', path, path)
+
+    def _orphan_artifacts(self):
+        for path in self.artifact_service.maintenance_residue_paths('orphan'):
+            yield _file_candidate('orphan_artifacts', path, path)
+
+    def _eligible(self, candidate):
+        if not candidate.unchanged():
+            return False
+        if candidate.category == 'preview_cache':
+            return self.artifact_service.is_cleanup_preview(candidate.key)
+        if candidate.category == 'agent_transient_outputs':
+            return self.agent_output_registry.is_cleanup_output(candidate.key)
+        if candidate.category == 'upload_tmp':
+            return not self.artifact_service.is_upload_temp_reserved(candidate.key)
+        if candidate.category == 'orphan_artifacts':
+            return self.artifact_service.is_orphan_artifact_path(candidate.key)
+        return True
+
+    def _scan(self, rules=None, *, details=True):
+        groups, candidates = [], {}
+        now = time.time()
+        for key, provider in self._providers.items():
+            rule = (rules or {}).get(key, {})
+            if rules is not None and (provider.manual_only or not rule.get('enabled')):
+                continue
+            error = self._startup_errors.get(key, '')
+            found = []
+            issues = [error] if error else []
+            try:
+                source = self._startup_candidates.get(key, ()) if provider.startup_residue else provider.scan()
+                age = max(provider.minimum_age_days, rule.get('days', 0))
+                for candidate in source:
+                    if isinstance(candidate, ScanIssue):
+                        issues.append(candidate.message)
+                        continue
+                    if candidate.modified <= now - age * 86400 and self._eligible(candidate):
+                        found.append(candidate)
             except Exception as exc:
-                item_name = str(raw_item or '').strip()
-                result = self._new_item_result(item_name or 'invalid_item')
-                result['errors'].append(str(exc))
-            item_results.append(result)
+                issues.append(str(exc))
+            error = "; ".join(issues[:5])
+            if len(issues) > 5:
+                error += f"; {len(issues)-5} more scan errors"
+            candidates.update((item.id, item) for item in found)
+            groups.append({'key': key, 'label': provider.label, 'manual_only': provider.manual_only,
+                           'startup_residue': provider.startup_residue, 'minimum_age_days': provider.minimum_age_days,
+                           'error': error, 'size': sum(c.size for c in found),
+                           'records': sum(c.record for c in found), 'count': len(found),
+                           'entries': [c.as_dict() for c in found] if details else []})
+        return groups, candidates
 
-        finished_epoch = time.time()
-        summary = self._build_summary(
-            run_id=run_id,
-            trigger=trigger,
-            started_at=started_at,
-            finished_at=self._iso_time(finished_epoch),
-            duration_ms=max(0, int((finished_epoch - started_epoch) * 1000)),
-            item_results=item_results,
-        )
+    def preview(self):
+        if not self._operation_lock.acquire(blocking=False):
+            raise ValueError('Server maintenance is busy')
+        try:
+            groups, candidates = self._scan()
+            with self._lock:
+                now = time.monotonic()
+                self._plans = {key: value for key, value in self._plans.items() if value[0] > now}
+                while len(self._plans) >= self.MAX_PLANS:
+                    self._plans.pop(next(iter(self._plans)))
+                plan_id = uuid.uuid4().hex
+                self._plans[plan_id] = (now + self.PLAN_TTL, candidates)
+            return {'plan_id': plan_id, 'groups': groups, 'settings': self.get_settings(),
+                    'bytes': sum(g['size'] for g in groups), 'records': sum(g['records'] for g in groups),
+                    'missing_artifacts': self.artifact_service.missing_artifact_count()}
+        finally:
+            self._operation_lock.release()
 
-        log_path = self._write_log(summary)
-        summary['log_url'] = f'/api/server-cleanup/runs/{run_id}/log' if log_path else ''
-        self._publish_completed(summary)
-        logger.info(
-            'Server cleanup completed: run_id=%s files=%s dirs=%s records=%s bytes=%s errors=%s',
-            summary.get('run_id'),
-            summary.get('removed_files'),
-            summary.get('removed_dirs'),
-            summary.get('removed_records'),
-            summary.get('bytes_freed'),
-            summary.get('error_count'),
-        )
+    def summary(self):
+        if not self._operation_lock.acquire(blocking=False):
+            raise ValueError('Server maintenance is busy')
+        try:
+            groups, _ = self._scan(details=False)
+            return {'bytes': sum(g['size'] for g in groups), 'records': sum(g['records'] for g in groups),
+                    'count': sum(g['count'] for g in groups), 'incomplete': any(g['error'] for g in groups)}
+        finally:
+            self._operation_lock.release()
+
+    def is_busy(self):
+        return self._operation_lock.locked()
+
+    def reserve_stop(self):
+        """Close maintenance admission before a restart or shutdown is accepted."""
+        if not self._operation_lock.acquire(blocking=False):
+            return False
+        try:
+            if self._stopping:
+                return False
+            self._stopping = True
+            return True
+        finally:
+            self._operation_lock.release()
+
+    def _require_running(self):
+        if self._stopping:
+            raise ValueError('Server maintenance is already pending')
+
+    def execute(self, plan_id, selected_ids):
+        if not isinstance(plan_id, str) or not isinstance(selected_ids, list) or not selected_ids or any(not isinstance(i, str) for i in selected_ids):
+            raise ValueError('Select cleanup candidates')
+        if len(selected_ids) != len(set(selected_ids)):
+            raise ValueError('Duplicate cleanup selection')
+        if not self._operation_lock.acquire(blocking=False):
+            raise ValueError('Server maintenance is busy')
+        try:
+            self._require_running()
+            with self._lock:
+                plan = self._plans.get(plan_id)
+                if not plan or plan[0] <= time.monotonic():
+                    raise ValueError('Cleanup plan expired; refresh the scan')
+                if not set(selected_ids) <= plan[1].keys():
+                    raise ValueError('Unknown cleanup candidate')
+                self._plans.pop(plan_id)
+                candidates = [plan[1][i] for i in selected_ids]
+                run_id = self._build_run_id()
+                while len(self._runs) >= 4:
+                    self._runs.pop(next(iter(self._runs)))
+                self._runs[run_id] = {'run_id': run_id, 'state': 'running', 'total': len(candidates),
+                                      'processed': 0, 'cancel_requested': False, 'result': None}
+            worker = threading.Thread(target=self._manual_worker, args=(run_id, candidates),
+                                      name='server-cleanup', daemon=True)
+            accepted = self.get_run(run_id)
+            try:
+                worker.start()
+            except BaseException:
+                with self._lock:
+                    self._runs.pop(run_id, None)
+                raise
+            return accepted
+        except BaseException:
+            self._operation_lock.release()
+            raise
+
+    def get_run(self, run_id):
+        with self._lock:
+            if run_id not in self._runs:
+                raise FileNotFoundError('Cleanup run not found')
+            return dict(self._runs[run_id])
+
+    def cancel_run(self, run_id):
+        with self._lock:
+            if run_id not in self._runs:
+                raise FileNotFoundError('Cleanup run not found')
+            if self._runs[run_id]['state'] == 'running':
+                self._runs[run_id]['cancel_requested'] = True
+            return dict(self._runs[run_id])
+
+    def _manual_worker(self, run_id, candidates):
+        final = {'state': 'failed', 'error': 'Cleanup interrupted'}
+        try:
+            result = self._execute_candidates(candidates, 'manual', run_id=run_id)
+            final = {'state': 'completed', 'result': result}
+        except Exception as exc:
+            logger.exception('Server cleanup failed')
+            final = {'state': 'failed', 'error': str(exc)}
+        finally:
+            try:
+                self.database.close_thread_connection()
+            finally:
+                with self._lock:
+                    self._runs[run_id].update(final)
+                    self._operation_lock.release()
+
+    def run_cleanup(self, trigger='startup'):
+        with self._operation_lock:
+            if self._stopping:
+                return None
+            settings = self.get_settings()
+            if not settings['enabled']:
+                return None
+            groups, candidates = self._scan(settings['categories'], details=False)
+            errors = {g['key']: g['error'] for g in groups if g['error']}
+            return self._execute_candidates(list(candidates.values()), trigger, errors)
+
+    def _execute_candidates(self, candidates, trigger, scan_errors=None, *, run_id=None):
+        manual = run_id is not None
+        run_id, started = run_id or self._build_run_id(), time.time()
+        results = {}
+        for key, error in (scan_errors or {}).items():
+            results[key] = self._new_item_result(key)
+            results[key]['errors'].append(error)
+        stopped = 0
+        for index, item in enumerate(candidates):
+            if manual and self.get_run(run_id)['cancel_requested']:
+                stopped = len(candidates) - index
+                break
+            result = results.setdefault(item.category, self._new_item_result(item.category))
+            try:
+                if not self._eligible(item):
+                    result['skipped_count'] = result.get('skipped_count', 0) + 1
+                    result['skipped'] = True
+                    result['skip_reason'] = 'Candidate changed or is in use'
+                    continue
+                self._providers[item.category].delete(item, result)
+            except Exception as exc:
+                result['errors'].append(f'{item.name}: {exc}')
+            finally:
+                if manual:
+                    with self._lock:
+                        self._runs[run_id]['processed'] = index + 1
+        ended = time.time()
+        summary = self._build_summary(run_id=run_id, trigger=trigger, started_at=self._iso_time(started),
+            finished_at=self._iso_time(ended), duration_ms=int((ended-started)*1000), item_results=list(results.values()))
+        summary['skipped_count'] = sum(r.get('skipped_count', 0) for r in results.values())
+        summary['stopped_count'] = stopped
+        summary['log_url'] = f'/api/server-cleanup/runs/{run_id}/log' if self._write_log(summary) else ''
+        try:
+            self._publish_completed(summary)
+        except Exception:
+            logger.exception('Failed to publish cleanup completion')
         return summary
 
-    def get_log_path(self, run_id: str) -> str:
-        normalized_run_id = str(run_id or '').strip()
-        if not normalized_run_id or not all(ch.isalnum() or ch in {'-', '_'} for ch in normalized_run_id):
+    @staticmethod
+    def _delete_path(item, result):
+        item.remove_files(result)
+
+    def _delete_upload(self, item, result):
+        self.artifact_service.delete_upload_residue_for_cleanup(item.key, lambda: item.remove_files(result))
+
+    @staticmethod
+    def _count_record_file(item, result):
+        result['removed_records'] += 1
+        result['removed_files'] += 1
+        result['bytes_freed'] += item.size
+        result['entries'].append({'kind': 'file', 'path': item.entries[0].path, 'size': item.size, 'detail': item.name})
+
+    def _delete_agent(self, item, result):
+        self.agent_output_registry.delete_transient_for_cleanup(item.key, item.signature, item.unchanged)
+        self._count_record_file(item, result)
+
+    def _delete_preview(self, item, result):
+        self.artifact_service.delete_preview_for_cleanup(item.key, item.signature, item.unchanged)
+        self._count_record_file(item, result)
+
+    def _delete_orphan(self, item, result):
+        self.artifact_service.delete_orphan_for_cleanup(item.key, lambda: item.remove_files(result))
+
+    def _delete_notification(self, item, result):
+        removed = self.notification_history_api.cleanup_notifications(
+            [item.key], expected={item.key: json.loads(item.signature)}).get('removed', [])
+        result['removed_records'] += len(removed)
+        if removed:
+            result['entries'].append({'kind': 'record', 'path': f'notification:{item.key}', 'size': 0, 'detail': item.name})
+        else:
+            result['skipped_count'] = result.get('skipped_count', 0) + 1
+
+    def _delete_rotated_log(self, item, result):
+        with server_rotation_lock(self.runtime_dir):
+            item.remove_files(result)
+
+    def _delete_loader_log(self, item, result):
+        with loader_log_lock:
+            if item.name == datetime.now().strftime('go_loader_%Y%m%d-%H.log'):
+                raise ValueError('Active loader log')
+            item.remove_files(result)
+
+    def database_info(self):
+        return self.database.space_info()
+
+    def optimize_database(self):
+        if not self._operation_lock.acquire(blocking=False):
+            raise ValueError('Server maintenance is busy')
+        try:
+            self._require_running()
+            return self.database.optimize_space()
+        finally:
+            self._operation_lock.release()
+
+    def get_log_path(self, run_id):
+        if not isinstance(run_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', run_id):
             raise FileNotFoundError('cleanup log not found')
-
-        file_path = os.path.abspath(os.path.join(self.log_root_dir, f'{self.LOG_PREFIX}{normalized_run_id}.log'))
-        if (
-            os.path.normcase(os.path.dirname(file_path)) != os.path.normcase(self.log_root_dir)
-            or not os.path.isfile(file_path)
-        ):
+        path = Path(self.log_root_dir) / f'{self.LOG_PREFIX}{run_id}.log'
+        if path.resolve() != path or not path.is_file():
             raise FileNotFoundError('cleanup log not found')
-        return file_path
-
-    def _run_item(self, name: str) -> dict:
-        handler = self._server_handlers.get(name)
-        if handler is None:
-            raise ValueError(f'Unknown server cleanup item: {name}')
-
-        result = handler(self._startup_snapshot.get(name))
-        result['name'] = name
-        snapshot_error = self._startup_snapshot_errors.get(name)
-        if snapshot_error:
-            result['errors'].append(snapshot_error)
-        return result
-
-    @staticmethod
-    def _normalize_item_name(raw_item) -> str:
-        name = str(raw_item or '').strip().lower()
-        if not name:
-            raise ValueError('Cleanup item name is required')
-        return name
-
-    def _capture_startup_snapshot(self) -> tuple[dict, dict]:
-        snapshot = {}
-        errors = {}
-        capture_handlers = {
-            'notifications': self._snapshot_notifications,
-            'agent_build_temp': self._snapshot_agent_build_temp,
-            'agent_transient_outputs': self._snapshot_agent_transient_outputs,
-            'preview_cache': self._snapshot_preview_cache,
-            'upload_tmp': self._snapshot_upload_tmp,
-            'cleanup_logs': self._snapshot_cleanup_logs,
-        }
-
-        names = set()
-        for raw_item in self.cleanup_items:
-            name = str(raw_item or '').strip().lower()
-            if name:
-                names.add(name)
-
-        for name in names:
-            handler = capture_handlers.get(name)
-            if handler is None:
-                continue
-            try:
-                snapshot[name] = handler()
-            except Exception as exc:
-                snapshot[name] = None
-                errors[name] = f'Failed to capture startup cleanup snapshot: {exc}'
-                logger.warning('Failed to capture startup cleanup snapshot for %s', name, exc_info=True)
-
-        return snapshot, errors
-
-    def _snapshot_notifications(self) -> list[str]:
-        payload = self.notification_history_api.get_history()
-        notifications = payload.get('notifications') if isinstance(payload, dict) else []
-        notifications = notifications if isinstance(notifications, list) else []
-        return [
-            str(item.get('id') or '').strip()
-            for item in notifications
-            if isinstance(item, dict) and str(item.get('id') or '').strip()
-        ]
-
-    def _snapshot_agent_build_temp(self) -> list[str]:
-        temp_root = os.path.abspath(tempfile.gettempdir())
-        if not os.path.isdir(temp_root):
-            return []
-        return [
-            os.path.join(temp_root, name)
-            for name in sorted(os.listdir(temp_root))
-            if name.startswith('agent_build_')
-            and self._is_owned_agent_work_dir(os.path.join(temp_root, name))
-            and os.path.isdir(os.path.join(temp_root, name))
-        ]
-
-    def _snapshot_agent_transient_outputs(self) -> list[str]:
-        return [
-            str(record.get('file_name') or '').strip()
-            for record in self.agent_output_registry.list_outputs()
-            if str(record.get('build_origin') or '').strip().lower() in ('update', 'bootstrap')
-            and str(record.get('file_name') or '').strip()
-        ]
-
-    def _snapshot_preview_cache(self) -> list[str]:
-        # Snapshot only previews existing at startup; new files may be created while
-        # the deferred cleanup runs and must remain available.
-        return [row['artifact_id'] for row in self.artifact_service.list_artifacts(artifact_type='preview')]
-
-    def _snapshot_upload_tmp(self) -> list[str]:
-        root_dir = os.path.abspath(self.artifact_service.upload_tmp_dir)
-        if not os.path.isdir(root_dir):
-            return []
-        return [
-            os.path.abspath(os.path.join(root_dir, name))
-            for name in sorted(os.listdir(root_dir))
-        ]
-
-    def _snapshot_cleanup_logs(self) -> list[str]:
-        if not os.path.isdir(self.log_root_dir):
-            return []
-        return [
-            os.path.abspath(os.path.join(self.log_root_dir, name))
-            for name in sorted(os.listdir(self.log_root_dir))
-            if name.startswith(self.LOG_PREFIX) and name.endswith('.log')
-        ]
-
-    def _cleanup_notifications(self, notification_ids) -> dict:
-        result = self._new_item_result('notifications')
-        file_path = getattr(self.notification_history_api.history_store, 'file_path', '')
-        before_size = safe_file_size(file_path)
-        cleanup_result = self.notification_history_api.cleanup_notifications(notification_ids or [])
-        after_size = safe_file_size(file_path)
-
-        removed = cleanup_result.get('removed') if isinstance(cleanup_result, dict) else []
-        removed = removed if isinstance(removed, list) else []
-        result['removed_records'] = len(removed)
-        result['bytes_freed'] = max(0, before_size - after_size)
-        for item in removed:
-            result['entries'].append({
-                'kind': 'record',
-                'path': f'notification:{item.get("id", "")}',
-                'size': 0,
-                'detail': str(item.get('title') or '').strip(),
-            })
-        return result
-
-    def _cleanup_agent_build_temp(self, work_dirs) -> dict:
-        result = self._new_item_result('agent_build_temp')
-        for work_dir in work_dirs or []:
-            path = os.path.abspath(str(work_dir or '').strip())
-            if not path or not self._is_owned_agent_work_dir(path):
-                continue
-            if os.path.isdir(path):
-                self._remove_path(path, result)
-        return result
-
-    def _cleanup_agent_transient_outputs(self, file_names) -> dict:
-        result = self._new_item_result('agent_transient_outputs')
-
-        for file_name in file_names or []:
-            file_name = str(file_name or '').strip()
-            if not file_name:
-                continue
-
-            try:
-                record = self.agent_output_registry.get_output_record(file_name)
-            except FileNotFoundError:
-                continue
-            except Exception as exc:
-                result['errors'].append(f'{file_name}: {exc}')
-                continue
-
-            if str(record.get('build_origin') or '').strip().lower() not in ('update', 'bootstrap'):
-                continue
-
-            file_path = os.path.abspath(os.path.join(self.agent_output_registry.output_dir, file_name))
-            output_size = safe_file_size(file_path)
-            try:
-                self.agent_output_registry.delete_output(file_name)
-            except Exception as exc:
-                result['errors'].append(f'{file_path}: {exc}')
-                continue
-
-            if output_size or not os.path.exists(file_path):
-                result['removed_files'] += 1
-                result['bytes_freed'] += output_size
-                result['entries'].append({
-                    'kind': 'file',
-                    'path': file_path,
-                    'size': output_size,
-                    'detail': 'agent transient output',
-                })
-
-        return result
-
-    def _cleanup_preview_cache(self, artifact_ids) -> dict:
-        result = self._new_item_result('preview_cache')
-        for artifact_id in artifact_ids or []:
-            try:
-                artifact = self.artifact_service.get_artifact_by_id(artifact_id)
-            except FileNotFoundError:
-                continue
-            except Exception as exc:
-                result['errors'].append(f'{artifact_id}: {exc}')
-                continue
-            if artifact.get('artifact_type') != 'preview':
-                continue
-            path = self.artifact_service.registry_service.catalog.physical_path(artifact['saved_path'])
-            size = safe_file_size(path)
-            existed = os.path.isfile(path)
-            try:
-                self.artifact_service.delete_artifact(artifact_id)
-            except Exception as exc:
-                result['errors'].append(f'{artifact_id}: {exc}')
-                continue
-            result['removed_records'] += 1
-            if existed:
-                result['removed_files'] += 1
-                result['bytes_freed'] += size
-                result['entries'].append({
-                    'kind': 'file', 'path': path, 'size': size,
-                    'detail': 'preview cache',
-                })
-        return result
-
-    def _cleanup_upload_tmp(self, paths) -> dict:
-        result = self._new_item_result('upload_tmp')
-        root_dir = os.path.abspath(self.artifact_service.upload_tmp_dir)
-
-        for raw_path in paths or []:
-            path = os.path.abspath(str(raw_path or '').strip())
-            if os.path.normcase(os.path.dirname(path)) != os.path.normcase(root_dir):
-                continue
-            self._remove_path(path, result)
-
-        return result
-
-    def _cleanup_logs(self, log_paths) -> dict:
-        result = self._new_item_result('cleanup_logs')
-
-        for raw_path in log_paths or []:
-            path = os.path.abspath(str(raw_path or '').strip())
-            if os.path.normcase(os.path.dirname(path)) != os.path.normcase(self.log_root_dir):
-                continue
-            name = os.path.basename(path)
-            if not name.startswith(self.LOG_PREFIX) or not name.endswith('.log'):
-                continue
-            self._remove_path(path, result)
-
-        return result
-
-    @staticmethod
-    def _list_files_recursively(root_dir: str) -> list[str]:
-        root_dir = os.path.abspath(root_dir)
-        if not os.path.isdir(root_dir):
-            return []
-
-        paths = []
-        for current_root, _, files in os.walk(root_dir):
-            for file_name in files:
-                paths.append(os.path.abspath(os.path.join(current_root, file_name)))
-        return paths
-
-    @staticmethod
-    def _is_within_root(path: str, root_dir: str) -> bool:
-        try:
-            return os.path.commonpath([os.path.abspath(path), os.path.abspath(root_dir)]) == os.path.abspath(root_dir)
-        except Exception:
-            return False
-
-    def _remove_path(self, path: str, result: dict):
-        abs_path = os.path.abspath(path)
-        if os.path.isfile(abs_path) or os.path.islink(abs_path):
-            size = safe_file_size(abs_path)
-            try:
-                os.remove(abs_path)
-            except Exception as exc:
-                result['errors'].append(f'{abs_path}: {exc}')
-                return
-            result['removed_files'] += 1
-            result['bytes_freed'] += size
-            result['entries'].append({
-                'kind': 'file',
-                'path': abs_path,
-                'size': size,
-                'detail': '',
-            })
-            return
-
-        if not os.path.isdir(abs_path):
-            return
-
-        files = []
-        total_size = 0
-        dir_count = 1
-        for current_root, dir_names, names in os.walk(abs_path):
-            dir_count += len(dir_names)
-            for name in names:
-                file_path = os.path.join(current_root, name)
-                size = safe_file_size(file_path)
-                total_size += size
-                files.append((os.path.abspath(file_path), size))
-
-        try:
-            shutil.rmtree(abs_path)
-        except Exception as exc:
-            result['errors'].append(f'{abs_path}: {exc}')
-            return
-
-        result['removed_dirs'] += dir_count
-        result['removed_files'] += len(files)
-        result['bytes_freed'] += total_size
-        result['entries'].append({
-            'kind': 'dir',
-            'path': abs_path,
-            'size': total_size,
-            'detail': '',
-        })
-        for file_path, size in files:
-            result['entries'].append({
-                'kind': 'file',
-                'path': file_path,
-                'size': size,
-                'detail': '',
-            })
-
-    @staticmethod
-    def _is_owned_agent_work_dir(work_dir: str) -> bool:
-        try:
-            abs_work_dir = os.path.abspath(work_dir)
-            temp_root = os.path.abspath(tempfile.gettempdir())
-            return (
-                os.path.normcase(os.path.dirname(abs_work_dir)) == os.path.normcase(temp_root)
-                and os.path.basename(abs_work_dir).startswith('agent_build_')
-            )
-        except Exception:
-            return False
-
+        return str(path)
     @staticmethod
     def _new_item_result(name: str) -> dict:
         return {
@@ -495,6 +538,8 @@ class ServerCleanupService:
             f'  Removed records: {summary.get("removed_records", 0)}',
             f'  Freed size: {format_bytes_precise(summary.get("bytes_freed", 0))} ({summary.get("bytes_freed", 0)} bytes)',
             f'  Errors: {summary.get("error_count", 0)}',
+            f'  Skipped: {summary.get("skipped_count", 0)}',
+            f'  Not processed: {summary.get("stopped_count", 0)}',
         ]
 
         for item in summary.get('items') or []:
@@ -540,5 +585,7 @@ class ServerCleanupService:
             'removed_records': summary.get('removed_records', 0),
             'bytes_freed': summary.get('bytes_freed', 0),
             'error_count': summary.get('error_count', 0),
+            'skipped_count': summary.get('skipped_count', 0),
+            'stopped_count': summary.get('stopped_count', 0),
             'log_url': summary.get('log_url', ''),
         })

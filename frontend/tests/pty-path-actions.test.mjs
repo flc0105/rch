@@ -74,7 +74,7 @@ test('Pinned Paths More dispatches the existing browser actions', () => {
 })
 
 test('Remote File Browser forwards directory PTY actions for the selected client only', () => {
-  const open = method(filesSource, 'openRemotePtyHere')
+  const open = method(readFileSync(new URL('../src/composables/useRemoteFileOperations.js', import.meta.url), 'utf8'), 'openRemotePtyHere')
   const emitted = []
   const dialog = {
     remoteFilesClientId: 'device-a', selectedId: 'device-a',

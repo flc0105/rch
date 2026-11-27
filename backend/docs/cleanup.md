@@ -1,55 +1,44 @@
 # Server Cleanup 与 Client `clean`
 
-RCH 有两种作用范围不同的清理机制：**Server Cleanup** 负责 Server 启动时的运行残留清理；**Client `clean`** 是对指定 Client 主动发起的维护命令。它们分别在自己的设备上操作，不会互相清理对方的文件。
+RCH 有两种作用范围不同的清理机制：**Server Cleanup** 负责 Server 本机的手动及启动自动清理；**Client `clean`** 是对指定 Client 主动发起的维护命令。它们分别在自己的设备上操作，不会互相清理对方的文件。
 
 两种清理都可能永久删除文件或记录，不能将其当作备份、归档或通用磁盘清理工具。本文分别说明执行时机、清理范围、保留边界以及如何检查结果。
 
-## Server Cleanup：启动时自动清理
+## Server Cleanup：Server 本机维护
 
-### 执行时机与范围
+打开 **Settings → Maintenance → Server Maintenance → Clean…**。外层显示符合条件的文件逻辑大小及关联记录数。Clean Now 支持刷新扫描、展开类别、查看文件及目录内容、按类别或候选项勾选；临时目录作为一个完整候选项。通知等纯数据库记录只计条目，不计可释放文件大小。确认后永久删除选中的候选；运行中可停止尚未开始的项目，已处理项目保留执行结果。清理完成后可查看释放空间估算、跳过、未处理、失败数量及报告。
 
-使用 `run_web.py` 启动 Server 时，系统会在启动后安排一次自动清理，默认延迟约 **20 秒**执行。**清理对象以 Server 初始化时捕获的候选记录和路径为准**，而非在执行时重新全盘扫描；因此，服务启动后新产生的数据不应被视为本次清理的目标。每次正常启动会重新形成本次候选范围。
+### 清理范围
 
-默认启用的清理项目如下：
+| 类别 | 清理内容与保留条件 |
+| --- | --- |
+| Agent Build Temp | 当前 Runtime 下上一实例残留的 `agent_build_tmp/agent_build_*` 构建工作目录 |
+| Transient Agent Outputs | 上一实例 Update / Bootstrap 登记的临时产物；本次运行中用于下载的产物、普通用户构建保留 |
+| Preview Cache | 上一实例预览缓存，本次运行打开或保存的预览保留 |
+| Upload Temporary Files | 上一实例 `web_files/artifacts/upload_tmp/` 残留目录；活动 reservation 保留 |
+| Cleanup Logs | 已完成的清理报告 |
+| Notifications | 通知记录；按条目明确选择，启动自动清理默认关闭 |
+| Server Rotated Logs | `server.log.1` 至 `.5` 中至少一天未更新的轮转备份；当前 `server.log` 保留 |
+| Go Loader Logs | `logs/go_loader_YYYYMMDD-HH.log` 中至少一天未更新的非当前小时文件 |
+| TCP Transfer Residue | 上一实例 Artifact 对象分片目录中的 `.rch-transfer-*` 中转残留 |
+| Bootstrap Temporary Files | 上一实例 `bootstrap_tmp/bootstrap_*.py`、`*.ps1` 残留 |
+| Orphan Artifact Files | 上一实例对象存储中路径与 ID 一致、没有任何 Catalog 记录的文件；仅人工确认清理 |
 
-| 项目 | 清理内容 | 边界 |
-| --- | --- | --- |
-| `agent_build_temp` | Server 主机系统临时目录中属于 Agent 构建的临时工作目录 | 仅处理符合 Agent 构建临时目录范围的候选项，不等于删除所有 Agent |
-| `agent_transient_outputs` | 由 Update、Bootstrap 生成的临时 Agent 输出及相关元数据 | **不针对普通的用户构建产物**；只清理已登记、来源符合条件的输出 |
-| `preview_cache` | Server 侧的文件预览缓存 | 不等于清空 Artifact 正式文件或 Shared Files |
-| `upload_tmp` | Server 侧上传暂存目录中的启动前残留 | 不等于清空已保存的正式上传文件 |
-| `cleanup_logs` | 之前清理产生的报告文件 | 只处理先前的清理报告；本次新生成的报告会保留 |
+Server Runtime 由单个 Server 实例独占使用。构建和 Bootstrap 临时目录位于 Runtime 内，系统通用临时目录中无法确认归属的旧文件不进入清理计划。当前实例新产生的预览、上传中转、构建及 TCP/Bootstrap 临时数据由所属功能负责正常收尾，异常残留在下一次 Server 启动后可清理。扫描发现 Catalog 中记录对应文件缺失时只报告数量，保留元数据供进一步检查。Shared Files、Saved Files、正常 Agent 输出、账号、密钥、设备身份、正式文档、Activity / Command / Job / Connection / Transfer History 及数据库本体保留。
 
-Server Cleanup 只处理上表的 Server 启动候选项。**Notification Center、Quick History、Activity Center、Pinned Commands、设备身份、管理员凭据及其余 `rch.db` 数据均保留。**通知历史仅通过 Notification Center 手动删除或清空。Client 设备上的临时文件由后面的 `clean` 命令管理。
+扫描产生短期服务端计划，执行只接受计划中已选的候选 ID，并重新校验文件身份、路径、修改时间及所属服务的活动保护条件。新增、变化、已消失或受保护的候选会跳过；目录只删除扫描时已列入的文件及仍为空的目录。符号链接、硬链接和特殊文件不进入删除流程。文件大小是逻辑字节数，实际磁盘释放量可能因文件系统而异。
 
-清理项目和启动延迟由 Server 的清理配置决定；更改配置后在下次 Server 启动时生效。
+### Auto Cleanup
+
+同一对话框中的 Auto Cleanup 保存启动开关、类别选择和保留天数。默认开启，Server 启动后约 20 秒执行一次。构建工作目录、临时产物、预览、上传暂存、TCP 和 Bootstrap 残留默认启用；清理报告默认保留 7 天。轮转日志、Go Loader 日志及通知记录可手动启用自动保留策略，默认关闭。孤立 Artifact 文件只能人工选择。手动清理、启动清理和数据库优化共用互斥执行机制；Restart / Shutdown 获准后不再接受新的清理或优化任务，尚未开始的启动清理也不再运行。设置在下次启动时生效。
 
 ### 完成通知与清理报告
 
-每次执行会汇总清理文件数、目录数、记录数、估算释放空间和错误数，并尝试在以下位置写入独立报告：
+报告路径为 `<Server Runtime>/cleanup_logs/server_cleanup_<运行编号>.log`，独立于 Server 主日志。清理结束发送 **Server Cleanup Completed** 通知，报告可通过 **View Cleanup Log** 查看。报告包含各类别、实际处理的文件与记录、估算释放大小、跳过、未处理及错误详情。通知展示受 Notification Preferences 控制。
 
-```text
-<Server Runtime>/cleanup_logs/server_cleanup_<运行编号>.log
-```
+### Optimize Database
 
-Server Runtime 默认位于 `backend/runtime/`，也可能由 `RCH_SERVER_RUNTIME_DIR` 指定。报告包含各清理项目的目标路径、已移除条目和错误详情；其独立于 Server 主日志 `server.log`，并非日志轮转备份。
-
-执行完成后，系统会发送 **Server Cleanup Completed** 通知；有错误时会标记为警告。通知实际是否展示还受 Notification Preferences 影响。报告成功写入时，通知可提供 **View Cleanup Log** 入口。报告无法写入时，清理仍可能已执行，应到 Server 主日志检查失败原因，而不能仅凭没有报告就认定未清理。
-
-在 Server 主机上也可以直接查看报告目录：
-
-```bash
-ls -lt backend/runtime/cleanup_logs/
-```
-
-若 Runtime 位置经过自定义，应使用实际目录。关于 Runtime 位置、日志和通知系统，分别参见 [Server Runtime](server_runtime.md)、[Server / Client Logging](logging.md) 与 [Notifications](websocket_notifications.md)。
-
-### 使用注意
-
-- **清理会永久移除目标**。预览缓存可重新生成，但已清理的临时构建文件和上传暂存内容不承诺恢复。
-- Server Cleanup **没有交互式逐项确认**。需要保留暂存文件或诊断报告时，应在启动前另行复制；通知历史不会被启动清理。
-- 候选范围来自启动时快照，但不意味着所有候选在清理执行前都不会发生变化。涉及正在上传或构建的任务时，应避免与 Server 重启及自动清理交叠。
-- 完成通知显示本次清理的项目统计；Server 磁盘占用应另通过文件系统检查。
+**Settings → Maintenance → Optimize Database** 是与 Cleanup、Restart、Shutdown 平级的独立入口。数据库记录删除后，SQLite 通常保留空闲页供后续写入复用。该入口显示数据库文件、WAL、可复用页和磁盘剩余大小，并可手动执行 SQLite `VACUUM` 和 WAL checkpoint 来回收磁盘空间。优化保留已有记录，执行前检查剩余空间和数据库完整性；数据库忙时返回错误或报告 checkpoint 尚未完成。建议在 Server 空闲时执行，SQLite 写入可能短时等待。自动 Cleanup 不运行数据库优化。
 
 ## Client `clean`：手动清理指定设备
 
@@ -119,7 +108,7 @@ Client 文件日志的保存位置见 [Server / Client Logging](logging.md)；Bu
 
 | 需求 | 应使用 |
 | --- | --- |
-| Server 重启后清理预览缓存、上传中转、构建临时数据 | **Server Cleanup**：启动时自动执行，不使用 Client `clean` |
+| Server 重启后清理预览缓存、上传中转、构建临时数据 | **Server Cleanup**：Settings → Maintenance，手动或启动自动执行 |
 | 清理某台 Client 的临时文件、残留日志或不再需要的 Bundle Releases | **Client `clean`**：在目标 Client 命令入口运行，并核对预览 |
 | 查看 Server 上一轮自动清理做了什么 | Server Runtime 下的 `cleanup_logs/`，或完成通知中的 **View Cleanup Log** |
 | 清理 Server 的正式历史、账号、正式文件或 Client 上的用户数据 | **以上两种机制均不适用**；不要把它们当作通用删除入口 |

@@ -2,6 +2,8 @@
 
 import logging
 import os
+import threading
+from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 
 
@@ -31,3 +33,21 @@ def install_server_file_logging(runtime_dir):
     handler._rch_server_runtime_log = True
     root_logger.addHandler(handler)
     return handler
+
+
+loader_log_lock = threading.RLock()
+
+
+@contextmanager
+def server_rotation_lock(runtime_dir):
+    """Serialize maintenance with rollover of this Server's file handler."""
+    filename = os.path.abspath(os.path.join(runtime_dir, SERVER_LOG_FILENAME))
+    handlers = [h for h in logging.getLogger().handlers
+                if getattr(h, '_rch_server_runtime_log', False) and h.baseFilename == filename]
+    for handler in handlers:
+        handler.acquire()
+    try:
+        yield
+    finally:
+        for handler in reversed(handlers):
+            handler.release()

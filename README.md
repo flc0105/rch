@@ -14,7 +14,7 @@ Use RCH only on devices you own or are explicitly authorized to administer. Prot
 | Automation | Script Library, metadata-driven parameters, Script SDK, structured interactions, Quick Actions, Background Jobs and External Tools |
 | Operations | Process and app inspection, Device Dashboard, Log Viewer, PTY, Screen View, Clipboard and optional TCP Tunnel on supported Clients |
 | Data | Activity Center, Saved Files, Shared Files, Transfer Center, Keychains, notifications and Server-local Documents |
-| Administration | Administrator authentication, mTLS Identities, Agent Builder, One-liners, Agent Outputs, Server Maintenance and cleanup |
+| Administration | Administrator authentication, mTLS Identities, Agent Builder, One-liners, Agent Outputs, Server Maintenance, selective cleanup and SQLite space optimization |
 
 The selected Client's Command Manifest and Feature Manifest determine which operations are available. Toolbar, More and Toolbox expose the tools appropriate to the current device; Toolbar Settings and Toolbox shortcuts organize frequently used actions.
 

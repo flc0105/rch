@@ -6,7 +6,6 @@ from unittest.mock import patch
 import pytest
 
 from server.application.agent.agent_output_registry import AgentOutputRegistry
-from server.application.maintenance.server_cleanup_service import ServerCleanupService
 from server.persistence.rch_database import RchDatabase
 
 
@@ -102,9 +101,11 @@ def test_transient_cleanup_reads_renamed_origin(catalog):
     _register(registry, directory, filename='manual.zip')
     _register(registry, directory, origin='bootstrap', filename='bootstrap.zip')
     _register(registry, directory, origin='update', filename='update.zip')
-    context = SimpleNamespace(agent_output_registry=registry)
-    snapshot = ServerCleanupService._snapshot_agent_transient_outputs(context)
-    assert set(snapshot) == {'bootstrap.zip', 'update.zip'}
+    snapshot = registry.startup_transient_outputs()
+    assert {row['file_name'] for row in snapshot} == {'bootstrap.zip', 'update.zip'}
+    registry.get_download_path('bootstrap.zip')
+    assert not registry.is_cleanup_output('bootstrap.zip')
+    assert registry.is_cleanup_output('update.zip')
 
 
 def test_schema_refuses_old_layout_without_auto_migration(catalog):

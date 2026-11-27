@@ -157,3 +157,15 @@ class ArtifactTempFileService:
             token = self._reservations.pop(parent_dir, None)
             if token is not None:
                 self.budget.release(token)
+
+    def is_reserved(self, directory: str) -> bool:
+        with self._lock:
+            return os.path.abspath(directory) in self._reservations
+
+    def delete_residue_for_cleanup(self, directory, remove):
+        directory = os.path.abspath(directory)
+        base = os.path.abspath(self.artifact_service.upload_tmp_dir)
+        with self._lock:
+            if os.path.dirname(directory) != base or directory in self._reservations:
+                raise ValueError('Upload staging is active or outside the managed directory')
+            remove()

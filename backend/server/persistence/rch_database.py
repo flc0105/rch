@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import shutil
 import threading
 from itertools import count
 from contextlib import closing, contextmanager
@@ -293,6 +294,40 @@ class RchDatabase:
     def integrity_check(self) -> str:
         row = self.connection().execute('PRAGMA integrity_check').fetchone()
         return str(row[0] if row else '')
+
+    def space_info(self):
+        conn = self.connection()
+        page_size = int(conn.execute('PRAGMA page_size').fetchone()[0])
+        page_count = int(conn.execute('PRAGMA page_count').fetchone()[0])
+        free_pages = int(conn.execute('PRAGMA freelist_count').fetchone()[0])
+        def size(path):
+            try:
+                return os.path.getsize(path)
+            except FileNotFoundError:
+                return 0
+        return {'database_bytes': size(self.db_path), 'wal_bytes': size(self.db_path + '-wal'),
+                'logical_bytes': page_size * page_count, 'reusable_bytes': page_size * free_pages,
+                'disk_free_bytes': shutil.disk_usage(os.path.dirname(self.db_path)).free}
+
+    def optimize_space(self):
+        # VACUUM must use a standalone connection outside any transaction.
+        # SQLite itself serializes writers; a busy database is reported, not forced.
+        before = self.space_info()
+        if before['disk_free_bytes'] < 2 * max(before['logical_bytes'], before['database_bytes'] + before['wal_bytes']):
+            raise ValueError('Insufficient free disk space for database optimization')
+        with closing(self._new_connection()) as conn:
+            if conn.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                raise ValueError('Database integrity check failed; optimization was not started')
+            if conn.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()[0]:
+                raise ValueError('Database is busy; try again later')
+            conn.execute('VACUUM')
+            checkpoint = conn.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()
+            if conn.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                raise RuntimeError('Database integrity check failed after optimization')
+        after = self.space_info()
+        return {'before': before, 'after': after, 'checkpoint_busy': bool(checkpoint[0]),
+                'bytes_reclaimed': max(0, before['database_bytes'] + before['wal_bytes']
+                                        - after['database_bytes'] - after['wal_bytes'])}
 
     def backup(self, destination_path: str):
         destination = os.path.abspath(destination_path)

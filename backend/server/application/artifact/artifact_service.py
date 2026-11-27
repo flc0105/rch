@@ -163,6 +163,33 @@ class WebArtifactService:
     def get_artifact_file_path(self, artifact_id: str) -> str:
         return self.registry_service.get_artifact_file_path(artifact_id)
 
+    def startup_preview_entries(self):
+        return self.registry_service.startup_preview_entries()
+
+    def is_cleanup_preview(self, artifact_id):
+        return self.registry_service.is_cleanup_preview(artifact_id)
+
+    def is_upload_temp_reserved(self, directory):
+        return self.temp_file_service.is_reserved(directory)
+
+    def maintenance_residue_paths(self, kind):
+        return self.registry_service.maintenance_residue_paths(kind)
+
+    def is_orphan_artifact_path(self, path):
+        return self.registry_service.is_orphan_artifact_path(path)
+
+    def delete_orphan_for_cleanup(self, path, remove):
+        return self.registry_service.delete_orphan_for_cleanup(path, remove)
+
+    def delete_upload_residue_for_cleanup(self, directory, remove):
+        return self.temp_file_service.delete_residue_for_cleanup(directory, remove)
+
+    def missing_artifact_count(self):
+        return self.registry_service.missing_artifact_count()
+
+    def delete_preview_for_cleanup(self, artifact_id, saved_at, unchanged):
+        return self.registry_service.delete_preview_for_cleanup(artifact_id, saved_at, unchanged)
+
     def delete_artifact(self, artifact_id: str) -> dict:
         return self.registry_service.delete_artifact(artifact_id)
 

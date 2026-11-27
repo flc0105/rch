@@ -23,6 +23,7 @@ RCH_SERVER_RUNTIME_DIR=/data/rch-runtime python backend/run_web.py
 | `SERVER_RUNTIME_DIR/web_files/` | Artifact / Shared Files / 上传存储 |
 | `SERVER_RUNTIME_DIR/keychains.key` | 解密 Keychains 数据库密文所需的本地密钥；须和 `rch.db` 一起备份 |
 | `SERVER_RUNTIME_DIR/cleanup_logs/` | 清理日志 |
+| `SERVER_RUNTIME_DIR/agent_build_tmp/`、`bootstrap_tmp/` | 受管理的构建工作目录、Bootstrap 下载中转 |
 | `SERVER_RUNTIME_DIR/server.log`、`server.log.1` ～ `.5` | `run_web.py` 的 Server 日志及自动轮转备份 |
 | `SERVER_RUNTIME_DIR/logs/` | Go Loader 上报日志 |
 | `SERVER_RUNTIME_DIR/listeners.json` | Reverse Listener 配置 |
@@ -75,6 +76,8 @@ curl -fsS -X POST 'http://127.0.0.1:8085/api/server/restart' \
 将 `RCH_ADMIN_API_TOKEN` 设置为当前管理员 API Token；Shutdown 把 URL 末尾改为 `/api/server/shutdown`。
 
 如果 Restart 后出现 Python 启动错误，新进程可能无法启动；可从 Server 终端日志或 `SERVER_RUNTIME_DIR/server.log` 查看原因并手动运行 `run_web.py`。
+
+Settings → Maintenance 提供 [Server Cleanup 和 Optimize Database](cleanup.md)，用于清理符合条件的本机残留及回收 SQLite 空闲页。每个 Runtime 应由单个 Server 实例独占。
 
 ## Bind 主动连接
 

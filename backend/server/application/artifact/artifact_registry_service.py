@@ -33,6 +33,7 @@ class ArtifactRegistryService:
     def __init__(self, artifact_service):
         self.artifact_service = artifact_service
         self._lock = threading.RLock()
+        self._cleanup_preview_ids = set()
         self.catalog = ArtifactSqliteCatalog(self.artifact_service.database, self.artifact_service.artifacts_root_dir)
 
     def _now_text(self) -> str:
@@ -330,16 +331,106 @@ class ArtifactRegistryService:
         return self._normalize_meta_for_view(payload)
 
     def get_artifact_file_path(self, artifact_id: str) -> str:
-        file_path = self.catalog.physical_path(self.get_artifact_by_id(artifact_id)['saved_path'])
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError('file not found')
-        return file_path
+        with self._lock:
+            file_path = self.catalog.physical_path(self.get_artifact_by_id(artifact_id)['saved_path'])
+            if not os.path.isfile(file_path):
+                raise FileNotFoundError('file not found')
+            # A prior-instance preview opened in this process is no longer residue.
+            self._cleanup_preview_ids.discard(artifact_id)
+            return file_path
+
+    def startup_preview_entries(self):
+        with self._lock:
+            entries = [(row, str(Path(self.artifact_service.artifacts_root_dir).absolute() / self.catalog.object_relative_path(row['artifact_id'])))
+                       for row in self.list_artifacts(artifact_type=self.TYPE_PREVIEW)
+                       if row['is_available']]
+            self._cleanup_preview_ids = {row['artifact_id'] for row, _ in entries}
+            return entries
+
+    def is_cleanup_preview(self, artifact_id):
+        with self._lock:
+            return artifact_id in self._cleanup_preview_ids
+
+    def maintenance_residue_paths(self, kind):
+        """Enumerate only canonical object-store files and TCP staging names."""
+        if kind not in ('orphan', 'tcp'):
+            raise ValueError('Invalid residue kind')
+        with self._lock:
+            ids = self.catalog.object_ids()
+            root = Path(self.artifact_service.artifacts_root_dir).absolute() / 'objects'
+            if not root.exists():
+                return []
+            if root.resolve() != root:
+                raise ValueError('Unsafe Artifact root')
+            paths = []
+            for shard in root.iterdir():
+                if (shard.is_symlink() or not shard.is_dir() or len(shard.name) != 2
+                        or any(c not in '0123456789abcdef' for c in shard.name)):
+                    continue
+                for path in shard.iterdir():
+                    if path.is_symlink() or not path.is_file():
+                        continue
+                    if kind == 'tcp' and path.name.startswith('.rch-transfer-'):
+                        paths.append(str(path))
+                    elif kind == 'orphan' and path.name not in ids:
+                        try:
+                            relative = self.catalog.object_relative_path(path.name)
+                        except ValueError:
+                            continue
+                        if relative == path.relative_to(root.parent):
+                            paths.append(str(path))
+            return paths
+
+    def is_orphan_artifact_path(self, path):
+        with self._lock:
+            root = Path(self.artifact_service.artifacts_root_dir).absolute()
+            path = Path(path).absolute()
+            try:
+                return (path.resolve() == path and root / self.catalog.object_relative_path(path.name) == path
+                        and not self.catalog.has_object_id(path.name))
+            except ValueError:
+                return False
+
+    def delete_orphan_for_cleanup(self, path, remove):
+        with self._lock:
+            if not self.is_orphan_artifact_path(path):
+                raise ValueError('Artifact is registered or path is unsafe')
+            remove()
+
+    def missing_artifact_count(self):
+        with self._lock:
+            count = 0
+            for key in self.catalog.object_ids():
+                try:
+                    path = self.catalog.physical_path(self.catalog.object_relative_path(key).as_posix())
+                    count += not os.path.isfile(path)
+                except ValueError:
+                    count += 1
+            return count
+
+    def delete_preview_for_cleanup(self, artifact_id, saved_at, unchanged):
+        with self._lock:
+            artifact = self.get_artifact_by_id(artifact_id)
+            if (artifact_id not in self._cleanup_preview_ids or artifact['artifact_type'] != self.TYPE_PREVIEW
+                    or artifact['saved_at'] != saved_at or not unchanged()):
+                raise ValueError('Preview changed')
+            path = Path(self.artifact_service.artifacts_root_dir).absolute() / self.catalog.object_relative_path(artifact_id)
+            if path.resolve() != path:
+                raise ValueError('Unsafe preview path')
+            path.unlink()
+            self.catalog.delete(artifact_id)
+            self._cleanup_preview_ids.discard(artifact_id)
 
     def delete_artifact(self, artifact_id: str) -> dict:
         with self._lock:
             artifact = self.get_artifact_by_id(artifact_id)
-            self._safe_remove_file(self.catalog.physical_path(artifact['saved_path']))
+            artifact_id = artifact['artifact_id']
+            path = self.catalog.storage_root / self.catalog.object_relative_path(artifact_id)
+            if path.resolve() != path:
+                raise ValueError('Unsafe Artifact storage path')
+            path.unlink(missing_ok=True)
             self.catalog.delete(artifact_id)
+            self._cleanup_preview_ids.discard(artifact_id)
             return {
                 'artifact_id': artifact_id,
                 'stored_name': artifact.get('stored_name', ''),
@@ -387,13 +478,38 @@ class ArtifactRegistryService:
         return self.catalog.list_folders(artifact_type)
 
     def create_folder(self, artifact_type: str, name: str, parent_id: str = ''):
-        return self.catalog.create_folder(artifact_type, name, parent_id)
+        with self._lock:
+            return self.catalog.create_folder(artifact_type, name, parent_id)
 
     def rename_folder(self, folder_id: str, name: str):
-        return self.catalog.rename_folder(folder_id, name)
+        with self._lock:
+            return self.catalog.rename_folder(folder_id, name)
+
+    def _delete_shared_tree(self, folder_id: str, *, include_folder: bool) -> dict:
+        with self._lock:
+            artifact_ids, folders = self.catalog.shared_tree(folder_id)
+            if include_folder:
+                folders.append(folder_id)
+            deleted_count = deleted_folder_count = 0
+            # Remove actual file objects through the normal deletion path before
+            # removing their logical folders. Stop on failure and retain remaining rows.
+            try:
+                for artifact_id in artifact_ids:
+                    self.delete_artifact(artifact_id)
+                    deleted_count += 1
+                for current in folders:
+                    self.catalog.delete_folder(current)
+                    deleted_folder_count += 1
+            except Exception as exc:
+                raise RuntimeError(f'Deleted {deleted_count} file(s) and {deleted_folder_count} folder(s); '
+                                   f'cleanup incomplete: {exc}') from exc
+            return {'folder_id': folder_id, 'deleted_count': deleted_count,
+                    'deleted_folder_count': deleted_folder_count}
 
     def delete_folder(self, folder_id: str):
-        return self.catalog.delete_folder(folder_id)
+        if not folder_id:
+            raise ValueError('Folder ID is required')
+        return self._delete_shared_tree(folder_id, include_folder=True)
 
     def move_artifact(self, artifact_id: str, folder_id: str):
         with self._lock:
@@ -402,6 +518,11 @@ class ArtifactRegistryService:
     def clear_artifacts(self, artifact_type: str = '', machine_id: str = '', *, folder_id: str = '') -> dict:
         if not artifact_type:
             raise ValueError('artifact type is required')
+        if artifact_type == self.TYPE_SHARED:
+            if machine_id:
+                raise ValueError('Shared Files does not support a device filter')
+            return {'artifact_type': artifact_type, 'machine_id': machine_id,
+                    **self._delete_shared_tree(folder_id, include_folder=False)}
         items = self.list_artifacts(artifact_type=artifact_type, machine_id=machine_id,
                                     folder_id=folder_id)
         deleted_count = 0

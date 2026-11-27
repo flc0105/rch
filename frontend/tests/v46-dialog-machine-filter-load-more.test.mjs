@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 const read = file => readFileSync(new URL(file, import.meta.url), 'utf8')
 const connect = read('../src/components/ConnectToClientDialog.vue')
 const quick = read('../src/components/QuickActionsDialog.vue')
-const remote = read('../src/components/RemoteFilesDialog.vue')
+const remote = read('../src/components/RemoteFilesToolbar.vue')
 const transfer = read('../src/components/TransferCenterDrawer.vue')
 const notification = read('../src/components/NotificationCenterDrawer.vue')
 const loadMore = read('../src/components/HistoryLoadMore.vue')
@@ -18,7 +18,7 @@ test('Connect dialog uses a readable label gap and preserves fields', () => {
 })
 
 test('Quick Actions uses same small text controls and 32px toolbar dimensions as Remote Files', () => {
-  assert.match(remote, /v-model="remoteSearchKeyword"[\s\S]*?size="small"/)
+  assert.match(remote, /v-model="remoteSearchKeywordModel"[\s\S]*?size="small"/)
   assert.match(quick, /v-model="filterPlatform" size="small"/)
   assert.match(quick, /v-model="searchText"[\s\S]*?size="small"/)
   assert.match(quick, /type="primary" size="small" class="quick-actions-new-button"/)

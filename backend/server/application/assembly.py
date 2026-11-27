@@ -29,6 +29,7 @@ from server.application.keychains.keychain_store import KeychainStore
 from server.application.documents.document_library_service import DocumentLibraryService
 from server.application.pinned_paths.pinned_path_store import PinnedPathStore
 from server.application.preferences.server_preferences import ServerPreferences
+from server.application.preferences.settings_store import SettingsStore
 from server.application.preferences.toolbar_preference_store import ToolbarPreferenceStore
 from server.application.preferences.notification_preference_store import NotificationPreferenceStore
 from server.application.preferences.terminal_context_preference_store import TerminalContextPreferenceStore
@@ -74,6 +75,7 @@ from server.config.config import (
     EXTERNAL_TOOL_META_PATH,
     EXTERNAL_TOOL_PACKAGE_PATH,
     SERVER_CLEANUP_ITEMS,
+    SERVER_RUNTIME_DIR,
     SERVER_CLEANUP_LOG_ROOT_DIR,
     SERVER_CLEANUP_START_DELAY_SECONDS,
     SCRIPT_JOBS_PATH,
@@ -252,6 +254,9 @@ class ServerApplicationAssembly:
             cleanup_items=SERVER_CLEANUP_ITEMS,
             start_delay_seconds=SERVER_CLEANUP_START_DELAY_SECONDS,
             log_root_dir=SERVER_CLEANUP_LOG_ROOT_DIR,
+            settings_store=SettingsStore(self.server.database, 'server_cleanup'),
+            database=self.server.database,
+            runtime_dir=SERVER_RUNTIME_DIR,
         )
         self.server_cleanup_api = WebServerCleanupApi(self.server_cleanup_service)
 

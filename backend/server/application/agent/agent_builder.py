@@ -28,6 +28,7 @@ class AgentBuilder:
     def __init__(self):
         self.source_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
         self.output_dir = os.path.join(SERVER_RUNTIME_DIR, 'agent_output')
+        self.work_root = os.path.join(SERVER_RUNTIME_DIR, 'agent_build_tmp')
         self._ensure_dirs()
 
     @property
@@ -42,6 +43,7 @@ class AgentBuilder:
 
     def _ensure_dirs(self):
         os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.work_root, mode=0o700, exist_ok=True)
 
     def _build_id_text(self) -> str:
         stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -85,7 +87,7 @@ class AgentBuilder:
         if not 1 <= int(web_port) <= 65534:
             raise ValueError('web_port must be between 1 and 65534')
 
-        work_dir = tempfile.mkdtemp(prefix='agent_build_')
+        work_dir = tempfile.mkdtemp(prefix='agent_build_', dir=self.work_root)
         build_id = self._build_id_text()
         build_version = self._build_version_text(builder, build_id)
 

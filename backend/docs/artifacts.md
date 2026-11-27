@@ -11,7 +11,7 @@ Artifact Manager 有两个一级空间：
 - **Saved Files**：Server 保存的文件，可按设备、目录和名称查看。从设备工具栏打开时默认筛选当前设备；从顶部 Utilities 独立打开时默认查看全部设备。切换设备会同步更新 Saved 文件数量与列表；Shared Files 数量不受设备筛选影响。设备离线不影响 Server 上已保存的文件。
 - **Shared Files**：Server 上跨设备复用的文件，支持创建、上传与发送到指定 Client。它不按某一台设备归属。
 
-两个空间共用文件存储和 SQLite 目录机制，但用户需要明确选择共享空间才能让文件走 Shared 的发送操作；移动目录不能改变共享范围。只有 Shared Files 可以新建、重命名与删除自定义目录；Saved Files 的目录结构固定，只有预设目录。**Create File / Upload 只在 Shared Files 显示**，Saved Files 的文件仅通过截图、下载、脚本/Job 输出、剪贴板、命令/终端保存等正式保存动作产生。Shared 文件创建入口使用现有编辑器流程。Shared Files 的 Upload 使用统一拖放选择面板，可组合文件和文件夹，支持 Choose files / Choose folders 多次追加；浏览器遍历目录并预检后一次提交文件、相对路径及冲突策略，Server 在同一批次中建立 Shared 嵌套目录（含拖放的空目录）并保存文件。已存在的同名 Shared 文件夹直接复用；同名文件须明确 Stop、Skip 或 Keep Both（独立 Artifact ID，不替换原对象）。文件保留原目录结构，整批只发一条结果通知。发送阶段显示浏览器上传进度并允许取消；发送结束后的保存阶段不是可回滚事务，失败或中断后应核对已保存文件。原生目录选择器只能选择目录且不能提供空目录；若系统选择框限制单目录，可重复选择来累计多个目录，拖放支持空目录及文件目录混合选择。
+两个空间共用文件存储和 SQLite 目录机制，但用户需要明确选择共享空间才能让文件走 Shared 的发送操作；移动目录不能改变共享范围。只有 Shared Files 可以新建、重命名与删除自定义目录；Delete Folder 递归删除所选目录及其全部内容，Clear 保留所选目录本身并清空其文件和子目录，All Files 下的 Clear 清空整个共享空间。Saved Files 的目录结构固定，只有预设目录。**Create File / Upload 只在 Shared Files 显示**，Saved Files 的文件仅通过截图、下载、脚本/Job 输出、剪贴板、命令/终端保存等正式保存动作产生。Shared 文件创建入口使用现有编辑器流程。Shared Files 的 Upload 使用统一拖放选择面板，可组合文件和文件夹，支持 Choose files / Choose folders 多次追加；浏览器遍历目录并预检后一次提交文件、相对路径及冲突策略，Server 在同一批次中建立 Shared 嵌套目录（含拖放的空目录）并保存文件。已存在的同名 Shared 文件夹直接复用；同名文件须明确 Stop、Skip 或 Keep Both（独立 Artifact ID，不替换原对象）。文件保留原目录结构，整批只发一条结果通知。发送阶段显示浏览器上传进度并允许取消；发送结束后的保存阶段不是可回滚事务，失败或中断后应核对已保存文件。原生目录选择器只能选择目录且不能提供空目录；若系统选择框限制单目录，可重复选择来累计多个目录，拖放支持空目录及文件目录混合选择。
 
 Saved Files 共有九个预设分类，`category` 与目录严格一对一；分类值与显示目录名如下：
 
@@ -77,10 +77,10 @@ Job ↔ Artifact 的正式关联是 `background_job_files(job_id, artifact_id)`�
 | `/api/artifacts/{id}/rename` | 更改显示名，实际文件路径不变 |
 | `/api/artifacts/{id}/move` | 仅 Shared Files 内移动到指定共享目录 ID；Saved 拒绝移动 |
 | `/api/artifacts/{id}`（DELETE） | 删除内容和 SQLite 记录 |
-| `/api/artifacts/clear` | 按 `scope`、目录和可选设备范围删除文件 |
+| `/api/artifacts/clear` | 按 `artifact_type`、目录和可选设备范围删除文件；Shared Files 递归清空所选目录的文件及子目录（保留所选目录本身），All Files 清空整个共享空间 |
 | `/api/artifacts/folders`（POST） | 仅在 Shared Files 创建目录（可选父目录） |
 | `/api/artifacts/folders/{id}/rename` | 仅在 Shared Files 重命名自建目录 |
-| `/api/artifacts/folders/{id}`（DELETE） | 仅在 Shared Files 删除空的自建目录 |
+| `/api/artifacts/folders/{id}`（DELETE） | 仅在 Shared Files 递归删除自建目录及其中全部文件和子目录 |
 | `/api/artifacts/create` | 仅允许在 Shared 创建空文本文件 |
 | `/api/artifacts/shared/inspect-upload` / `/api/artifacts/shared/batch-upload` | Shared 相对路径计划预检与批次提交，明确文件冲突策略 |
 | `/api/files/upload` | Saved Files 传 `category`（不传或未知值归 Inbox），按固定映射选择目录；Shared Files 不允许传 `category`，可传 `folder` 或 `folder_id` 指定现有共享目录；Preview 不需要分类或目录 |

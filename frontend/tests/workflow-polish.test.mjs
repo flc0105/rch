@@ -2,11 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { remoteFileOptions } from './helpers/remote-file-options.mjs'
 import { answerInteraction } from '../src/api/interactionApi.js'
 
 const read = file => readFileSync(new URL(file, import.meta.url), 'utf8')
 const plain = value => JSON.parse(JSON.stringify(value))
-const component = (file, env = {}) => vm.runInNewContext(`(${read(file).match(/<script>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '').replace('export default', '')})`, env)
+const component = (file, env = {}) => /RemoteFilesDialog\.vue$|RemoteFilePicker\.vue$/.test(file) ? remoteFileOptions(file.split('/').at(-1).replace('.vue', ''), env) : vm.runInNewContext(`(${read(file).match(/<script>([\s\S]*?)<\/script>/)[1].replace(/^import .*$/gm, '').replace('export default', '')})`, env)
 function instance(c, extra = {}) {
   const o = { ...c.data(), ...extra }
   for (const [k, v] of Object.entries(c.methods || {})) if (!(k in extra)) o[k] = v.bind(o)
@@ -100,7 +101,7 @@ test('Picker discards directory responses from an old device',async()=>{
   const pending=[]
   const c=component('../src/components/RemoteFilePicker.vue',{OPEN_TRANSFER_CENTER_KEY:'transfer',ElMessage:messages,listRemoteDirectory:()=>new Promise(r=>pending.push(r))})
   const o=instance(c,{visible:true,selectedId:'old',clearTableSelection(){}})
-  const a=o.loadRemoteDirectory('/old');o.selectedId='new';o.pickerContextSeq++;const b=o.loadRemoteDirectory('/new')
+  const a=o.loadRemoteDirectory('/old');o.selectedId='new';o.remoteFilesContextSeq++;const b=o.loadRemoteDirectory('/new')
   const reply=path=>({ok:true,json:async()=>({code:0,data:{current_path:path,entries:[]}})})
   pending[0](reply('/old'));await a;assert.equal(o.remoteFilesCurrentPath,'');assert.equal(o.remoteFilesLoading,true)
   pending[1](reply('/new'));await b;assert.equal(o.remoteFilesCurrentPath,'/new');assert.equal(o.remoteFilesLoading,false)
@@ -119,5 +120,5 @@ test('Copy To and Move To share paste preflight and mutation, preserve clipboard
   stop=true;o.openDestinationPicker({path:'/src/file'},'copy');await o.handleDestinationSelected('/dest');assert.equal(calls.length,5)
   stop=false;o.openDestinationPicker({path:'/src/file'},'move');o.remoteFilesContextSeq++;await o.handleDestinationSelected('/dest');assert.equal(calls.length,5)
   o.remoteClipboardMode='move';o.remoteClipboardPaths=['/other'];await o.pasteRemoteClipboard();assert.equal(o.remoteClipboardPaths.length,0);assert.equal(calls[6][2].operation,'move')
-  const source=read('../src/components/RemoteFilesDialog.vue');assert.equal((source.match(/command="copy_to"/g)||[]).length,3);assert.equal((source.match(/command="move_to"/g)||[]).length,3)
+  const source=read('../src/components/RemoteFileList.vue');assert.equal((source.match(/command="copy_to"/g)||[]).length,3);assert.equal((source.match(/command="move_to"/g)||[]).length,3)
 })

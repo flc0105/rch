@@ -5,6 +5,7 @@ from datetime import datetime
 
 from server.config.config import SOCKET_PORT, WEB_PORT, SERVER_RUNTIME_DIR
 from core.platform.normalization import normalize_arch
+from server.runtime.server_logging import loader_log_lock
 
 
 class WebAgentApi:
@@ -115,10 +116,9 @@ class WebAgentApi:
         # Only registered build artifacts may be downloaded; the SQLite catalog
         # lives beside the binaries and must never be served as an Agent output.
         try:
-            record = self.agent_output_registry.get_output_record(filename)
+            return self.agent_output_registry.get_download_path(filename)
         except ValueError as exc:
             raise FileNotFoundError('File not found') from exc
-        return os.path.join(self.agent_builder.output_dir, record['file_name'])
 
     def list_agent_outputs(self):
         results = []
@@ -166,15 +166,18 @@ class WebAgentApi:
         if not line or not isinstance(line, str):
             raise ValueError('Missing or invalid line field')
 
-        log_path = self._get_loader_log_path()
-        with open(log_path, 'a', encoding='utf-8') as fp:
-            fp.write(line.strip() + '\n')
+        with loader_log_lock:
+            log_path = self._get_loader_log_path()
+            with open(log_path, 'a', encoding='utf-8') as fp:
+                fp.write(line.strip() + '\n')
 
         return {'logged': True, 'log_file': os.path.basename(log_path)}
 
     def _write_bootstrap_temp_file(self, *, content: str, suffix: str, download_name: str, mimetype: str) -> dict:
+        root = os.path.join(SERVER_RUNTIME_DIR, 'bootstrap_tmp')
+        os.makedirs(root, mode=0o700, exist_ok=True)
         with tempfile.NamedTemporaryFile(
-                mode='w', suffix=suffix, delete=False, encoding='utf-8'
+                mode='w', prefix='bootstrap_', dir=root, suffix=suffix, delete=False, encoding='utf-8'
         ) as file_obj:
             file_obj.write(content)
             temp_path = file_obj.name

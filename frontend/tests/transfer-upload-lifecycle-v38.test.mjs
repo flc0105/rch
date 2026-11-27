@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { remoteFileOptions, mountRemoteFileOptions } from './helpers/remote-file-options.mjs'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const transferSource = read('../src/api/transferApi.js')
@@ -66,26 +67,15 @@ async function awaitXhr(api, count = 1) {
   return api.xhrs[count - 1]
 }
 
-function getUploadMethod(componentName) {
-  const component = read(`../src/components/${componentName}.vue`)
-  const methodName = componentName === 'RemoteFilesDialog' ? 'handleUploadChange' : 'handleRemoteUploadChange'
-  const next = componentName === 'RemoteFilesDialog' ? 'async loadRemoteDirectory(' : 'async loadQuickJumpPaths('
-  const start = component.indexOf(`    async ${methodName}(event) {`)
-  assert.ok(start >= 0, `${componentName} upload handler exists`)
-  const end = component.indexOf(next, start)
-  assert.ok(end > start)
-  const snippet = component.slice(start, end).trim().replace(/,\s*$/, '')
-  return { methodName, snippet }
-}
-
 for (const componentName of ['RemoteFilesDialog', 'RemoteFilePicker']) {
   test(`${componentName}: browser upload begins toast immediately; Cancel aborts XHR and unlocks Upload`, async () => {
     const api = buildUploadApi()
     const toasts = []
     const messages = { info: [], error: [] }
     const events = []
-    const { methodName, snippet } = getUploadMethod(componentName)
-    const handlers = vm.runInNewContext(`({ ${snippet} })`, {
+    const methodName = componentName === 'RemoteFilesDialog' ? 'handleUploadChange' : 'handleRemoteUploadChange'
+    const options = remoteFileOptions(componentName, {
+      OPEN_TRANSFER_CENTER_KEY: 'transfer',
       prepareUploadConflict: async () => 'stop',
       TERMINAL_REMOTE_UPLOAD_PREFIX: '[Remote Upload]',
       createTerminalOperation: () => ({ operation_id: 'op-1' }),
@@ -99,14 +89,13 @@ for (const componentName of ['RemoteFilesDialog', 'RemoteFilePicker']) {
         warning: () => {},
       },
     })
-    const ui = {
-      selectedId: 'device-1', remoteFilesClientId: 'device-1', remoteFilesCurrentPath: '/tmp',
+    const ui = mountRemoteFileOptions(options, {
+      visible: true, selectedId: 'device-1', remoteFilesClientId: 'device-1', remoteFilesCurrentPath: '/tmp',
       remoteUploadLoading: false, getTabScopedHeaders: () => ({}), buildRequestHeaders: () => ({}),
       openTransferCenterFromToast: () => {},
       $emit: (...args) => events.push(args),
-    }
-    Object.assign(ui, handlers)
-    const handler = handlers[methodName]
+    })
+    const handler = ui[methodName]
     const event = { target: { files: [{ name: 'big.bin', size: 1000 }], value: 'big.bin' } }
     const pending = handler.call(ui, event)
     assert.equal(ui.remoteUploadLoading, true)

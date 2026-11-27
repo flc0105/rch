@@ -77,15 +77,18 @@ test('App offers a single opener to nested dialogs, including remote picker and 
   for (const [file, messages] of cases) {
     const component = read(`../src/components/${file}`)
     assert.match(component, /inject:\s*\{ openTransferCenterFromToast:\s*\{ from: OPEN_TRANSFER_CENTER_KEY, default: null \}/)
+    const sharedUpload = read('../src/composables/useRemoteUpload.js')
+    const operations = read('../src/composables/useRemoteFileOperations.js')
+    const sourceForMessages = file === 'RemoteFilesDialog.vue' ? `${sharedUpload}\n${operations}`
+      : file === 'RemoteFilePicker.vue' ? sharedUpload : component
     for (const message of messages) {
-      assert.match(component, new RegExp(`showTransferStartedToast\\(\\x60${message}`))
+      assert.match(sourceForMessages, new RegExp(`showTransferStartedToast\\(\\x60${message}`))
     }
-    assert.match(component, /this\.openTransferCenterFromToast/)
+    assert.match(sourceForMessages, /this\.openTransferCenterFromToast/)
     if (file === 'RemoteFilesDialog.vue' || file === 'RemoteFilePicker.vue') {
-      assert.match(component, file === 'RemoteFilesDialog.vue'
-        ? /onStarted:\s*\(\)\s*=>\s*\{[\s\S]*?showTransferStartedToast/
-        : /onStarted:\s*\(\)\s*=>\s*showTransferStartedToast/)
-      assert.equal((component.match(/showTransferStartedToast\(`Upload started:/g) || []).length, 1)
+      assert.match(component, /mixins: \[.*useRemoteUpload/)
+      assert.match(sharedUpload, /onStarted:\s*\(\)\s*=>\s*\{[\s\S]*?showTransferStartedToast/)
+      assert.equal((sharedUpload.match(/showTransferStartedToast\(`Upload started:/g) || []).length, 1)
     }
   }
   assert.doesNotMatch(read('../src/composables/useSseStream.js'), /showTransferStartedToast/)

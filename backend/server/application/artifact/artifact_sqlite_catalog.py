@@ -101,6 +101,15 @@ class ArtifactSqliteCatalog:
                 None if item.get('source_command_id') is None else str(item['source_command_id']),
                 json.dumps(extra, ensure_ascii=False))
 
+    def object_ids(self):
+        # Include every catalog row, including previews and malformed metadata.
+        with self._connect() as conn:
+            return {row[0] for row in conn.execute('SELECT artifact_id FROM artifact_entries')}
+
+    def has_object_id(self, artifact_id):
+        with self._connect() as conn:
+            return conn.execute('SELECT 1 FROM artifact_entries WHERE artifact_id=?', (artifact_id,)).fetchone() is not None
+
     def get(self, artifact_id):
         with self._connect() as conn:
             row = conn.execute('SELECT * FROM artifact_entries WHERE artifact_id=?',(artifact_id,)).fetchone()
@@ -234,10 +243,37 @@ class ArtifactSqliteCatalog:
             conn.execute('UPDATE artifact_folders SET name=? WHERE folder_id=?',(name,folder_id))
         return self.get_folder(folder_id)
 
+    def shared_tree(self, folder_id=''):
+        """Return Shared file IDs and descendant folder IDs (children before parents)."""
+        with self._connect() as conn:
+            folders = conn.execute('SELECT folder_id, parent_id FROM artifact_folders').fetchall()
+            files = conn.execute("SELECT artifact_id, folder_id FROM artifact_entries WHERE artifact_type=?",
+                                 (ArtifactType.SHARED.value,)).fetchall()
+        known = {row['folder_id'] for row in folders}
+        if folder_id and folder_id not in known:
+            raise FileNotFoundError('Folder not found')
+        children = {}
+        for row in folders:
+            children.setdefault(row['parent_id'] or '', []).append(row['folder_id'])
+        pending = list(children.get(folder_id, ()))
+        ordered = []
+        visited = {folder_id}
+        while pending:
+            current = pending.pop()
+            if current in visited:
+                raise ValueError('Invalid Shared folder tree')
+            visited.add(current)
+            ordered.append(current)
+            pending.extend(children.get(current, ()))
+        if not folder_id and len(ordered) != len(folders):
+            raise ValueError('Invalid Shared folder tree')
+        artifact_ids = [row['artifact_id'] for row in files if (row['folder_id'] or '') in visited]
+        return artifact_ids, list(reversed(ordered))
+
     def delete_folder(self,folder_id):
         self.get_folder(folder_id)
         with self._connect(write=True) as conn:
-            if conn.execute('SELECT 1 FROM artifact_entries WHERE folder_id=?',(folder_id,)).fetchone() or conn.execute('SELECT 1 FROM artifact_folders WHERE parent_id=?',(folder_id,)).fetchone():raise ValueError('Folder must be empty')
+            if conn.execute('SELECT 1 FROM artifact_entries WHERE folder_id=?',(folder_id,)).fetchone() or conn.execute('SELECT 1 FROM artifact_folders WHERE parent_id=?',(folder_id,)).fetchone():raise ValueError('Folder contents changed during deletion')
             conn.execute('DELETE FROM artifact_folders WHERE folder_id=?',(folder_id,))
         return {'folder_id':folder_id}
 

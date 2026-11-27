@@ -4,7 +4,7 @@ RCH 将多处文件预览和文本编辑集中到同一个 Web 组件。它既�
 
 ## 一、统一预览窗口与入口分布
 
-在 Web 顶层，`App.vue` 挂载一份 `PreviewDialog`，其他组件通过事件或回调请求它打开相应内容。`PreviewDialog` 保存当前来源 `previewSource`、文件标识 `previewFilePath`、内容、编辑状态和 Monaco 实例，并按来源分派保存请求。由此各模块能够复用相同的编辑体验，却**不共用保存地址**。
+在 Web 顶层，`App.vue` 挂载一份 `PreviewDialog`，其他组件通过事件或回调请求它打开相应内容。`PreviewDialog` 协调当前预览来源、文件标识、内容与编辑状态；Monaco 生命周期和按来源保存、重载的逻辑分别由专用模块管理。切换来源或关闭窗口时会使旧预览请求失效。由此各模块能够复用相同的编辑体验，却**不共用保存地址**。
 
 | 功能入口 | 打开时的数据来源 | 文本编辑模式 | Save 实际写入目标 |
 | --- | --- | --- | --- |
@@ -15,7 +15,7 @@ RCH 将多处文件预览和文本编辑集中到同一个 Web 组件。它既�
 | **Script Library → 新建 / 编辑 Python Script** | 默认脚本模板，或 `GET /api/scripts/download?name=...` | 直接可编辑 | `POST /api/scripts/save`；**Server 脚本资源** |
 | **Background Jobs → 新建 / 编辑 Job 模块** | 默认 Job 模板，或 `GET /api/jobs/download?name=...` | 直接可编辑 | `POST /api/jobs/save`；**Server Job 脚本资源** |
 | **External Tools → Metadata 编辑** | External Tools Metadata 内容 API，显示为 JSON | 直接可编辑 | `externalToolsApi.saveExternalToolMetaContent()` 对应的 Metadata 保存 API |
-| **Background Job 产生的文件 / 附件 Preview** | Artifact ID 或文件自身提供的 `preview_url` | 可以显示通用预览界面；**不等同于 Job 源码编辑** | 当前入口没有单独设置稳定的 Job 附件回写来源；**不能保证编辑后有正确保存通道** |
+| **Background Job 产生的文件 / 附件 Preview** | Artifact ID 或文件自身提供的 `preview_url` | 有 Artifact ID 时使用 Artifact 编辑规则；仅有预览 URL 时只读 | 有 Artifact ID 时保存对应 Artifact；仅有预览 URL 时不提供保存入口 |
 
 **必须区分**：`server_script` 与 `background_job` 在这里分别指 Server 保存的 Script/Job **源代码文件**，不是在 Client 上执行脚本时任意生成的远程文件。Script、Job 的创建或编辑虽然从设备相关界面进入，其保存地址仍是 Server 自己的资源目录。另一方面，Remote Files 的 Preview 会产生一份 Server 缓存，但保存时指向原始远端文件，不是修改那份缓存。
 
@@ -171,6 +171,6 @@ Server 在预览响应中返回 `content`、`encoding` 和 `editable`；Web 的 
 - 文本/图片判定和内容截断：`backend/server/application/artifact/artifact_preview_service.py`、`backend/server/config/config.py`。
 - Remote Files 预览 Transfer 与远端写回：`backend/server/application/artifact/remote_file_service.py`、`backend/client/transfers/manager.py`、`backend/client/runtime/filesystem/file_system_service.py`。
 - Artifact 内容更新：`backend/server/application/web/artifact_api.py`；图片信息弹窗：`frontend/src/components/PreviewImageInfoDialog.vue`；图片上传预处理：`backend/client/runtime/filesystem/preview_image_service.py`。
-- Scripts、Jobs、Metadata 编辑：`PreviewDialog.vue` 内对应的 `open...Editor` 与 `saveTo...` 分支，各自的 Server 保存 API。
+- Scripts、Jobs、Metadata 编辑：`frontend/src/composables/usePreviewResourceEditor.js`、`usePreviewSave.js`、`usePreviewReload.js` 和各自的 Server 保存 API。Monaco 初始化与编辑行为集中在 `usePreviewMonaco.js`。
 
 相关文档：[Remote Files](remote_files.md) · [Artifacts](artifacts.md) · [Scripts](scripts.md) · [Background Jobs](background_jobs.md) · [External Tools](external_tools.md) · [File Transfer](file_transfer.md)。

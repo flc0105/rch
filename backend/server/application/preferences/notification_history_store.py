@@ -207,7 +207,7 @@ class NotificationHistoryStore:
                 conn.execute('DELETE FROM notifications WHERE type = ?', (notification_type,))
             return removed_ids
 
-    def delete_notifications(self, notification_ids) -> dict:
+    def delete_notifications(self, notification_ids, *, expected=None) -> dict:
         normalized_ids = {
             str(value or '').strip()
             for value in (notification_ids or [])
@@ -226,11 +226,12 @@ class NotificationHistoryStore:
                     tuple(normalized_ids),
                 ).fetchall()
                 removed = [self._row_to_notification(row) for row in rows]
+                if expected is not None:
+                    removed = [row for row in removed if expected.get(row['id']) == row]
                 if removed:
-                    tx.execute(
-                        f'DELETE FROM notifications WHERE id IN ({placeholders})',
-                        tuple(normalized_ids),
-                    )
+                    ids = tuple(row['id'] for row in removed)
+                    delete_placeholders = ','.join('?' for _ in ids)
+                    tx.execute(f'DELETE FROM notifications WHERE id IN ({delete_placeholders})', ids)
                 remaining = tx.execute('SELECT COUNT(*) FROM notifications').fetchone()
                 return {
                     'removed': removed,

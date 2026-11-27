@@ -11,30 +11,14 @@
   >
     <div class="remote-file-picker-body">
       <div class="remote-file-picker-head">
-        <div class="remote-file-picker-breadcrumb">
-          <template v-if="remoteBreadcrumbItems.length">
-            <button
-              v-for="(item, index) in remoteBreadcrumbItems"
-              :key="`picker-breadcrumb-${index}-${item.path}`"
-              type="button"
-              class="remote-file-picker-breadcrumb-item"
-              :class="{ active: item.isCurrent }"
-              :disabled="item.isCurrent"
-              @click="goToRemoteBreadcrumb(item)"
-            >
-              <span v-if="index > 0" class="remote-file-picker-breadcrumb-sep">/</span>
-              <span>{{ item.label }}</span>
-            </button>
-          </template>
-
-          <span v-else class="remote-file-picker-breadcrumb-empty">No path</span>
-        </div>
+        <RemoteFileNavigation :items="remoteBreadcrumbItems" @navigate="goToRemoteBreadcrumb" />
 
         <div class="remote-file-picker-toolbar">
           <el-button
             size="small"
             :loading="remoteFilesLoading"
             @click="refreshRemoteDirectory"
+            :icon="remoteActionIcon('refresh')"
           >
             Refresh
           </el-button>
@@ -43,22 +27,14 @@
             :loading="quickJumpLoading"
             @command="jumpToPath"
           >
-            <el-button size="small">
+            <el-button size="small" :icon="remoteActionIcon('quick_jump')">
               Quick Jump
             </el-button>
 
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="root">Root</el-dropdown-item>
-                <el-dropdown-item command="home">Home</el-dropdown-item>
-                <el-dropdown-item command="desktop">Desktop</el-dropdown-item>
-                <el-dropdown-item command="documents">Documents</el-dropdown-item>
-                <el-dropdown-item command="downloads">Downloads</el-dropdown-item>
-                <el-dropdown-item command="temp">Temp</el-dropdown-item>
-                <el-dropdown-item command="executable">
-                  Program Directory
-                </el-dropdown-item>
-                <el-dropdown-item divided command="input_navigate">
+                <RemoteSystemJumpItems />
+                <el-dropdown-item divided command="input_navigate" :icon="remoteActionIcon('input_navigate')">
                   Go to Folder
                 </el-dropdown-item>
               </el-dropdown-menu>
@@ -69,11 +45,12 @@
             size="small"
             :loading="remoteUploadLoading"
             @click="triggerRemoteUpload"
+            :icon="remoteActionIcon('upload')"
           >
             Upload
           </el-button>
 
-          <el-button size="small" :loading="remoteCreatingFolder" :disabled="!remoteFilesCurrentPath || remoteFilesLoading" @click="createRemoteFolder">
+          <el-button size="small" :loading="remoteCreatingFolder" :disabled="!remoteFilesCurrentPath || remoteFilesLoading" @click="createRemoteFolder" :icon="remoteActionIcon('new_folder')">
             New Folder
           </el-button>
 
@@ -87,82 +64,55 @@
       </div>
 
       <div class="remote-file-picker-table-shell">
-        <el-table
+        <RemoteDirectoryTable
           ref="remoteFilesTableRef"
-          :data="displayRemoteFilesEntries"
-          v-loading="remoteFilesLoading"
-          stripe
-          width="100%"
-          height="100%"
+          :entries="displayRemoteFilesEntries"
+          :loading="remoteFilesLoading"
           :empty-text="remoteFilesEmptyText"
-          table-layout="fixed"
+          :name-width="280"
+          :type-width="90"
+          :size-width="105"
           @row-dblclick="handleRemoteRowDblClick"
-          @selection-change="handleRemoteSelectionChange"
+          @selection-change="multiple && handleRemoteSelectionChange($event)"
           @row-click="handleRemoteRowClick"
         >
-          <el-table-column
-            v-if="multiple"
-            type="selection"
-            width="48"
-            align="center"
-            :selectable="isRemoteRowSelectable"
-          />
-
-          <el-table-column label="Name" min-width="280" show-overflow-tooltip>
-            <template #default="{ row }">
-              <div class="remote-file-picker-file-cell">
-                <span>{{ row.is_dir ? '📁' : '📄' }}</span>
-                <span class="remote-file-picker-file-name">
-                  {{ row.is_parent_entry ? '..' : row.name }}
-                </span>
-
-                <el-tag v-if="row.is_parent_entry" size="small" type="info">
-                  Parent
-                </el-tag>
-
-                <el-tag v-else-if="row.is_symlink" size="small" type="info">
-                  Link
-                </el-tag>
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="Type" width="90" align="center">
-            <template #default="{ row }">
-              {{ row.is_parent_entry ? 'Parent' : (row.is_dir ? 'Folder' : 'File') }}
-            </template>
-          </el-table-column>
-
-          <el-table-column label="Size" width="105" align="center">
-            <template #default="{ row }">
-              {{ row.is_dir ? '-' : formatBytes(row.size) }}
-            </template>
-          </el-table-column>
-
-          <el-table-column label="Actions" :width="selectionMode === 'folder' ? 132 : 92" align="center" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                v-if="row.is_parent_entry || row.is_dir"
-                size="small"
-                link
-                type="primary"
-                @click.stop="enterRemoteDirectory(row)"
-              >
-                Open
-              </el-button>
-
-              <el-button
-                v-if="isRemoteRowSelectable(row)"
-                size="small"
-                link
-                type="primary"
-                @click.stop="selectRemoteEntry(row)"
-              >
-                Select
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+          <template #selection>
+            <el-table-column
+              v-if="multiple"
+              type="selection"
+              width="48"
+              align="center"
+              :selectable="isRemoteRowSelectable"
+            />
+          </template>
+          <template #actions>
+            <el-table-column label="Actions" :width="selectionMode === 'folder' ? 170 : 112" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  v-if="row.is_parent_entry || row.is_dir"
+                  size="small"
+                  link
+                  type="primary"
+                  @click.stop="enterRemoteDirectory(row)"
+                  :icon="remoteActionIcon('open')"
+                >
+                  Open
+                </el-button>
+  
+                <el-button
+                  v-if="isRemoteRowSelectable(row)"
+                  size="small"
+                  link
+                  type="primary"
+                  @click.stop="selectRemoteEntry(row)"
+                  :icon="remoteActionIcon('select')"
+                >
+                  Select
+                </el-button>
+              </template>
+            </el-table-column>
+          </template>
+        </RemoteDirectoryTable>
       </div>
 
       <div class="remote-file-picker-footer-meta">
@@ -176,6 +126,7 @@
         v-if="remoteFilesTotalPages > 1"
         background
         layout="prev, pager, next"
+        :prev-icon="paginationPrevIcon" :next-icon="paginationNextIcon"
         :current-page="remoteFilesPage"
         :page-size="remoteFilesPageSize"
         :total="remoteFilesTotal"
@@ -187,7 +138,7 @@
 
     <template #footer>
       <div class="remote-file-picker-footer">
-        <el-button @click="closePicker">
+        <el-button @click="closePicker" :icon="remoteActionIcon('cancel')">
           Cancel
         </el-button>
 
@@ -196,6 +147,7 @@
           type="primary"
           :disabled="!remoteFilesCurrentPath || remoteFilesLoading"
           @click="selectCurrentFolder"
+          :icon="remoteActionIcon('select')"
         >
           Select Current Folder
         </el-button>
@@ -205,6 +157,7 @@
           type="primary"
           :disabled="!remoteSelectedPaths.length"
           @click="confirmMultipleSelection"
+          :icon="remoteActionIcon('select')"
         >
           Select
           <span v-if="remoteSelectedPaths.length">
@@ -217,18 +170,24 @@
 </template>
 
 <script>
-import { listRemoteDirectory, getRemoteSystemPaths } from '../api/remoteFilesApi.js'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { OPEN_TRANSFER_CENTER_KEY, showTransferStartedToast } from '../utils/transferStartedToast.js'
-import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
-import { formatTerminalCommandFinishedLine, TERMINAL_REMOTE_UPLOAD_PREFIX } from '../composables/terminalMarkers.js'
-import { formatBytes as formatBytesValue } from '../utils/formatters.js'
-import { uploadRemoteFileToClient } from '../api/transferApi.js'
-import { prepareUploadConflict } from '../utils/remoteFileConflicts.js'
-import { promptCreateRemoteFolder } from '../utils/remoteFolderCreation.js'
+import { ChevronLeft, ChevronRight } from '@lucide/vue'
+import { remoteActionIcon } from '../utils/remoteFileIcons.js'
+import RemoteSystemJumpItems from './RemoteSystemJumpItems.vue'
+import RemoteDirectoryTable from './RemoteDirectoryTable.vue'
+import { ElMessage } from 'element-plus'
+import { OPEN_TRANSFER_CENTER_KEY } from '../utils/transferStartedToast.js'
+
+import useRemoteDirectory from '../composables/useRemoteDirectory.js'
+import useRemoteFileSelection from '../composables/useRemoteFileSelection.js'
+import useRemoteUpload from '../composables/useRemoteUpload.js'
+import useRemoteFolderCreation from '../composables/useRemoteFolderCreation.js'
+
+import RemoteFileNavigation from './RemoteFileNavigation.vue'
 
 export default {
+  mixins: [useRemoteDirectory, useRemoteFileSelection, useRemoteUpload, useRemoteFolderCreation],
   name: 'RemoteFilePicker',
+  components: { RemoteSystemJumpItems, RemoteFileNavigation, RemoteDirectoryTable },
 
   inject: { openTransferCenterFromToast: { from: OPEN_TRANSFER_CENTER_KEY, default: null } },
   props: {
@@ -274,67 +233,17 @@ export default {
     'upload-started',
   ],
 
-  data() {
-    return {
-      remoteFilesLoading: false,
-      remoteFilesCurrentPath: '',
-      remoteFilesParentPath: '',
-      remoteFilesEntries: [],
-      remoteFilesPage: 1,
-      remoteFilesPageSize: 50,
-      remoteFilesTotal: 0,
-      remoteFilesTotalPages: 1,
-      remoteSelectedPaths: [],
-      quickJumpLoading: false,
-      quickJumpPaths: {},
-      remoteUploadLoading: false,
-      remoteCreatingFolder: false,
-      pickerContextSeq: 0,
-      pickerDirectorySeq: 0,
-    }
-  },
-
   computed: {
+    paginationPrevIcon() { return ChevronLeft },
+    paginationNextIcon() { return ChevronRight },
     pickerTitle() {
       return this.selectionMode === 'folder' ? 'Select Remote Folder' : 'Select Remote File'
-    },
-
-    displayRemoteFilesEntries() {
-      const sourceEntries = Array.isArray(this.remoteFilesEntries)
-        ? [...this.remoteFilesEntries]
-        : []
-      const entries = this.selectionMode === 'folder'
-        ? sourceEntries.filter(item => item && item.is_dir)
-        : sourceEntries
-
-      if (this.remoteFilesParentPath && this.remoteFilesPage === 1) {
-        entries.unshift({
-          name: '..',
-          path: this.remoteFilesParentPath,
-          is_dir: true,
-          is_symlink: false,
-          is_hidden: false,
-          size: 0,
-          modified_at: '',
-          is_parent_entry: true,
-        })
-      }
-
-      return entries
     },
 
     remoteFilesEmptyText() {
       return this.selectionMode === 'folder' ? 'No folders found' : 'This folder is empty'
     },
 
-    remoteBreadcrumbItems() {
-      const items = this.buildRemoteBreadcrumbItems(this.remoteFilesCurrentPath || '')
-
-      return items.map(item => ({
-        ...item,
-        isCurrent: item.path === (this.remoteFilesCurrentPath || ''),
-      }))
-    },
   },
 
   watch: {
@@ -352,9 +261,7 @@ export default {
   },
 
   methods: {
-    formatBytes(value) {
-      return formatBytesValue(value)
-    },
+    remoteActionIcon,
 
     handleVisibleChange(value) {
       this.$emit('update:visible', value)
@@ -365,22 +272,13 @@ export default {
     },
 
     async openPicker() {
-      this.pickerContextSeq += 1
-      this.remoteCreatingFolder = false
+      const initialPath = this.initialPath || this.remoteFilesCurrentPath || ''
+      this.resetPicker()
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
         this.closePicker()
         return
       }
-
-      const initialPath = this.initialPath || this.remoteFilesCurrentPath || ''
-      this.remoteSelectedPaths = []
-      this.remoteFilesCurrentPath = ''
-      this.remoteFilesParentPath = ''
-      this.remoteFilesEntries = []
-      this.remoteFilesTotal = 0
-      this.remoteFilesTotalPages = 1
-      this.quickJumpPaths = {}
       await Promise.all([
         this.loadQuickJumpPaths(),
         this.loadRemoteDirectory(initialPath, 1),
@@ -388,97 +286,24 @@ export default {
     },
 
     resetPicker() {
-      this.pickerContextSeq += 1
+      this.resetRemoteDirectory()
       this.remoteCreatingFolder = false
-      this.remoteFilesLoading = false
-      this.remoteFilesCurrentPath = ''
-      this.remoteFilesParentPath = ''
-      this.remoteFilesEntries = []
-      this.remoteFilesPage = 1
-      this.remoteFilesTotal = 0
-      this.remoteFilesTotalPages = 1
-      this.remoteSelectedPaths = []
+      this.remoteUploadSequence += 1
       this.remoteUploadLoading = false
     },
-
-    async loadRemoteDirectory(path = '', page = 1) {
-      if (!this.visible || !this.selectedId) return
-      const clientId = this.selectedId
-      const contextSeq = this.pickerContextSeq
-      const requestSeq = ++this.pickerDirectorySeq
-      const isActive = () => this.visible && this.selectedId === clientId && this.pickerContextSeq === contextSeq && this.pickerDirectorySeq === requestSeq
-
-      this.remoteFilesLoading = true
-
-      try {
-        const res = await listRemoteDirectory(clientId, { path, page, pageSize: this.remoteFilesPageSize, showHidden: false })
-        const json = await res.json()
-        if (!isActive()) return
-
-        if (!res.ok || json.code !== 0) {
-          throw new Error(json.message || 'Failed to load remote directory')
-        }
-
-        const data = json.data || {}
-        const pagination = data.pagination || {}
-
-        this.remoteFilesCurrentPath = data.current_path || ''
-        this.remoteFilesParentPath = data.parent_path || ''
-        this.remoteFilesEntries = Array.isArray(data.entries) ? data.entries : []
-        this.remoteFilesPage = Number(pagination.page || page || 1)
-        this.remoteFilesPageSize = Number(pagination.page_size || this.remoteFilesPageSize || 50)
-        this.remoteFilesTotal = Number(pagination.total_visible || 0)
-        this.remoteFilesTotalPages = Number(pagination.total_pages || 1)
-        this.remoteSelectedPaths = []
-        this.clearTableSelection()
-      } catch (e) {
-        if (isActive()) ElMessage.error(e.message || 'Failed to load remote directory')
-      } finally {
-        if (isActive()) this.remoteFilesLoading = false
-      }
+    captureRemoteFilesContext() {
+      return { clientId: this.selectedId, contextSeq: this.remoteFilesContextSeq }
+    },
+    isRemoteFilesContextActive(context) {
+      return !!(this.visible && context?.clientId && context.clientId === this.selectedId && context.contextSeq === this.remoteFilesContextSeq)
+    },
+    isRemoteDirectoryEntryVisible(row) {
+      return !!row && (this.selectionMode !== 'folder' || row.is_dir)
     },
 
     async createRemoteFolder() {
       if (!this.visible || !this.selectedId || !this.remoteFilesCurrentPath || this.remoteFilesLoading || this.remoteCreatingFolder) return
-      const clientId = this.selectedId
-      const parentPath = this.remoteFilesCurrentPath
-      const seq = this.pickerContextSeq
-      const isActive = () => this.visible && this.pickerContextSeq === seq && this.selectedId === clientId && this.remoteFilesCurrentPath === parentPath && !this.remoteFilesLoading
-      this.remoteCreatingFolder = true
-      try {
-        if (await promptCreateRemoteFolder(clientId, parentPath, isActive)) {
-          ElMessage.success('Directory created')
-          await this.refreshRemoteDirectory()
-        }
-      } catch (error) {
-        if (isActive() && error !== 'cancel' && error !== 'close') ElMessage.error(error.message || 'Create directory failed')
-      } finally {
-        if (this.pickerContextSeq === seq) this.remoteCreatingFolder = false
-      }
-    },
-
-    async refreshRemoteDirectory() {
-      await this.loadRemoteDirectory(this.remoteFilesCurrentPath || '', this.remoteFilesPage || 1)
-    },
-
-    async navigateRemoteDirectory(path) {
-      await this.loadRemoteDirectory(path || '', 1)
-    },
-
-    async goToRemoteParent() {
-      if (!this.remoteFilesParentPath) return
-      await this.navigateRemoteDirectory(this.remoteFilesParentPath)
-    },
-
-    async enterRemoteDirectory(row) {
-      if (!row || !row.is_dir) return
-
-      if (row.is_parent_entry) {
-        await this.goToRemoteParent()
-        return
-      }
-
-      await this.navigateRemoteDirectory(row.path)
+      return this.createRemoteDirectory()
     },
 
     handleRemoteRowDblClick(row) {
@@ -497,17 +322,6 @@ export default {
     handleRemoteRowClick(row) {
       if (!row || this.multiple || this.selectionMode !== 'file') return
       this.selectRemoteEntry(row)
-    },
-
-    handleRemoteSelectionChange(rows) {
-      if (!this.multiple) return
-
-      this.remoteSelectedPaths = Array.isArray(rows)
-        ? rows
-            .filter(item => this.isRemoteRowSelectable(item))
-            .map(item => item.path)
-            .filter(Boolean)
-        : []
     },
 
     isRemoteRowSelectable(row) {
@@ -535,27 +349,6 @@ export default {
       this.closePicker()
     },
 
-    async handleRemotePageChange(page) {
-      await this.loadRemoteDirectory(this.remoteFilesCurrentPath || '', page || 1)
-    },
-
-    clearTableSelection() {
-      this.$nextTick(() => {
-        const table = this.$refs.remoteFilesTableRef
-        if (table && typeof table.clearSelection === 'function') {
-          table.clearSelection()
-        }
-      })
-    },
-
-    buildRequestHeaders(extra = {}) {
-      if (typeof this.getTabScopedHeaders === 'function') {
-        return this.getTabScopedHeaders(extra)
-      }
-
-      return extra
-    },
-
     triggerRemoteUpload() {
       if (!this.selectedId) {
         ElMessage.warning('Please select a device')
@@ -575,186 +368,11 @@ export default {
     },
 
     async handleRemoteUploadChange(event) {
-      const file = event?.target?.files && event.target.files[0]
-      if (!file) return
-
-      if (!this.selectedId) {
-        ElMessage.warning('Please select a device')
-        return
-      }
-
-      if (!this.remoteFilesCurrentPath) {
-        ElMessage.warning('Current directory is empty')
-        return
-      }
-
-      this.remoteUploadLoading = true
-
-      const clientId = String(this.selectedId || '')
-      const destinationPath = this.remoteFilesCurrentPath
-      let operation = null
-      try {
-        const conflictPolicy = await prepareUploadConflict(clientId, destinationPath, file.name)
-        if (conflictPolicy === false || String(this.selectedId || '') !== clientId || this.remoteFilesCurrentPath !== destinationPath) return
-        operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
-          invocation: { source: 'remote_file_picker', filename: file.name, destination: destinationPath }, replay: null })
-        this.$emit('append-output', clientId, `> ${TERMINAL_REMOTE_UPLOAD_PREFIX} ${file.name} -> ${destinationPath}`,
-          'command', { operation })
-        const result = await uploadRemoteFileToClient({
-          file, clientId, destinationPath, conflictPolicy,
-          headers: operationHeaders(operation, {...this.buildRequestHeaders(), 'X-RCH-Origin': 'web_ui', 'X-RCH-Feature': 'remote_file_picker'}),
-          onStarted: () => showTransferStartedToast(`Upload started: ${file.name}`, this.openTransferCenterFromToast),
-        })
-        const taskId = result.task_id
-        this.$emit('set-active-task', clientId, taskId || '', '', '', operation.operation_id)
-        this.$emit('upload-started', {
-          source: 'remote_file_picker',
-          taskId: taskId || '',
-          clientId,
-          path: destinationPath,
-        })
-      } catch (e) {
-        if (e?.name === 'AbortError' && operation) {
-          this.$emit('append-output', clientId, `[Upload cancelled] ${file.name}`, 'info', {
-            operation_id: operation.operation_id,
-            event_type: 'completed', execution_status: 'cancelled', execution_success: false,
-          })
-          ElMessage.info('Upload cancelled')
-          return
-        }
-        const failedDuringPreflight = !operation
-        const title = `${TERMINAL_REMOTE_UPLOAD_PREFIX} ${file.name} -> ${destinationPath}`
-        if (failedDuringPreflight) {
-          operation = createTerminalOperation({ kind: 'transfer', action: 'upload_files', clientId,
-            invocation: { source: 'remote_file_picker', filename: file.name, destination: destinationPath }, replay: null })
-          this.$emit('append-output', clientId, `> ${title}`, 'command', { operation })
-        }
-        this.$emit('append-output', clientId, `[Upload failed] ${e.message || 'unknown error'}`,
-          'error', { operation_id: operation.operation_id, event_type: 'submission_error' })
-        if (failedDuringPreflight) {
-          this.$emit('append-output', clientId, formatTerminalCommandFinishedLine(title, 'Failed'),
-            'error', { operation_id: operation.operation_id, event_type: 'completed', execution_status: 'failed', execution_success: false })
-        }
-        ElMessage.error(e.message || 'Upload failed')
-      } finally {
-        this.remoteUploadLoading = false
-        if (event?.target) event.target.value = ''
-      }
+      const file = event?.target?.files?.[0]
+      if (event?.target) event.target.value = ''
+      if (file) return this.submitRemoteFile(file, 'remote_file_picker')
     },
 
-    async loadQuickJumpPaths() {
-      if (!this.visible || !this.selectedId) return
-      const clientId = this.selectedId
-      const seq = this.pickerContextSeq
-      const isActive = () => this.visible && this.selectedId === clientId && this.pickerContextSeq === seq
-
-      this.quickJumpLoading = true
-
-      try {
-        const res = await getRemoteSystemPaths(clientId)
-        const json = await res.json()
-
-        if (isActive() && res.ok && json.code === 0 && json.data) {
-          this.quickJumpPaths = json.data
-        }
-      } catch (e) {
-        console.error('Failed to load system paths:', e)
-      } finally {
-        if (isActive()) this.quickJumpLoading = false
-      }
-    },
-
-    async jumpToPath(command) {
-      if (command === 'input_navigate') {
-        await this.promptRemotePathNavigate()
-        return
-      }
-
-      const path = this.quickJumpPaths[command]
-      if (!path) {
-        ElMessage.warning('Path not available')
-        return
-      }
-
-      await this.navigateRemoteDirectory(path)
-    },
-
-    async promptRemotePathNavigate() {
-      try {
-        const { value } = await ElMessageBox.prompt(
-          'Enter the target path',
-          'Go to Folder',
-          {
-            confirmButtonText: 'Go',
-            cancelButtonText: 'Cancel',
-            inputValue: this.remoteFilesCurrentPath || '',
-            inputPattern: /.+/,
-            inputErrorMessage: 'Path is required',
-          }
-        )
-
-        const path = String(value || '').trim()
-        if (!path) return
-
-        await this.navigateRemoteDirectory(path)
-      } catch (e) {
-        if (e === 'cancel' || e === 'close') return
-        ElMessage.error(e.message || 'Navigate failed')
-      }
-    },
-
-    buildRemoteBreadcrumbItems(path) {
-      const currentPath = String(path || '').trim()
-      if (!currentPath) return []
-
-      const windowsMatch = currentPath.match(/^([A-Za-z]:)([\\/].*)?$/)
-
-      if (windowsMatch) {
-        const drive = windowsMatch[1]
-        const rest = String(windowsMatch[2] || '').replace(/^[\\/]+/, '')
-        const parts = rest ? rest.split(/[\\/]+/).filter(Boolean) : []
-        const items = [{ label: drive, path: `${drive}\\` }]
-        let accumulated = `${drive}\\`
-
-        parts.forEach(part => {
-          accumulated = accumulated.replace(/[\\/]+$/, '') + '\\' + part
-          items.push({ label: part, path: accumulated })
-        })
-
-        return items
-      }
-
-      const isAbsolute = currentPath.startsWith('/')
-      const parts = currentPath.split('/').filter(Boolean)
-      const items = []
-
-      if (isAbsolute) {
-        items.push({ label: 'Root', path: '/' })
-      }
-
-      let accumulated = ''
-
-      parts.forEach(part => {
-        if (isAbsolute) {
-          accumulated += `/${part}`
-        } else {
-          accumulated = accumulated ? `${accumulated}/${part}` : part
-        }
-
-        items.push({ label: part, path: accumulated })
-      })
-
-      if (!items.length && isAbsolute) {
-        items.push({ label: 'Root', path: '/' })
-      }
-
-      return items
-    },
-
-    async goToRemoteBreadcrumb(item) {
-      if (!item || !item.path || item.isCurrent) return
-      await this.navigateRemoteDirectory(item.path)
-    },
   },
 }
 </script>
@@ -778,7 +396,7 @@ export default {
   min-width: 0;
 }
 
-.remote-file-picker-breadcrumb {
+:deep(.remote-breadcrumb-bar) {
   display: block;
   width: 100%;
   min-height: 30px;
@@ -788,7 +406,7 @@ export default {
   scrollbar-width: thin;
 }
 
-.remote-file-picker-breadcrumb-item {
+:deep(.remote-breadcrumb-item) {
   display: inline-flex;
   align-items: center;
   max-width: 220px;
@@ -801,13 +419,13 @@ export default {
   cursor: pointer;
 }
 
-.remote-file-picker-breadcrumb-item.active,
-.remote-file-picker-breadcrumb-item:disabled {
+:deep(.remote-breadcrumb-item.active),
+:deep(.remote-breadcrumb-item:disabled) {
   color: var(--muted);
   cursor: default;
 }
 
-.remote-file-picker-breadcrumb-item > span:last-child {
+:deep(.remote-breadcrumb-item > span:last-child) {
   display: inline-block;
   min-width: 0;
   overflow: hidden;
@@ -815,12 +433,12 @@ export default {
   white-space: nowrap;
 }
 
-.remote-file-picker-breadcrumb-sep {
+:deep(.remote-breadcrumb-sep) {
   margin-right: 4px;
   color: var(--muted);
 }
 
-.remote-file-picker-breadcrumb-empty,
+:deep(.remote-breadcrumb-empty),
 .remote-file-picker-footer-meta {
   font-size: 12px;
   color: var(--muted);
@@ -841,20 +459,6 @@ export default {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-}
-
-.remote-file-picker-file-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.remote-file-picker-file-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .remote-file-picker-footer-meta {
