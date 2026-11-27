@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../src/components/AgentBuilderDialog.vue', 
 const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 const AGENT_BUILDER = {PYTHON:'python', GO:'go', GO_LOADER:'go_loader'}
 const cmp = vm.runInNewContext(`(${script.replace(/^import .*$/gm,'').replace('export default','')})`,
-  {AGENT_BUILDER, window:{location:{hostname:'192.168.1.10',protocol:'http:'}}})
+  {AGENT_BUILDER, Download:()=>{}, Monitor:()=>{}, Network:()=>{}, X:()=>{}, window:{location:{hostname:'192.168.1.10',protocol:'http:'}}})
 
 function buildPayload(builder, mode, transport) {
   const ctx = {agentForm:{...cmp.data().agentForm, builder, connection_mode:mode,

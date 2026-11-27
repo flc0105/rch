@@ -8,7 +8,7 @@ const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
 const template = source.split('<script>')[0]
 const AGENT_BUILDER = {PYTHON:'python', GO:'go', GO_LOADER:'go_loader'}
 const component = vm.runInNewContext(`(${script.replace(/^import .*$/gm, '').replace('export default', '')})`, {
-  AGENT_BUILDER, File:()=>{}, FileArchive:()=>{}, FileTerminal:()=>{}, MoreFilled:()=>{},
+  AGENT_BUILDER, File:()=>{}, FileArchive:()=>{}, FileTerminal:()=>{}, Clock3:()=>{}, Cpu:()=>{}, Download:()=>{}, Ellipsis:()=>{}, HardDrive:()=>{}, Info:()=>{}, Link:()=>{}, ListFilter:()=>{}, Monitor:()=>{}, Network:()=>{}, RefreshCw:()=>{}, Tag:()=>{}, Trash2:()=>{}, Wrench:()=>{},
   displayAgentBuilder: kind => ({python:'Python Bundle', go:'Go',go_loader:'Go Loader'}[kind] || kind),
   formatDateTimeStandard: value => value,
   formatBytes: value => `${value} bytes`,

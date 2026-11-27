@@ -20,6 +20,7 @@
           :class="{ active: generatorMode === 'normal' }"
           @click="setGeneratorMode('normal')"
         >
+          <KeyRound class="dialog-action-icon" :size="14" aria-hidden="true" />
           Normal Password
         </button>
         <button
@@ -28,6 +29,7 @@
           :class="{ active: generatorMode === 'apple' }"
           @click="setGeneratorMode('apple')"
         >
+          <ShieldCheck class="dialog-action-icon" :size="14" aria-hidden="true" />
           Apple-style Strong Password
         </button>
       </div>
@@ -104,7 +106,7 @@ Generates a 20-character, Apple-style password with CVC syllable chunks, two hyp
       </div>
 
       <div class="password-result-card">
-        <div class="password-result-label">Generated Password</div>
+        <div class="password-result-label"><KeyRound class="dialog-action-icon" :size="13" aria-hidden="true" />Generated Password</div>
         <div class="password-result-row">
           <div class="password-result-value mono">
             {{ generatedPassword || '-' }}
@@ -116,6 +118,7 @@ Generates a 20-character, Apple-style password with CVC syllable chunks, two hyp
             :disabled="!generatedPassword"
             @click="copyGeneratedPassword"
           >
+            <Copy class="dialog-action-icon" :size="14" aria-hidden="true" />
             Copy
           </el-button>
         </div>
@@ -125,6 +128,7 @@ Generates a 20-character, Apple-style password with CVC syllable chunks, two hyp
     <template #footer>
       <div class="password-generator-footer">
         <el-button @click="visible = false">
+          <X class="dialog-action-icon" :size="14" aria-hidden="true" />
           Close
         </el-button>
         <el-button
@@ -133,17 +137,18 @@ Generates a 20-character, Apple-style password with CVC syllable chunks, two hyp
           plain
           :disabled="!generatedPassword"
           @click="applyGeneratedPassword(false)"
-        >Use Password</el-button>
+        ><Check class="dialog-action-icon" :size="14" aria-hidden="true" /> Use Password</el-button>
         <el-button
           v-if="allowApply"
           type="primary"
           :disabled="!generatedPassword"
           @click="applyGeneratedPassword(true)"
-        >Use & Save</el-button>
+        ><Save class="dialog-action-icon" :size="14" aria-hidden="true" /> Use & Save</el-button>
         <el-button
           type="primary"
           @click="generatePassword"
         >
+          <RefreshCw class="dialog-action-icon" :size="14" aria-hidden="true" />
           {{ generatedPassword ? 'Regenerate' : 'Generate' }}
         </el-button>
       </div>
@@ -152,6 +157,7 @@ Generates a 20-character, Apple-style password with CVC syllable chunks, two hyp
 </template>
 
 <script>
+import { Check, Copy, KeyRound, RefreshCw, Save, ShieldCheck, X } from '@lucide/vue'
 import { ElMessage } from 'element-plus'
 
 const UPPERCASE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -164,6 +170,10 @@ const APPLE_STYLE_DIGIT_POSITIONS = [5, 6, 11, 12, 17]
 
 export default {
   name: 'PasswordGeneratorDialog',
+
+  components: {
+    Check, Copy, KeyRound, RefreshCw, Save, ShieldCheck, X,
+  },
   props: { allowApply: { type: Boolean, default: false } },
   emits: ['apply', 'apply-save'],
 
@@ -332,6 +342,12 @@ generateAppleStylePassword() {
 </script>
 
 <style scoped>
+.dialog-action-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
 .password-generator {
   display: flex;
   flex-direction: column;

@@ -17,6 +17,7 @@
             :loading="processActiveTab === 'apps' ? appsLoading : processesLoading"
             @click="refreshProcessManager"
           >
+            <RefreshCw v-if="!(processActiveTab === 'apps' ? appsLoading : processesLoading)" class="dialog-action-icon" :size="14" aria-hidden="true" />
             Refresh
           </el-button>
 
@@ -26,7 +27,11 @@
             size="small"
             class="process-dialog-filter-input"
             clearable
-          />
+          >
+            <template #prefix>
+              <Search class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
+          </el-input>
         </div>
 
         <div class="process-toolbar-right">
@@ -42,6 +47,9 @@
           :label="processTabLabel"
           name="processes"
         >
+          <template #label>
+            <Activity class="dialog-action-icon" :size="14" aria-hidden="true" /> {{ processTabLabel }}
+          </template>
           <div class="process-table-shell">
             <el-table
               ref="processTable"
@@ -112,6 +120,7 @@
                       type="primary"
                       @click="openProcessDetail(row.pid)"
                     >
+                      <Info class="dialog-action-icon" :size="14" aria-hidden="true" />
                       Details
                     </el-button>
 
@@ -121,6 +130,7 @@
                       type="danger"
                       @click="killProcess(row.pid, row.name)"
                     >
+                      <CircleStop class="dialog-action-icon" :size="14" aria-hidden="true" />
                       Terminate
                     </el-button>
                   </div>
@@ -134,6 +144,9 @@
           :label="appTabLabel"
           name="apps"
         >
+          <template #label>
+            <LayoutGrid class="dialog-action-icon" :size="14" aria-hidden="true" /> {{ appTabLabel }}
+          </template>
           <div class="process-table-shell">
             <el-table
               :data="filteredApps"
@@ -189,6 +202,7 @@
                       type="primary"
                       @click="openProcessDetail(row.pid)"
                     >
+                      <Info class="dialog-action-icon" :size="14" aria-hidden="true" />
                       Details
                     </el-button>
 
@@ -198,6 +212,7 @@
                       type="danger"
                       @click="killApp(row.pid, row.name)"
                     >
+                      <CircleStop class="dialog-action-icon" :size="14" aria-hidden="true" />
                       Terminate
                     </el-button>
                   </div>
@@ -226,6 +241,7 @@
       <template v-if="processDetail && !processDetailLoading">
         <section class="process-detail-section">
           <div class="process-detail-section-title">
+            <Info class="dialog-action-icon" :size="15" aria-hidden="true" />
             Basic Info
           </div>
 
@@ -248,6 +264,7 @@
 
         <section class="process-detail-section">
           <div class="process-detail-section-title">
+            <Terminal class="dialog-action-icon" :size="15" aria-hidden="true" />
             Command Line
           </div>
 
@@ -258,6 +275,7 @@
 
         <section class="process-detail-section">
           <div class="process-detail-section-title">
+            <Network class="dialog-action-icon" :size="15" aria-hidden="true" />
             Network Connections ({{ (processDetail.connections || []).length }})
           </div>
 
@@ -302,6 +320,7 @@
 
         <section class="process-detail-section process-open-files-section">
           <div class="process-detail-section-title">
+            <FolderOpen class="dialog-action-icon" :size="15" aria-hidden="true" />
             Open Files ({{ (processDetail.open_files || []).length }})
           </div>
 
@@ -334,6 +353,8 @@
             </el-table>
             <div v-if="openFilesHiddenCount > 0 || openFilesExpanded" class="process-open-files-footer">
               <el-button link type="primary" size="small" @click="openFilesExpanded = !openFilesExpanded">
+                <ChevronUp v-if="openFilesExpanded" class="dialog-action-icon" :size="14" aria-hidden="true" />
+                <ChevronDown v-else class="dialog-action-icon" :size="14" aria-hidden="true" />
                 {{ openFilesExpanded ? 'Show less' : `Show ${openFilesHiddenCount} more` }}
               </el-button>
             </div>
@@ -345,11 +366,16 @@
 </template>
 
 <script>
+import { Activity, ChevronDown, ChevronUp, CircleStop, FolderOpen, Info, LayoutGrid, Network, RefreshCw, Search, Terminal } from '@lucide/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { sortProcessRows } from '../utils/processSorting.js'
 
 export default {
   name: 'ProcessDialogs',
+
+  components: {
+    Activity, ChevronDown, ChevronUp, CircleStop, FolderOpen, Info, LayoutGrid, Network, RefreshCw, Search, Terminal,
+  },
 
 
   props: {
@@ -911,6 +937,17 @@ export default {
 </script>
 
 <style scoped>
+.dialog-action-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.dialog-prefix-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
 
 
 .process-dialog-filter-input :deep(.el-input__wrapper) {

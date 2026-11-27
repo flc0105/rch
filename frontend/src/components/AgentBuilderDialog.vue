@@ -26,6 +26,9 @@
 
         <el-form-item v-if="agentForm.connection_mode !== 'bind'" label="Listener">
           <el-select v-model="agentForm.listener_id" placeholder="Select listener" style="width:100%" @change="applyListener">
+            <template #prefix>
+              <Network class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
             <el-option v-for="item in compatibleListeners" :key="item.id" :label="`${item.name} · ${item.protocol_label} :${item.port}`" :value="item.id" />
           </el-select>
         </el-form-item>
@@ -34,7 +37,11 @@
           <el-input
               v-model="agentForm.server_host"
               placeholder="e.g., 192.168.1.100"
-          />
+          >
+            <template #prefix>
+              <Monitor class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
+          </el-input>
         </el-form-item>
 
         <el-form-item v-if="agentForm.connection_mode !== 'bind'" label="Server Port" required>
@@ -48,13 +55,20 @@
 
         <el-form-item v-if="agentForm.connection_mode === 'bind'" label="Transport">
           <el-select v-model="agentForm.server_transport" style="width:100%">
+            <template #prefix>
+              <Network class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
             <el-option label="TCP" value="tcp" />
             <el-option label="mTLS/TCP" value="mtls_tcp" />
           </el-select>
         </el-form-item>
 
         <el-form-item v-if="agentForm.connection_mode === 'bind'" label="Listen IP" required>
-          <el-input v-model="agentForm.bind_host" placeholder="0.0.0.0" />
+          <el-input v-model="agentForm.bind_host" placeholder="0.0.0.0">
+            <template #prefix>
+              <Monitor class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
+          </el-input>
         </el-form-item>
 
         <el-form-item v-if="agentForm.connection_mode === 'bind'" label="Listen Port" required>
@@ -123,6 +137,7 @@
     <template #footer>
       <div class="agent-builder-footer">
         <el-button @click="visible = false">
+          <X class="dialog-action-icon" :size="14" aria-hidden="true" />
           Cancel
         </el-button>
 
@@ -132,6 +147,7 @@
             :disabled="!supportedBuilders.includes(agentForm.builder)"
             @click="buildAgent"
         >
+          <Download v-if="!agentBuilding" class="dialog-action-icon" :size="14" aria-hidden="true" />
           Build & Download
         </el-button>
       </div>
@@ -140,6 +156,7 @@
 </template>
 
 <script>
+import { Download, Monitor, Network, X } from '@lucide/vue'
 import {ElMessage} from 'element-plus'
 import { getAgentPlatform, buildAgent as requestAgentBuild, agentDownloadUrl } from '../api/agentApi.js'
 import { listListeners } from '../api/listenersApi.js'
@@ -147,6 +164,10 @@ import {AGENT_BUILDER, AGENT_BUILDER_LABEL} from '../data/agentBuilderTypes.js'
 
 export default {
   name: 'AgentBuilderDialog',
+
+  components: {
+    Download, Monitor, Network, X,
+  },
 
   emits: [
     'built',
@@ -432,6 +453,17 @@ export default {
 </script>
 
 <style scoped>
+.dialog-action-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.dialog-prefix-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
 .agent-builder-body {
   width: 100%;
   min-width: 0;

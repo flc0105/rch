@@ -8,7 +8,7 @@ function component(file, context = {}) {
   const source = read(file)
   const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1]
   assert.ok(script)
-  return vm.runInNewContext(`(${script.replace(/^import .*$/gm, '').replace('export default', '')})`, context)
+  return vm.runInNewContext(`(${script.replace(/^import .*$/gm, '').replace('export default', '')})`, { Download:()=>{}, Monitor:()=>{}, Network:()=>{}, X:()=>{}, ...context })
 }
 const AGENT_BUILDER = { PYTHON: 'python', GO: 'go', GO_LOADER: 'go_loader' }
 

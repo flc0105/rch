@@ -17,6 +17,7 @@
               size="small"
               @click="$emit('open-builder')"
           >
+            <Wrench class="dialog-action-icon" :size="14" aria-hidden="true" />
             Build Agent
           </el-button>
 
@@ -26,6 +27,7 @@
               :loading="loading"
               @click="loadAgentOutputs"
           >
+            <RefreshCw v-if="!loading" class="dialog-action-icon" :size="14" aria-hidden="true" />
             Refresh
           </el-button>
 
@@ -38,6 +40,7 @@
               :loading="bulkDeleting"
               @click="deleteSelectedAgentOutputs"
           >
+            <Trash2 v-if="!bulkDeleting" class="dialog-action-icon" :size="14" aria-hidden="true" />
             Delete{{ selectedOutputFileNames.length ? ` (${selectedOutputFileNames.length})` : '' }}
           </el-button>
         </div>
@@ -51,6 +54,9 @@
               size="small"
               placeholder="Filter builder"
           >
+            <template #prefix>
+              <Wrench class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
             <el-option
                 v-for="builder in builderOptions"
                 :key="builder"
@@ -65,6 +71,9 @@
               size="small"
               placeholder="Filter mode"
           >
+            <template #prefix>
+              <ListFilter class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
             <el-option label="Reverse" value="reverse" />
             <el-option label="Bind" value="bind" />
           </el-select>
@@ -145,7 +154,7 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="Actions" width="180" align="center">
+          <el-table-column label="Actions" width="240" align="center">
             <template #default="{ row }">
               <div class="agent-output-actions table-actions table-actions-links">
                 <a
@@ -153,18 +162,18 @@
                     class="table-action-link"
                     :class="{ disabled: !row.download_url }"
                     @click.prevent="downloadAgentOutput(row)"
-                >Download</a>
+                ><Download class="dialog-action-icon" :size="12" aria-hidden="true" />Download</a>
                 <a
                     href="#"
                     class="table-action-link"
                     :class="{ disabled: isAgentOutputDeleting(row.file_name) }"
                     @click.prevent="deleteAgentOutput(row)"
-                >Delete</a>
+                ><Trash2 class="dialog-action-icon" :size="12" aria-hidden="true" />Delete</a>
                 <el-dropdown trigger="click" placement="bottom-end"
                              @command="command => handleAgentOutputMoreCommand(command, row)">
-                  <span class="table-action-link">More</span>
+                  <span class="table-action-link"><Ellipsis class="dialog-action-icon" :size="12" aria-hidden="true" />More</span>
                   <template #dropdown>
-                    <el-dropdown-menu><el-dropdown-item command="info">Info</el-dropdown-item></el-dropdown-menu>
+                    <el-dropdown-menu><el-dropdown-item command="info"><Info class="dialog-action-icon" :size="14" aria-hidden="true" />Info</el-dropdown-item></el-dropdown-menu>
                   </template>
                 </el-dropdown>
               </div>
@@ -246,6 +255,7 @@
                           :disabled="!row.download_url"
                           @click="downloadAgentOutput(row)"
                       >
+                        <Download class="dialog-action-icon" :size="14" aria-hidden="true" />
                         Download
                       </el-button>
                     </div>
@@ -259,6 +269,7 @@
                           :disabled="isAgentOutputDeleting(row.file_name)"
                           @click="deleteAgentOutput(row)"
                       >
+                        <Trash2 v-if="!isAgentOutputDeleting(row.file_name)" class="dialog-action-icon" :size="14" aria-hidden="true" />
                         Delete
                       </el-button>
                     </div>
@@ -275,15 +286,14 @@
                             plain
                             class="agent-output-mobile-more-button"
                         >
-                          <el-icon>
-                            <MoreFilledIcon/>
-                          </el-icon>
+                          <Ellipsis class="dialog-action-icon" :size="14" aria-hidden="true" />
                           More
                         </el-button>
 
                         <template #dropdown>
                           <el-dropdown-menu>
                             <el-dropdown-item command="info">
+                              <Info class="dialog-action-icon" :size="14" aria-hidden="true" />
                               Info
                             </el-dropdown-item>
                           </el-dropdown-menu>
@@ -315,6 +325,15 @@
             class="agent-output-info-row"
         >
           <div class="agent-output-info-label">
+            <FileIcon v-if="item.key === 'file_name'" class="dialog-action-icon" :size="13" aria-hidden="true" />
+            <Tag v-if="item.key === 'build_version'" class="dialog-action-icon" :size="13" aria-hidden="true" />
+            <Wrench v-if="item.key === 'builder' || item.key === 'build_origin'" class="dialog-action-icon" :size="13" aria-hidden="true" />
+            <Network v-if="item.key === 'connection_mode' || item.key === 'transport' || item.key === 'listener' || item.key === 'endpoint'" class="dialog-action-icon" :size="13" aria-hidden="true" />
+            <Monitor v-if="item.key === 'target_os'" class="dialog-action-icon" :size="13" aria-hidden="true" />
+            <Cpu v-if="item.key === 'target_arch'" class="dialog-action-icon" :size="13" aria-hidden="true" />
+            <Link v-if="item.key === 'web_url'" class="dialog-action-icon" :size="13" aria-hidden="true" />
+            <Clock3 v-if="item.key === 'build_time'" class="dialog-action-icon" :size="13" aria-hidden="true" />
+            <HardDrive v-if="item.key === 'size'" class="dialog-action-icon" :size="13" aria-hidden="true" />
             {{ item.label }}
           </div>
 
@@ -337,8 +356,7 @@
 
 <script>
 import {ElMessage, ElMessageBox} from 'element-plus'
-import {MoreFilled} from '@element-plus/icons-vue'
-import {File, FileArchive, FileTerminal} from '@lucide/vue'
+import { Clock3, Cpu, Download, Ellipsis, File, FileArchive, FileTerminal, HardDrive, Info, Link, ListFilter, Monitor, Network, RefreshCw, Tag, Trash2, Wrench } from '@lucide/vue'
 import {displayAgentBuilder, AGENT_BUILDER} from '../data/agentBuilderTypes.js'
 import {formatBytes, formatDateTimeStandard} from '../utils/formatters.js'
 import { listAgentOutputs, deleteAgentOutput } from '../api/agentApi.js'
@@ -347,10 +365,10 @@ export default {
   name: 'AgentOutputsDialog',
 
   components: {
+    Clock3, Cpu, Download, Ellipsis, HardDrive, Info, Link, ListFilter, Monitor, Network, RefreshCw, Tag, Trash2, Wrench,
     FileIcon: File,
     FileArchiveIcon: FileArchive,
     FileTerminalIcon: FileTerminal,
-    MoreFilledIcon: MoreFilled,
   },
 
   props: {
@@ -751,6 +769,17 @@ export default {
 </script>
 
 <style scoped>
+.dialog-action-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.dialog-prefix-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
 .agent-outputs-body {
   display: flex;
   flex: 1 1 auto;
@@ -867,7 +896,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .agent-output-actions :deep(.el-button) {
@@ -1023,10 +1052,6 @@ export default {
 
 .agent-output-mobile-more-dropdown :deep(.el-tooltip__trigger) {
   width: 100%;
-}
-
-.agent-output-mobile-more-button :deep(.el-icon) {
-  margin-right: 4px;
 }
 
 .agent-output-info-body {

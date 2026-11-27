@@ -5,7 +5,7 @@
       <div class="settings-note settings-note-inline" role="status">{{ summaryText }}</div>
     </div>
     <div class="storage-actions">
-      <el-button size="small" :loading="loading" :disabled="disabled || busy" @click="refresh">Refresh</el-button>
+      <el-button :loading="loading" :disabled="disabled || busy" @click="refresh">Refresh</el-button>
       <el-button :disabled="disabled || busy || !token" @click="cleanupDialog.open()">Clean…</el-button>
     </div>
   </div>
@@ -87,7 +87,7 @@ watch(() => props.active, value => { if (value) refresh() }, { immediate: true }
 </script>
 
 <style scoped>
-.storage-actions { display:flex; gap:8px; flex-shrink:0; }
+.storage-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
 .storage-actions :deep(.el-button + .el-button) { margin-left:0; }
 .database-panel p { margin:0 0 16px; color:var(--el-text-color-secondary); }
 .database-stats { display:grid; grid-template-columns:1fr auto; gap:12px; margin-bottom:16px; }

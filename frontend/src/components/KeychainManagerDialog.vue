@@ -25,6 +25,7 @@
             :loading="loading"
             @click="loadKeychains"
           >
+            <RefreshCw v-if="!loading" class="dialog-action-icon" :size="14" aria-hidden="true" />
             Refresh
           </el-button>
 
@@ -33,6 +34,7 @@
             type="primary"
             @click="openCreateDialog"
           >
+            <Plus class="dialog-action-icon" :size="14" aria-hidden="true" />
             New Credential
           </el-button>
 
@@ -41,6 +43,7 @@
             plain
             @click="openPasswordGeneratorDialog"
           >
+            <WandSparkles class="dialog-action-icon" :size="14" aria-hidden="true" />
             Generate Password
           </el-button>
         </div>
@@ -55,6 +58,9 @@
               placeholder="Filter by host"
               @change="handleMachineFilterChange"
             >
+              <template #prefix>
+                <Monitor class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+              </template>
               <el-option
                 v-for="item in machineOptions"
                 :key="item.machine_id"
@@ -71,6 +77,9 @@
               placeholder="All"
               @change="handleKindFilterChange"
             >
+              <template #prefix>
+                <ListFilter class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+              </template>
               <el-option label="All" value="" />
               <el-option label="Secrets" value="secret" />
               <el-option label="Logins" value="login" />
@@ -83,7 +92,11 @@
             clearable
             class="keychain-search"
             placeholder="Search credentials"
-          />
+          >
+            <template #prefix>
+              <Search class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
+          </el-input>
         </div>
       </div>
 
@@ -106,7 +119,8 @@
           >
             <div class="keychain-card-top">
               <div class="keychain-icon">
-                {{ row.kind === 'secret' ? '🔑' : '🔐' }}
+                <KeyRound v-if="row.kind === 'secret'" :size="22" aria-hidden="true" />
+                <LockKeyhole v-else :size="22" aria-hidden="true" />
               </div>
 
               <div class="keychain-card-main">
@@ -181,6 +195,8 @@
                           :disabled="isSecretLoading(row.cred_id)"
                           @click="toggleCardSecret(row)"
                         >
+                          <EyeOff v-if="!isSecretLoading(row.cred_id) && isSecretVisible(row.cred_id)" class="dialog-action-icon" :size="13" aria-hidden="true" />
+                          <Eye v-if="!isSecretLoading(row.cred_id) && !isSecretVisible(row.cred_id)" class="dialog-action-icon" :size="13" aria-hidden="true" />
                           {{
                             isSecretLoading(row.cred_id)
                               ? 'Loading...'
@@ -195,6 +211,7 @@
                           :disabled="isSecretLoading(row.cred_id)"
                           @click="copyCardSecret(row)"
                         >
+                          <Copy class="dialog-action-icon" :size="13" aria-hidden="true" />
                           Copy
                         </el-link>
                       </div>
@@ -216,6 +233,7 @@
                     plain
                     @click="openDetailDialog(row)"
                   >
+                    <Eye class="dialog-action-icon" :size="14" aria-hidden="true" />
                     View
                   </el-button>
 
@@ -224,6 +242,7 @@
                     plain
                     @click="openEditDialog(row)"
                   >
+                    <Pencil class="dialog-action-icon" :size="14" aria-hidden="true" />
                     Edit
                   </el-button>
 
@@ -233,6 +252,7 @@
                     plain
                     @click="deleteCredential(row)"
                   >
+                    <Trash2 class="dialog-action-icon" :size="14" aria-hidden="true" />
                     Delete
                   </el-button>
                 </div>
@@ -264,6 +284,9 @@
             placeholder="Select host"
             @change="handleFormMachineChange"
           >
+            <template #prefix>
+              <Monitor class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
             <el-option
               v-for="item in machineOptions"
               :key="item.machine_id"
@@ -286,7 +309,11 @@
             maxlength="160"
             placeholder="Credential name"
             show-word-limit
-          />
+          >
+            <template #prefix>
+              <Tag class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+            </template>
+          </el-input>
         </el-form-item>
 
         <template v-if="form.kind === 'login'">
@@ -295,7 +322,11 @@
               v-model="form.username"
               maxlength="256"
               placeholder="Username or email"
-            />
+            >
+              <template #prefix>
+                <UserRound class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+              </template>
+            </el-input>
           </el-form-item>
 
           <el-form-item label="Password">
@@ -305,8 +336,12 @@
               show-password
               maxlength="4096"
               placeholder="Password"
-            />
-            <el-button type="primary" link size="small" @click="openPasswordGeneratorDialog">Generate Password</el-button>
+            >
+              <template #prefix>
+                <LockKeyhole class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+              </template>
+            </el-input>
+            <el-button type="primary" link size="small" @click="openPasswordGeneratorDialog"><WandSparkles class="dialog-action-icon" :size="14" aria-hidden="true" /> Generate Password</el-button>
           </el-form-item>
 
           <el-form-item label="Site Optional">
@@ -314,7 +349,11 @@
               v-model="form.site"
               maxlength="512"
               placeholder="Site URL"
-            />
+            >
+              <template #prefix>
+                <Link class="dialog-prefix-icon" :size="14" aria-hidden="true" />
+              </template>
+            </el-input>
           </el-form-item>
         </template>
 
@@ -327,7 +366,7 @@
               maxlength="65536"
               placeholder="Secret value"
             />
-            <el-button type="primary" link size="small" @click="openPasswordGeneratorDialog">Generate Value</el-button>
+            <el-button type="primary" link size="small" @click="openPasswordGeneratorDialog"><WandSparkles class="dialog-action-icon" :size="14" aria-hidden="true" /> Generate Value</el-button>
           </el-form-item>
         </template>
 
@@ -345,6 +384,7 @@
       <template #footer>
         <div class="keychain-dialog-footer">
           <el-button @click="editorVisible = false">
+            <X class="dialog-action-icon" :size="14" aria-hidden="true" />
             Cancel
           </el-button>
           <el-button
@@ -352,6 +392,7 @@
             :loading="saving"
             @click="saveCredential"
           >
+            <Save v-if="!saving" class="dialog-action-icon" :size="14" aria-hidden="true" />
             Save
           </el-button>
         </div>
@@ -387,7 +428,7 @@
 
         <div class="keychain-detail-grid">
           <div class="keychain-detail-item keychain-detail-wide">
-            <div class="keychain-detail-label">Host</div>
+            <div class="keychain-detail-label"><Monitor class="dialog-action-icon" :size="13" aria-hidden="true" />Host</div>
             <div class="keychain-detail-value mono">
               {{ formatMachineOptionLabel(detailItem) }}
             </div>
@@ -395,14 +436,14 @@
 
           <template v-if="detailItem.kind === 'login'">
             <div class="keychain-detail-item keychain-detail-wide">
-              <div class="keychain-detail-label">Site</div>
+              <div class="keychain-detail-label"><Link class="dialog-action-icon" :size="13" aria-hidden="true" />Site</div>
               <div class="keychain-detail-value">
                 {{ detailItem.site || '-' }}
               </div>
             </div>
 
             <div class="keychain-detail-item">
-              <div class="keychain-detail-label">Username</div>
+              <div class="keychain-detail-label"><UserRound class="dialog-action-icon" :size="13" aria-hidden="true" />Username</div>
               <div class="keychain-detail-value mono">
                 {{ detailItem.username || '-' }}
               </div>
@@ -414,6 +455,7 @@
             :class="{ 'keychain-detail-secret': detailItem.kind === 'secret' }"
           >
             <div class="keychain-detail-label">
+              <LockKeyhole class="dialog-action-icon" :size="13" aria-hidden="true" />
               {{ detailItem.kind === 'secret' ? 'Value' : 'Password' }}
             </div>
             <div class="keychain-detail-value mono secret-inline">
@@ -426,6 +468,8 @@
                 :underline="false"
                 @click="detailSecretVisible = !detailSecretVisible"
               >
+                <EyeOff v-if="detailSecretVisible" class="dialog-action-icon" :size="13" aria-hidden="true" />
+                <Eye v-else class="dialog-action-icon" :size="13" aria-hidden="true" />
                 {{ detailSecretVisible ? 'Hide' : 'Show' }}
               </el-link>
               <el-link
@@ -434,20 +478,21 @@
                 :underline="false"
                 @click="copyDetailSecret"
               >
+                <Copy class="dialog-action-icon" :size="13" aria-hidden="true" />
                 Copy
               </el-link>
             </div>
           </div>
 
           <div class="keychain-detail-item">
-            <div class="keychain-detail-label">Created</div>
+            <div class="keychain-detail-label"><Clock3 class="dialog-action-icon" :size="13" aria-hidden="true" />Created</div>
             <div class="keychain-detail-value mono">
               {{ detailItem.created_at || '-' }}
             </div>
           </div>
 
           <div class="keychain-detail-item">
-            <div class="keychain-detail-label">Last Modified</div>
+            <div class="keychain-detail-label"><Clock3 class="dialog-action-icon" :size="13" aria-hidden="true" />Last Modified</div>
             <div class="keychain-detail-value mono">
               {{ detailItem.updated_at || '-' }}
             </div>
@@ -457,7 +502,7 @@
             v-if="detailItem.note"
             class="keychain-detail-item keychain-detail-note"
           >
-            <div class="keychain-detail-label">Note</div>
+            <div class="keychain-detail-label"><FileText class="dialog-action-icon" :size="13" aria-hidden="true" />Note</div>
             <div class="keychain-detail-value pre-wrap">
               {{ detailItem.note }}
             </div>
@@ -468,6 +513,7 @@
       <template #footer>
         <div class="keychain-dialog-footer">
           <el-button @click="detailVisible = false">
+            <X class="dialog-action-icon" :size="14" aria-hidden="true" />
             Close
           </el-button>
           <el-button
@@ -475,6 +521,7 @@
             plain
             @click="openEditDialog(detailItem)"
           >
+            <Pencil class="dialog-action-icon" :size="14" aria-hidden="true" />
             Edit
           </el-button>
         </div>
@@ -491,6 +538,7 @@
 </template>
 
 <script>
+import { Clock3, Copy, Eye, EyeOff, FileText, KeyRound, Link, ListFilter, LockKeyhole, Monitor, Pencil, Plus, RefreshCw, Save, Search, Tag, Trash2, UserRound, WandSparkles, X } from '@lucide/vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PasswordGeneratorDialog from './PasswordGeneratorDialog.vue'
 import { listKeychains, getKeychainCredential, saveKeychainCredential, deleteKeychainCredential } from '../api/keychainsApi.js'
@@ -499,6 +547,7 @@ export default {
   name: 'KeychainManagerDialog',
 
   components: {
+    Clock3, Copy, Eye, EyeOff, FileText, KeyRound, Link, ListFilter, LockKeyhole, Monitor, Pencil, Plus, RefreshCw, Save, Search, Tag, Trash2, UserRound, WandSparkles, X,
     PasswordGeneratorDialog,
   },
 
@@ -994,6 +1043,17 @@ export default {
 </script>
 
 <style scoped>
+.dialog-action-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+.dialog-prefix-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
 /* Keychains 是纯服务端凭证管理，不和 client 执行层交互。 */
 .fixed-dialog-body {
   height: 100%;
