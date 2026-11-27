@@ -1,0 +1,598 @@
+/* Artifacts: navigation on the left, current folder and operations on the right. */
+
+.artifact-overlay .fixed-dialog-body {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.artifact-overlay .artifact-tabs {
+  flex: 0 0 auto;
+}
+
+.artifact-overlay .artifact-tabs .el-tabs__header {
+  margin-bottom: 12px;
+}
+
+.artifact-overlay .artifact-library-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  gap: 14px;
+}
+
+.artifact-overlay .artifact-folder-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 204px;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px 8px;
+  background: var(--el-fill-color-lighter, #f8fafc);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
+}
+
+.artifact-overlay .artifact-folder-heading {
+  display: flex;
+  height: 34px;
+  min-height: 34px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 4px 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.artifact-overlay .artifact-folder-heading .el-button {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+.artifact-overlay .artifact-folder-sidebar .el-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: transparent;
+  font-size: 13px;
+}
+
+.artifact-overlay .artifact-folder-sidebar .el-tree-node__content {
+  min-height: 32px;
+  height: auto;
+  border-radius: 6px;
+}
+
+.artifact-overlay .artifact-main-panel {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.artifact-overlay .artifact-dialog-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 1px 0 13px;
+}
+
+.artifact-overlay .artifact-toolbar-group,
+.artifact-overlay .artifact-toolbar-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.artifact-overlay .artifact-toolbar-filters {
+  margin-left: auto;
+}
+
+.artifact-overlay .artifact-dialog-toolbar .el-button {
+  margin: 0;
+  height: 32px;
+  padding: 0 11px;
+  white-space: nowrap;
+}
+
+.artifact-overlay .artifact-toolbar-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: var(--el-border-color);
+}
+
+.artifact-overlay .artifact-toolbar-search { width: 170px; }
+
+.artifact-overlay .artifact-toolbar-device { width: 205px; }
+
+.artifact-overlay .artifact-dialog-toolbar .el-input__wrapper,
+.artifact-overlay .artifact-dialog-toolbar .el-select__wrapper {
+  min-height: 32px;
+}
+
+.artifact-overlay .artifact-location {
+  display: flex;
+  align-items: baseline;
+  flex: 0 0 auto;
+  gap: 9px;
+  padding: 3px 0 12px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.artifact-overlay .artifact-location-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-overlay .artifact-location-count {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.artifact-overlay .artifact-tree-entry,
+.artifact-overlay .artifact-file-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.artifact-overlay .artifact-tree-entry > svg,
+.artifact-overlay .artifact-file-name > svg {
+  flex: 0 0 auto;
+  color: var(--el-text-color-secondary);
+}
+
+.artifact-overlay .artifact-file-name .ellipsis,
+.artifact-overlay .artifact-tree-entry .ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-overlay .dialog-table-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.artifact-overlay .dialog-table-shell .el-table,
+.artifact-overlay .dialog-table-shell .el-table__inner-wrapper,
+.artifact-overlay .dialog-table-shell .el-scrollbar,
+.artifact-overlay .dialog-table-shell .el-scrollbar__wrap {
+  width: 100%;
+  height: 100% !important;
+}
+
+.artifact-overlay .dialog-table-shell .el-scrollbar__wrap {
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+}
+
+.artifact-overlay .dialog-table-shell .el-table__body-wrapper {
+  overflow-y: auto !important;
+}
+
+.artifact-overlay .dialog-table-shell .el-table th.el-table__cell {
+  background: #f8fafc !important;
+  color: #475569;
+  font-weight: 700;
+}
+
+.artifact-overlay .dialog-table-shell .el-table tr {
+  background: #fff;
+}
+
+.artifact-overlay .dialog-table-shell .el-table .cell {
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-overlay .ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-overlay .table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  min-height: 28px;
+  white-space: nowrap;
+}
+
+.artifact-overlay .table-actions-links {
+  gap: 8px;
+}
+
+.artifact-overlay .table-action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: var(--el-color-primary);
+  text-decoration: none;
+  font-size: 12px;
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.artifact-overlay .table-action-link:hover {
+  color: var(--el-color-primary-light-5);
+  text-decoration: underline;
+}
+
+.artifact-overlay .table-action-link.danger {
+  color: var(--danger);
+}
+
+.artifact-overlay .mobile-file-list-shell,
+.artifact-overlay .mobile-file-list {
+  display: none;
+}
+
+.artifact-overlay .mobile-file-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.artifact-overlay .mobile-file-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+}
+
+.artifact-overlay .mobile-file-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.artifact-overlay .mobile-file-icon {
+  flex: 0 0 auto;
+  font-size: 20px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.artifact-overlay .mobile-file-check-anchor {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 1;
+}
+
+.artifact-overlay .mobile-file-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.artifact-overlay .mobile-file-name {
+  padding-right: 42px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.artifact-overlay .mobile-file-meta {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+.artifact-overlay .mobile-file-meta-item {
+  min-width: 0;
+}
+
+.artifact-overlay .mobile-file-meta-label {
+  font-size: 11px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.artifact-overlay .mobile-file-meta-value {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.artifact-overlay .mobile-file-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.artifact-overlay .mobile-file-actions .el-button,
+.artifact-overlay .mobile-file-actions .el-dropdown,
+.artifact-overlay .mobile-file-actions .table-action-link,
+.artifact-overlay .mobile-file-actions a {
+  flex: 1 1 calc(33.333% - 8px);
+  min-height: 32px;
+  margin: 0;
+  border-radius: 10px;
+  justify-content: center;
+}
+
+.artifact-overlay .mobile-file-actions .el-dropdown {
+  display: inline-flex;
+}
+
+.artifact-overlay .mobile-file-actions .el-dropdown .el-button {
+  width: 100%;
+}
+
+.artifact-overlay .mobile-file-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.artifact-overlay .mobile-file-actions a .el-button {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+.artifact-overlay .mobile-file-actions .table-action-link {
+  height: auto;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.artifact-overlay .empty-state {
+  padding: 32px 12px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+@media (max-width: 1080px) {
+  .artifact-overlay .artifact-library-body { gap: 10px; }
+
+  .artifact-overlay .artifact-folder-sidebar { flex-basis: 180px; }
+
+  .artifact-overlay .artifact-toolbar-filters { margin-left: 0; }
+}
+
+@media (max-width: 860px) {
+  .artifact-overlay .artifact-library-body { flex-direction: column; }
+
+  .artifact-overlay .artifact-folder-sidebar { flex: 0 0 auto; max-height: 174px; }
+
+  .artifact-overlay .artifact-folder-sidebar .el-tree { min-height: 70px; }
+
+  .artifact-overlay .artifact-main-panel { min-height: 0; }
+}
+
+@media (max-width: 1080px), (max-height: 720px) {
+  .artifact-overlay .dialog-table-shell {
+      display: none !important;
+    }
+
+  .artifact-overlay .mobile-file-list-shell {
+      display: flex !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    }
+
+  .artifact-overlay .mobile-file-list {
+      display: block !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    }
+
+  .artifact-overlay .mobile-file-grid {
+      height: 100% !important;
+      min-height: 0 !important;
+      overflow-y: auto !important;
+    }
+}
+
+@media (max-width: 640px) {
+  .artifact-overlay .artifact-dialog-toolbar { align-items: stretch; }
+
+  .artifact-overlay .artifact-toolbar-group { width: 100%; }
+
+  .artifact-overlay .artifact-toolbar-filters { width: 100%; }
+
+  .artifact-overlay .artifact-toolbar-search,
+  .artifact-overlay .artifact-toolbar-device { flex: 1 1 160px; width: auto; min-width: 0; }
+
+  .artifact-overlay .mobile-file-meta { grid-template-columns: 1fr; }
+
+  .artifact-overlay .mobile-file-actions { gap: 6px; }
+
+  .artifact-overlay .mobile-file-actions .el-button,
+  .artifact-overlay .mobile-file-actions .el-dropdown,
+  .artifact-overlay .mobile-file-actions .table-action-link { flex: 1 1 calc(50% - 6px); }
+}
+
+.artifact-overlay .el-overlay-dialog {
+  overflow: hidden !important;
+}
+
+.artifact-overlay .el-dialog {
+  height: 78vh !important;
+  max-height: 78vh !important;
+  margin-top: 5vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.artifact-overlay .el-dialog__header {
+  flex: 0 0 auto !important;
+}
+
+.artifact-overlay .el-dialog__body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+.artifact-overlay .fixed-dialog-body {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.artifact-overlay .dialog-table-shell {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: hidden !important;
+}
+
+.artifact-overlay .dialog-table-shell .el-table,
+.artifact-overlay .dialog-table-shell .el-table__inner-wrapper,
+.artifact-overlay .dialog-table-shell .el-scrollbar,
+.artifact-overlay .dialog-table-shell .el-scrollbar__wrap {
+  height: 100% !important;
+}
+
+.artifact-overlay .dialog-table-shell .el-scrollbar__wrap {
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+}
+
+@media (max-width: 1080px), (max-height: 720px) {
+  .artifact-overlay .el-dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .artifact-overlay .el-dialog__header {
+    padding: 14px 16px 10px !important;
+  }
+
+  .artifact-overlay .el-dialog__body {
+    padding: 10px 12px 12px !important;
+  }
+
+  .artifact-overlay .dialog-table-shell {
+    display: none !important;
+  }
+
+  .artifact-overlay .mobile-file-list-shell {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .artifact-overlay .mobile-file-list {
+    display: block !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .artifact-overlay .mobile-file-grid {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+}
+@media (max-width: 640px) {
+  .artifact-overlay .el-dialog__body {
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+  .artifact-overlay .fixed-dialog-body,
+  .artifact-overlay .artifact-library-body {
+    height: auto !important;
+    overflow: visible !important;
+    min-width: 0;
+  }
+  .artifact-overlay .artifact-library-body {
+    flex: 0 0 auto !important;
+  }
+  .artifact-overlay .artifact-folder-sidebar {
+    flex: 0 0 auto !important;
+    height: 226px !important;
+    min-height: 0 !important;
+    max-height: 226px !important;
+    overflow: hidden !important;
+  }
+  .artifact-overlay .artifact-main-panel {
+    max-width: 100%;
+    /* Preserve the panel and list's original flex and horizontal constraints. */
+    flex: 0 1 auto !important;
+    min-width: 0;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .artifact-overlay .mobile-file-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .artifact-overlay .mobile-file-list-shell,
+  .artifact-overlay .mobile-file-list,
+  .artifact-overlay .mobile-file-grid {
+    min-width: 0;
+    max-width: 100%;
+    height: auto !important;
+    overflow-y: visible !important;
+  }
+}
