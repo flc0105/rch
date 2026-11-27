@@ -104,21 +104,11 @@
         </div>
       </div>
 
-      <div class="script-library-shell" :class="{ 'script-library-tree-collapsed': !mobileTreeExpanded }">
-        <div class="script-library-tree panel-lite">
+      <div class="script-library-shell" :class="{ 'script-library-tree-collapsed': !scriptTreeVisible }">
+        <div v-show="scriptTreeVisible" class="script-library-tree panel-lite">
           <div class="background-jobs-section-title script-library-tree-title">
             <Folder :size="16" aria-hidden="true" />
             Folders
-            <button
-              type="button"
-              class="script-library-tree-toggle"
-              :aria-expanded="mobileTreeExpanded"
-              aria-label="Toggle folders"
-              @click="mobileTreeExpanded = !mobileTreeExpanded"
-            >
-              <ChevronDown v-if="mobileTreeExpanded" :size="18" aria-hidden="true" />
-              <ChevronRight v-else :size="18" aria-hidden="true" />
-            </button>
           </div>
 
           <div class="script-library-pane-scroll">
@@ -152,20 +142,42 @@
 
         <div class="script-library-directory panel-lite">
           <div class="script-library-directory-top">
+            <button
+              type="button"
+              class="script-library-tree-toggle"
+              :class="{ 'is-open': scriptTreeVisible }"
+              :aria-expanded="scriptTreeVisible"
+              :aria-label="scriptTreeVisible ? 'Hide folder tree' : 'Show folder tree'"
+              :title="scriptTreeVisible ? 'Hide folder tree' : 'Show folder tree'"
+              @click="scriptTreeVisible = !scriptTreeVisible"
+            >
+              <PanelLeftClose v-if="scriptTreeVisible" :size="17" aria-hidden="true" />
+              <PanelLeftOpen v-else :size="17" aria-hidden="true" />
+              <span>{{ scriptTreeVisible ? 'Hide tree' : 'Show tree' }}</span>
+            </button>
             <div class="script-library-directory-title-block">
-              <div class="background-jobs-section-title script-library-directory-title">
-                <FolderOpen :size="17" aria-hidden="true" />
-                {{ selectedDirectory || 'Scripts' }}
-              </div>
-
-              <div class="background-job-module-key mono">
-                <span v-if="currentScriptDirectoryFolders.length">{{ currentScriptDirectoryFolders.length }} {{ currentScriptDirectoryFolders.length === 1 ? 'folder' : 'folders' }} · </span>{{ scriptDirectoryItemCountText }}
-              </div>
+              <nav ref="scriptBreadcrumb" class="script-library-breadcrumb" aria-label="Script directory">
+                <template v-for="(crumb, index) in scriptDirectoryBreadcrumb" :key="crumb.path">
+                  <ChevronRight v-if="index" :size="14" class="script-library-breadcrumb-separator" aria-hidden="true" />
+                  <button
+                    type="button"
+                    class="script-library-breadcrumb-item"
+                    :class="{ 'is-current': crumb.path === selectedDirectory }"
+                    :aria-current="crumb.path === selectedDirectory ? 'location' : undefined"
+                    :disabled="crumb.path === selectedDirectory"
+                    :title="crumb.path || 'root'"
+                    @click="navigateScriptDirectory(crumb.path)"
+                  >
+                    <Folder v-if="!index" :size="15" aria-hidden="true" />
+                    <span>{{ crumb.label }}</span>
+                  </button>
+                </template>
+              </nav>
             </div>
           </div>
 
           <div ref="scriptDirectoryPane" class="script-library-pane-scroll">
-            <div v-if="selectedDirectory || currentScriptDirectoryFolders.length" class="script-library-folder-list">
+            <div v-if="!hasScriptSearch && (selectedDirectory || currentScriptDirectoryFolders.length)" class="script-library-folder-list">
               <button
                 v-if="selectedDirectory"
                 type="button"
@@ -183,9 +195,16 @@
                 :title="folder.path"
                 @click="navigateScriptDirectory(folder.path)"
               >
-                <span class="script-library-folder-icon"><Folder :size="19" aria-hidden="true" /></span>
-                <span class="script-library-folder-name">{{ folder.label }}</span>
-                <ChevronRight class="script-library-folder-chevron" :size="16" aria-hidden="true" />
+                <span class="script-library-card-main">
+                  <span class="script-library-card-icon-tile"><Folder :size="19" aria-hidden="true" /></span>
+                  <span class="script-library-card-heading">
+                    <span class="script-library-card-title">{{ folder.label }}</span>
+                  </span>
+                  <span class="script-library-card-description">{{ folder.scriptCount }} {{ folder.scriptCount === 1 ? 'script' : 'scripts' }}</span>
+                </span>
+                <span class="script-library-card-actions script-library-folder-enter">
+                  Open <ChevronRight :size="16" aria-hidden="true" />
+                </span>
               </button>
             </div>
             <div
@@ -204,7 +223,7 @@
                   <div class="script-library-card-heading">
                     <div
                       class="script-library-card-title"
-                      :title="item.display_name || item.script_name"
+                      :title="[item.display_name, item.path || item.script_name].filter(Boolean).join(' — ')"
                     >
                       {{ item.display_name || item.script_name }}
                     </div>
@@ -212,6 +231,7 @@
                       <el-tag
                         size="small"
                         :type="isScriptSupportedForCurrentConnection(item) ? 'info' : 'danger'"
+                        :title="formatScriptPlatformLabel(item)"
                       >
                         {{ formatScriptPlatformLabel(item) }}
                       </el-tag>
@@ -225,13 +245,6 @@
                         Params
                       </el-tag>
                     </div>
-                  </div>
-
-                  <div
-                    class="script-library-card-path mono"
-                    :title="item.path || item.script_name"
-                  >
-                    {{ item.path || item.script_name }}
                   </div>
 
                   <div
@@ -358,7 +371,7 @@
 import { cancelTask } from '../api/tasksApi.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal, ArrowUp, ChevronDown, ChevronRight } from '@lucide/vue'
+import { FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal, ArrowUp, ChevronRight, PanelLeftClose, PanelLeftOpen } from '@lucide/vue'
 import {
   getScriptCatalog, getScriptRunOptions, runLibraryScript, createScriptFolder, renameScriptFolder,
   deleteScriptFolder, renameLibraryScript, uploadLibraryScript, deleteLibraryScript,
@@ -392,7 +405,7 @@ export default {
   name: 'ScriptLibraryDialog',
 
   components: {
-    FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal, ArrowUp, ChevronDown, ChevronRight,
+    FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal, ArrowUp, ChevronRight, PanelLeftClose, PanelLeftOpen,
     ScriptRunDialog,
   },
 
@@ -439,7 +452,7 @@ export default {
       scriptCatalogDirectories: [],
       selectedDirectory: '',
       scriptSearchText: '',
-      mobileTreeExpanded: false,
+      scriptTreeVisible: true,
       scriptTreeRenderKey: 0,
       scriptTreeExpandedKeys: [],
       scriptDirectorySelectionContextKey: '',
@@ -469,6 +482,17 @@ export default {
       }
 
       const rootNode = { key: 'dir:.', label: 'root', path: '', children: [] }
+      const scriptCounts = new Map()
+      for (const item of this.scriptCatalogItems || []) {
+        // Count the complete subtree, independently of the current search.
+        let path = this.getScriptItemDirectory(item)
+        while (true) {
+          scriptCounts.set(path, (scriptCounts.get(path) || 0) + 1)
+          if (!path) break
+          path = this.getParentScriptDirectory(path)
+        }
+      }
+      rootNode.scriptCount = scriptCounts.get('') || 0
 
       const directories = Array.isArray(this.scriptCatalogDirectories) && this.scriptCatalogDirectories.length
         ? this.scriptCatalogDirectories
@@ -485,6 +509,7 @@ export default {
         parts.forEach((part) => {
           currentPath = currentPath ? `${currentPath}/${part}` : part
           const node = ensureNode(currentChildren, `dir:${currentPath}`, part, currentPath)
+          node.scriptCount = scriptCounts.get(currentPath) || 0
           currentChildren = node.children
         })
       })
@@ -501,6 +526,16 @@ export default {
 
     selectedScriptDirectoryTreeKey() {
       return this.getScriptDirectoryTreeKey(this.selectedDirectory)
+    },
+
+    scriptDirectoryBreadcrumb() {
+      const items = [{ label: 'root', path: '' }]
+      let path = ''
+      for (const part of this.normalizeScriptDirectoryPath(this.selectedDirectory).split('/').filter(Boolean)) {
+        path = path ? `${path}/${part}` : part
+        items.push({ label: part, path })
+      }
+      return items
     },
 
     currentScriptDirectoryFolders() {
@@ -537,12 +572,9 @@ export default {
 
     filteredCurrentScriptDirectoryItems() {
       const keyword = String(this.scriptSearchText || '').trim().toLowerCase()
-      const sourceItems = keyword
-        ? this.currentScriptDirectoryRecursiveItems
-        : this.currentScriptDirectoryItems
+      if (!keyword) return this.currentScriptDirectoryItems
 
-      const items = sourceItems.filter(item => {
-        if (!keyword) return true
+      return this.currentScriptDirectoryRecursiveItems.filter(item => {
 
         const values = [
           item.display_name,
@@ -553,27 +585,10 @@ export default {
 
         return values.some(value => value.includes(keyword))
       })
-
-      return this.sortScriptItems(items)
     },
 
     hasScriptSearch() {
       return !!String(this.scriptSearchText || '').trim()
-    },
-
-    scriptDirectoryItemCountText() {
-      const total = this.hasScriptSearch
-        ? this.currentScriptDirectoryRecursiveItems.length
-        : this.currentScriptDirectoryItems.length
-
-      const visible = this.filteredCurrentScriptDirectoryItems.length
-      const suffix = total === 1 ? 'script' : 'scripts'
-
-      if (this.hasScriptSearch) {
-        return `${visible} / ${total} ${suffix}`
-      }
-
-      return `${total} ${suffix}`
     },
 
     currentConnectionPlatform() {
@@ -606,6 +621,9 @@ export default {
   },
 
   watch: {
+    scriptTreeVisible(value) {
+      if (value) this.syncScriptTreeSelection()
+    },
     selectedId() { if (this.scriptRunDialogVisible) this.closeScriptRunDialog() },
     scriptRunDialogVisible(value) {
       if (!value) this.closeScriptRunDialog()
@@ -880,6 +898,7 @@ export default {
 
         this.scriptTreeExpandedKeys = this.filterExistingScriptTreeExpandedKeys(this.scriptTreeExpandedKeys)
         this.scriptTreeRenderKey += 1
+        this.syncScriptTreeSelection()
       } catch (e) {
         ElMessage.error(e.message || 'Failed to load script catalog')
       } finally {
@@ -911,6 +930,23 @@ export default {
       this.$nextTick(() => {
         const pane = this.$refs.scriptDirectoryPane
         if (pane) pane.scrollTop = 0
+        const breadcrumb = this.$refs.scriptBreadcrumb
+        if (breadcrumb) breadcrumb.scrollLeft = breadcrumb.scrollWidth
+      })
+    },
+
+    syncScriptTreeSelection() {
+      // Apply the selection after Vue has updated the tree and its expanded keys.
+      const key = this.selectedScriptDirectoryTreeKey
+      this.scriptTreeExpandedKeys = this.includeScriptTreeAncestorKeys([
+        ...this.scriptTreeExpandedKeys,
+        key,
+      ])
+      this.$nextTick(() => {
+        if (key !== this.selectedScriptDirectoryTreeKey) return
+        const tree = this.$refs.scriptDirectoryTreeRef
+        if (!tree) return
+        tree.setCurrentKey(key, true)
       })
     },
 
@@ -921,11 +957,7 @@ export default {
 
     navigateScriptDirectory(directory) {
       this.selectScriptDirectory(directory)
-      // Reveal the current directory in the existing tree without remounting it.
-      this.scriptTreeExpandedKeys = this.includeScriptTreeAncestorKeys([
-        ...this.scriptTreeExpandedKeys,
-        this.selectedScriptDirectoryTreeKey,
-      ])
+      this.syncScriptTreeSelection()
     },
 
     handleScriptMoreCommand(item, command) {
@@ -1823,23 +1855,56 @@ export default {
   border-color: transparent;
 }
 
-.script-library-tree-title,
-.script-library-directory-title {
+.script-library-tree-title {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.script-library-tree-title > svg,
-.script-library-directory-title > svg {
+.script-library-tree-title > svg {
   color: var(--muted);
   flex: 0 0 auto;
 }
 
-.script-library-directory-title {
-  margin-bottom: 5px;
-  overflow-wrap: anywhere;
+.script-library-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
 }
+
+.script-library-breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  max-width: 180px;
+  min-height: 30px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.script-library-breadcrumb-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.script-library-breadcrumb-item > svg,
+.script-library-breadcrumb-separator { flex: 0 0 auto; color: var(--muted); }
+.script-library-breadcrumb-item:hover:not(:disabled),
+.script-library-breadcrumb-item:focus-visible { background: #eef2f7; color: var(--primary); }
+.script-library-breadcrumb-item.is-current { color: var(--text); font-weight: 650; cursor: default; }
 
 .script-library-tree-view {
   min-height: 0;
@@ -1884,87 +1949,94 @@ export default {
 .script-library-directory-top {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-  margin-bottom: 12px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
 }
 
 .script-library-directory-title-block {
+  flex: 1 1 0;
   min-width: 0;
 }
 
-/* Directory rows share the script list's spacing without competing with the script actions. */
-.script-library-folder-list {
-  display: grid;
-  gap: 7px;
-  padding: 2px 5px 8px 2px;
-}
-
+/* Folder and script cards use the same grid, spacing and icon dimensions. */
 .script-library-folder-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   width: 100%;
-  min-width: 0;
-  min-height: 48px;
-  padding: 8px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 10px;
-  background: var(--bg-card);
-  color: var(--text);
   font: inherit;
+  color: var(--text);
   text-align: left;
   cursor: pointer;
 }
 
-.script-library-folder-row:hover,
-.script-library-folder-row:focus-visible {
-  background: #f8fafc;
-  border-color: rgba(37, 99, 235, 0.32);
-}
-
-.script-library-folder-icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: #fff5e5;
+.script-library-folder-row .script-library-card-icon-tile {
+  background: linear-gradient(150deg, #fffbf2, #fff0d9);
+  box-shadow: inset 0 0 0 1px rgba(161, 98, 7, 0.10);
   color: #a16207;
-  flex: 0 0 auto;
 }
 
 .script-library-folder-name {
-  flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 600;
 }
 
-.script-library-folder-chevron,
-.script-library-parent-row > svg {
-  flex: 0 0 auto;
-  color: var(--muted);
-}
-
 .script-library-parent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-height: 36px;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
-  border-color: transparent;
   color: var(--muted);
   padding: 5px 8px;
 }
 
-.script-library-tree-toggle {
-  display: none;
-  margin-left: auto;
-  padding: 2px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
+.script-library-parent-row:hover,
+.script-library-parent-row:focus-visible {
+  background: #f8fafc;
 }
 
+.script-library-tree-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.script-library-tree-toggle.is-open {
+  color: var(--primary);
+  background: #eef4ff;
+}
+
+.script-library-tree-toggle:hover {
+  color: var(--primary);
+  background: #e8f0ff;
+}
+
+.script-library-tree-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.script-library-tree-toggle > svg {
+  flex: 0 0 auto;
+}
+
+.script-library-folder-list,
 .script-library-card-list {
   display: grid;
   gap: 12px;
@@ -1975,10 +2047,11 @@ export default {
   grid-template-columns: 1fr;
 }
 
-.script-library-card {
+.script-library-card,
+.script-library-folder-row:not(.script-library-parent-row) {
   container-type: inline-size;
   min-width: 0;
-  padding: 16px;
+  padding: 12px 14px;
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 13px;
   background: var(--bg-card);
@@ -1991,7 +2064,9 @@ export default {
 }
 
 .script-library-card:hover,
-.script-library-card:focus-within {
+.script-library-card:focus-within,
+.script-library-folder-row:not(.script-library-parent-row):hover,
+.script-library-folder-row:not(.script-library-parent-row):focus-visible {
   border-color: rgba(37, 99, 235, 0.32);
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.045), 0 7px 20px rgba(37, 99, 235, 0.07);
 }
@@ -2010,8 +2085,8 @@ export default {
 
 .script-library-card-icon-tile {
   grid-column: 1;
-  grid-row: 1 / span 3;
-  align-self: start;
+  grid-row: 1 / span 2;
+  align-self: center;
   width: 42px;
   height: 42px;
   display: grid;
@@ -2025,7 +2100,7 @@ export default {
 .script-library-card-heading {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   min-width: 0;
 }
@@ -2053,15 +2128,6 @@ export default {
   font-weight: 650;
   letter-spacing: -0.015em;
   color: var(--text);
-  overflow-wrap: anywhere;
-}
-
-.script-library-card-path {
-  min-width: 0;
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2074,10 +2140,8 @@ export default {
   line-height: 19px;
   color: var(--muted);
   overflow: hidden;
-  word-break: break-word;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .script-tags {
@@ -2093,6 +2157,10 @@ export default {
 .script-library-card-tags {
   margin: 0;
   align-items: center;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+  max-width: 62%;
   gap: 5px;
 }
 
@@ -2100,6 +2168,17 @@ export default {
   border-radius: 999px;
   font-size: 11px;
   padding-inline: 7px;
+  min-width: 0;
+}
+
+.script-library-card-tags :deep(.el-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.script-library-card-tags :deep(.el-tag--warning) {
+  flex-shrink: 0;
 }
 
 .script-library-card-actions {
@@ -2110,6 +2189,14 @@ export default {
   white-space: nowrap;
   padding-left: 14px;
   border-left: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.script-library-folder-enter {
+  min-height: 32px;
+  justify-content: flex-end;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .script-library-empty {
@@ -2158,21 +2245,31 @@ export default {
   }
 }
 
+.script-library-shell.script-library-tree-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @media (max-width: 760px) {
   .script-library-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(120px, 28%) minmax(0, 1fr);
   }
 
   .script-library-tree,
   .script-library-directory {
     height: auto;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
   }
 
-  .script-library-tree-toggle { display: inline-flex; align-items: center; }
-  .script-library-shell.script-library-tree-collapsed { grid-template-rows: auto minmax(0, 1fr); }
-  .script-library-tree-collapsed .script-library-tree > .script-library-pane-scroll { display: none; }
-  .script-library-tree-collapsed .script-library-tree-title { margin-bottom: 0; }
+  .script-library-directory { padding: 0; border: 0; }
+  .script-library-directory .script-library-pane-scroll { padding-right: 0; }
+  .script-library-folder-list,
+  .script-library-card-list { padding: 2px 0 8px; }
+  .script-library-directory-top { gap: 6px; }
+
+  .script-library-shell.script-library-tree-collapsed { grid-template-rows: minmax(0, 1fr); }
 }
 
 @media (max-width: 768px), (max-height: 720px) {
@@ -2248,6 +2345,10 @@ export default {
   }
   .script-library-card-actions :deep(.el-button),
   .script-library-card-actions :deep(.el-dropdown) { width: 100%; min-width: 0; }
+  .script-library-folder-enter {
+    display: flex;
+    min-height: 43px;
+  }
 }
 
 /* Keep all three actions together on narrow cards, with touch-friendly targets. */
@@ -2269,8 +2370,15 @@ export default {
     min-width: 0;
     padding: 0 5px;
   }
-  .script-library-card { padding: 10px; gap: 10px; }
-  .script-library-directory { padding: 8px; }
+  .script-library-card,
+  .script-library-folder-row:not(.script-library-parent-row) { padding: 10px; gap: 10px; }
+  .script-library-toolbar-right .script-library-search {
+    flex: 1 1 120px;
+    width: auto;
+    min-width: 0;
+  }
+  .script-library-toolbar-right { justify-content: flex-start; }
+  .script-library-breadcrumb-item { max-width: 112px; }
 }
 </style>
 
@@ -2358,10 +2466,7 @@ export default {
     min-width: 0;
   }
   .script-library-overlay .script-library-shell.script-library-tree-collapsed {
-    grid-template-rows: auto auto;
-  }
-  .script-library-overlay .script-library-tree-collapsed .script-library-tree {
-    height: auto !important;
+    grid-template-rows: auto;
   }
   .script-library-overlay .script-library-directory {
     max-width: 100%;
