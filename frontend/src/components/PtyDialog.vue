@@ -75,6 +75,7 @@
                 <el-dropdown-item command="focus" :disabled="!ptyTerm">Focus</el-dropdown-item>
                 <el-dropdown-item command="paste" :disabled="!ptySessionId || ptyClosing">Paste</el-dropdown-item>
                 <el-dropdown-item command="copy" :disabled="!ptyTerm">Copy</el-dropdown-item>
+                <el-dropdown-item command="clear" :disabled="!ptyTerm">Clear</el-dropdown-item>
                 <el-dropdown-item command="save-artifact" :disabled="!ptyTerm || ptySaving">Save to Artifact</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -508,6 +509,18 @@ export default {
       }
     },
 
+    clearPtyOutput() {
+      const term = this.ptyTerm
+      if (!term) return
+
+      // Queue behind pending output; erase the screen and scrollback without resetting terminal modes.
+      term.write('\x1b[2J\x1b[3J\x1b[H', () => {
+        if (this.ptyTerm !== term) return
+        term.clearSelection()
+        this.focusPtyInput()
+      })
+    },
+
     writePtyOutput(text) {
       if (!text) return
       if (this.ptyTerm) {
@@ -524,6 +537,7 @@ export default {
       if (command === 'focus') this.focusPtyInput()
       else if (command === 'paste') void this.pasteIntoPty()
       else if (command === 'copy') void this.copyPtyOutput()
+      else if (command === 'clear') this.clearPtyOutput()
       else if (command === 'save-artifact') void this.savePtyOutputArtifact()
     },
 

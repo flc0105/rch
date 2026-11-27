@@ -94,3 +94,35 @@ test('mobile pinned paths are cards; desktop actions remain present', () => {
   assert.match(pinsSource, /@media \(max-width: 768px\)/)
   assert.equal((pinsSource.match(/command="open_pty"/g) || []).length, 2)
 })
+
+
+test('PTY More Clear queues a real screen and scrollback erase without touching the session', () => {
+  const clear = method(ptySource, 'clearPtyOutput')
+  const dispatch = method(ptySource, 'handlePtyMoreCommand')
+  const events = []
+  const pending = []
+  const term = {
+    write(text, done) { pending.push([text, done]) },
+    clearSelection() { events.push('selection') },
+  }
+  const dialog = {
+    ptyTerm: term, ptySessionId: 'live', ptySeq: 27,
+    clearPtyOutput: clear, focusPtyInput() { events.push('focus') },
+  }
+  assert.match(ptySource, /<el-dropdown-item command="clear" :disabled="!ptyTerm">Clear<\/el-dropdown-item>/)
+  term.write('old output')
+  dispatch.call(dialog, 'clear')
+  term.write('new output')
+  assert.deepEqual(pending.map(item => item[0]), ['old output', '\x1b[2J\x1b[3J\x1b[H', 'new output'])
+  assert.deepEqual(events, [])
+  pending[1][1]()
+  assert.deepEqual(events, ['selection', 'focus'])
+  assert.equal(dialog.ptySessionId, 'live')
+  assert.equal(dialog.ptySeq, 27)
+  dispatch.call(dialog, 'clear')
+  dialog.ptyTerm = null
+  pending[3][1]()
+  dispatch.call(dialog, 'clear')
+  assert.deepEqual(events, ['selection', 'focus'])
+  assert.equal(pending.length, 4)
+})
