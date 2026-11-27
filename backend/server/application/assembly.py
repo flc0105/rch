@@ -35,6 +35,7 @@ from server.application.preferences.toolbar_preference_store import ToolbarPrefe
 from server.application.preferences.notification_preference_store import NotificationPreferenceStore
 from server.application.preferences.terminal_context_preference_store import TerminalContextPreferenceStore
 from server.application.preferences.notification_history_store import NotificationHistoryStore
+from server.application.preferences.notification_history_service import NotificationHistoryService
 from server.application.preferences.notification_event_projector import NotificationEventProjector
 from server.application.scripts.script_catalog_service import ScriptCatalogService
 from server.application.tasks.task_runner import WebTaskRunner
@@ -46,6 +47,7 @@ from server.application.screen.screen_view_session_service import ScreenViewSess
 from server.application.clipboard.clipboard_session_service import ClipboardSessionService
 from server.application.monitor.device_monitor_session_service import DeviceMonitorSessionService
 from server.application.transfers.transfer_service import TransferService
+from server.application.transfers.browser_upload_service import BrowserUploadService
 from server.application.transfers.tcp_transport import TcpTransferTransport
 from server.application.web.agent_api import WebAgentApi
 from server.application.web.artifact_api import WebArtifactApi
@@ -169,6 +171,7 @@ class ServerApplicationAssembly:
             recent_device_store=self.recent_device_store,
             connection_history_store=self.connection_history_store,
             client_session_token_service=self.client_session_token_service,
+            transfer_service=self.transfer_service,
         )
 
         self.task_runner = WebTaskRunner(
@@ -241,14 +244,12 @@ class ServerApplicationAssembly:
             preference_store=self.terminal_context_preference_store,
         )
 
-        self.notification_history_api = WebNotificationHistoryApi(
-            history_store=self.notification_history_store,
-            event_bus=self.event_bus,
-        )
+        self.notification_history_service = NotificationHistoryService(self.notification_history_store, self.event_bus)
+        self.notification_history_api = WebNotificationHistoryApi(self.notification_history_service)
 
         self.server_cleanup_service = ServerCleanupService(
             event_bus=self.event_bus,
-            notification_history_api=self.notification_history_api,
+            notification_history_service=self.notification_history_service,
             artifact_service=self.artifact_service,
             agent_output_registry=self.agent_output_registry,
             cleanup_items=SERVER_CLEANUP_ITEMS,
@@ -382,11 +383,10 @@ class ServerApplicationAssembly:
             device_monitor_session_service=self.device_monitor_session_service,
         )
 
-        self.transfer_api = WebTransferApi(
-            transfer_service=self.transfer_service,
-            server=self.server,
-            command_execution_api=self.command_execution_api,
-        )
+        self.browser_upload_service = BrowserUploadService(self.transfer_service,
+            upload_task_service=self.upload_task_service, artifact_service=self.artifact_service)
+        self.transfer_api = WebTransferApi(self.transfer_service, self.browser_upload_service,
+                                           self.server.get_target_connection_by_client_id)
 
         self._wire_cross_dependencies()
         self.command_executor_factory.bind_builtin_services(CommandBuiltinServices(

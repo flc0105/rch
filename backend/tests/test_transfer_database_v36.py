@@ -151,7 +151,9 @@ def test_browser_cancel_respects_dispatch_boundary(setup, stage, managed, expect
     from server.application.web.transfer_api import WebTransferApi
     _, service, _ = setup
     messages = []
-    api = WebTransferApi(service, SimpleNamespace(get_target_connection_by_client_id=lambda _: SimpleNamespace(send=messages.append)))
+    from server.application.transfers.browser_upload_service import BrowserUploadService
+    uploads = BrowserUploadService(service, upload_task_service=None)
+    api = WebTransferApi(service, uploads, lambda _: SimpleNamespace(send=messages.append))
     item = api.create_browser_upload_transfer(client_id='test', filename='test.bin', total_bytes=10, tab_id='tab')
     transfer = item['transfer_id']
     service.update_transfer(transfer, stage=stage, metadata={
@@ -161,7 +163,7 @@ def test_browser_cancel_respects_dispatch_boundary(setup, stage, managed, expect
     result = api.cancel_transfer(transfer, tab_id='tab')
     assert result['state'] == expected
     if expected == 'cancelled':
-        assert not messages and api.is_browser_upload_cancel_requested(transfer)
+        assert not messages and uploads.is_browser_upload_cancel_requested(transfer)
     else:
         assert result['stage'] == 'cancelling'
         assert api.cancel_transfer(transfer, tab_id='tab')['state'] == 'running'
@@ -181,7 +183,7 @@ def test_cancel_dispatch_can_be_retried_after_send_failure(setup):
         messages.append(message)
         if len(messages) == 1:
             raise OSError('injected main-channel send failure')
-    api = WebTransferApi(service, SimpleNamespace(get_target_connection_by_client_id=lambda _: SimpleNamespace(send=send)))
+    api = WebTransferApi(service, None, lambda _: SimpleNamespace(send=send))
     with pytest.raises(OSError, match='main-channel send failure'):
         api.cancel_transfer(transfer, tab_id='old-tab')
     assert api.cancel_transfer(transfer, tab_id='old-tab')['stage'] == 'cancelling'

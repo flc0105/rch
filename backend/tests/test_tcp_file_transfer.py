@@ -118,7 +118,7 @@ def environment(request, monkeypatch, tmp_path):
             (install / 'client.key').chmod(0o600)
         monkeypatch.setitem(RUNTIME_CONFIG, 'identity_dir', str(install))
         tcp.identity_store = store
-    server = SimpleNamespace(web_service=SimpleNamespace(transfer_api=SimpleNamespace(transfer_service=transfers)))
+    server = SimpleNamespace(web_service=SimpleNamespace(assembly=SimpleNamespace(transfer_service=transfers)))
     session = SimpleNamespace(session_info=SimpleNamespace(client_id='client-1', machine_id='machine-1',
                                                            hostname='localhost', addr='127.0.0.1'),
                               listener_id='test', listener_protocol=proto, context=SimpleNamespace())
@@ -427,8 +427,7 @@ def test_cancel_waits_for_client_context(environment, tmp_path, monkeypatch, dir
     else:
         env.manager.start_transfer(transfer, 'server_to_client_file', {'filename': source.name, 'save_dir': str(target)})
     pending = []
-    api = WebTransferApi(env.transfers, SimpleNamespace(
-        get_target_connection_by_client_id=lambda _: SimpleNamespace(send=pending.append)))
+    api = WebTransferApi(env.transfers, None, lambda _: SimpleNamespace(send=pending.append))
     try:
         assert entered.wait(5)
         assert api.cancel_transfer(transfer)['stage'] == 'cancelling'
@@ -474,8 +473,8 @@ def test_repeated_cancel_during_client_commit(environment, tmp_path, monkeypatch
     env.transfers.update_transfer(transfer, metadata={'source': 'remote_file_upload', 'browser_stage': False})
     env.manager.start_transfer(transfer, 'server_to_client_file', {'filename': source.name, 'save_dir': str(target)})
     replies = []
-    api = WebTransferApi(env.transfers, SimpleNamespace(get_target_connection_by_client_id=lambda _: SimpleNamespace(
-        send=lambda message: replies.append(env.manager.cancel_transfer(message['transfer_id'])))))
+    api = WebTransferApi(env.transfers, None, lambda _: SimpleNamespace(
+        send=lambda message: replies.append(env.manager.cancel_transfer(message['transfer_id']))))
     try:
         assert entered.wait(5)
         assert api.cancel_transfer(transfer)['stage'] == 'cancelling'
@@ -506,8 +505,7 @@ def test_cancel_before_server_artifact_commit(environment, tmp_path, monkeypatch
     transfer = create(env, 'client_to_server', source.name)
     env.manager.start_transfer(transfer, 'client_to_server_file', {'path': str(source)})
     pending = []
-    api = WebTransferApi(env.transfers, SimpleNamespace(
-        get_target_connection_by_client_id=lambda _: SimpleNamespace(send=pending.append)))
+    api = WebTransferApi(env.transfers, None, lambda _: SimpleNamespace(send=pending.append))
     try:
         assert entered.wait(5)
         assert api.cancel_transfer(transfer)['stage'] == 'cancelling'
@@ -820,7 +818,7 @@ def test_inline_cancel_from_transfer_center(environment, tmp_path, monkeypatch):
         assert entered.wait(5)
         item = env.transfers.list_transfers(tab_id='inline-tab')['active'][0]
         assert not env.transfers.list_transfers(tab_id='other-tab')['active']
-        api = WebTransferApi(env.transfers, SimpleNamespace(get_target_connection_by_client_id=lambda _:env.session))
+        api = WebTransferApi(env.transfers, None, lambda _:env.session)
         api.cancel_transfer(item['transfer_id'], tab_id='inline-tab')
         wait_until(owner.execution_context.is_cancel_requested)
     finally:

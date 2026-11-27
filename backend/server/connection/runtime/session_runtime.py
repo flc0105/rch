@@ -31,47 +31,6 @@ class ClientSessionRuntime:
     def set_foreground_task_listener(self, listener):
         self._execution_runtime.set_foreground_task_listener(listener)
 
-    # ------------------ unified execution binding ------------------ #
-    def bind_command_execution(
-        self,
-        command_id: int,
-        session=None,
-        history_entry_id: str = '',
-        coordinator=None,
-        bind_foreground=True,
-    ):
-        """
-        在命令实际下发时，统一绑定：
-        - foreground task.command_id
-        - command_id -> history_entry_id
-        """
-        return self._execution_runtime.bind_command_execution(
-            command_id,
-            session=session,
-            history_entry_id=history_entry_id,
-            coordinator=coordinator,
-            bind_foreground=bind_foreground,
-        )
-
-    # ------------------ history binding ------------------ #
-    def bind_history_entry(self, command_id: int, entry_id: str):
-        """
-        绑定 command_id -> history entry_id
-        """
-        self._execution_runtime.bind_history_entry(command_id, entry_id)
-
-    def get_history_entry_id(self, command_id: int) -> str:
-        """
-        获取指定 command_id 绑定的 history entry_id
-        """
-        return self._execution_runtime.get_history_entry_id(command_id)
-
-    def clear_history_entry(self, command_id: int):
-        """
-        清理指定 command_id 的历史绑定
-        """
-        self._execution_runtime.clear_history_entry(command_id)
-
     # ------------------ foreground task ------------------ #
     def acquire_foreground_task(
         self,
@@ -79,7 +38,6 @@ class ClientSessionRuntime:
         command: str,
         source: str = '',
         task_id: str = '',
-        history_entry_id: str = '',
         web_task: bool = False,
         tab_id: str = '',
         cancel_policy: str = '',
@@ -92,7 +50,6 @@ class ClientSessionRuntime:
             command=command,
             source=source,
             task_id=task_id,
-            history_entry_id=history_entry_id,
             web_task=web_task,
             tab_id=tab_id,
             cancel_policy=cancel_policy,
@@ -134,7 +91,7 @@ class ClientSessionRuntime:
     # ------------------ result wait ------------------ #
     def wait_for_result(self, connection, command_id: int, command: Optional[str], *, results=None, timeout=None):
         """
-        主线程等待接收结果，并保存执行记录
+        等待并返回对应命令的结果事件
         """
         if results is None:
             results = self.pending_results.register(command_id)
@@ -162,21 +119,3 @@ class ClientSessionRuntime:
                     break
         finally:
             self.pending_results.remove(command_id)
-            try:
-                coordinator = getattr(connection.context, 'activity_coordinator', None)
-                if coordinator is not None:
-                    coordinator.clear_command_entry(connection, command_id)
-                else:
-                    self.clear_history_entry(command_id)
-            except Exception:
-                pass
-
-
-
-
-
-
-
-
-
-

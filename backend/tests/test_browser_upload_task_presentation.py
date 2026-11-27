@@ -107,9 +107,9 @@ def test_batch_submission_creates_exactly_one_native_upload_task():
     remote = SimpleNamespace(open_browser_batch=opened.append,
         format_display_command=UploadExecutionService.format_display_command, cancel_task=lambda *_: None,
         enqueue_browser_upload=lambda *args, **kwargs: queued.append((args, kwargs)) or {})
-    api = WebCommandExecutionApi(task_service, upload_task_service=UploadTaskService(task_service, remote),
-                                 task_runner=None)
-    api.submit_web_upload_batch({'batch_id': 'b', 'total_files': 2, 'destination_path': '/dest',
+    uploads = UploadTaskService(task_service, remote)
+    api = WebCommandExecutionApi(task_service, upload_task_service=uploads, task_runner=None)
+    uploads.submit_batch({'batch_id': 'b', 'total_files': 2, 'destination_path': '/dest',
         'client_id': 'c', 'tab_id': 'tab', 'transfer_id': 'batch:b'})
     for i in range(2):
         api.submit_web_upload('c', f'/tmp/f{i}', f'f{i}', '/dest', tab_id='tab',

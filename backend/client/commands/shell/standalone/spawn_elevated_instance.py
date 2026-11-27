@@ -17,7 +17,7 @@ from client.runtime.client_util import get_executable_path, get_runtime_root
 from client.runtime.temp_workspace import make_client_startup_log
 from core.protocol.result_envelope import ResultEnvelope
 from core.protocol.references import log_file_reference
-from core.utils.decorator import confirm
+from client.runtime.execution.command_confirmation import confirm
 
 
 # ShellExecuteW can request UAC elevation but cannot set CreateProcess flags.

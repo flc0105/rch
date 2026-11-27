@@ -4,14 +4,14 @@ class ClientSessionContext:
 
     职责：
     - 保存不属于 transport 本体、也不属于 runtime 队列的数据
-    - 保存上层（CLI / Web / history / artifact）注入到会话中的上下文能力
+    - 保存上层（CLI / Web / artifact）注入到会话中的上下文能力
     - 保存会话心跳/存活状态信息
 
     当前承载：
     - is_interactive
-    - command_history
     - artifact_service
     - client_session_token_service
+    - command_dispatch：可选请求中间件，接受会话、请求及实际派发回调
     - on_unexpected_message
     - on_heartbeat_updated
     - connected_at
@@ -25,9 +25,7 @@ class ClientSessionContext:
 
     def __init__(self):
         self.is_interactive = False
-        self.command_history = None
-        self.activity_coordinator = None
-        self.command_dispatch_adapter = None
+        self.command_dispatch = None
         self.artifact_service = None
         self.client_session_token_service = None
         self.client_session_token = ""

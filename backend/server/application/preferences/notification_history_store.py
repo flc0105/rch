@@ -109,6 +109,12 @@ class NotificationHistoryStore:
                 'notifications': [self._row_to_notification(row) for row in rows],
             }
 
+    def list_cleanup_candidates(self):
+        with self._lock:
+            rows = self.database.connection().execute(
+                'SELECT * FROM notifications ORDER BY shown_at_ms DESC, id DESC').fetchall()
+            return [self._row_to_notification(row) for row in rows]
+
     def get_notifications_after(self, notification_id: str) -> dict:
         """Return notifications inserted after a durable SSE cursor.
 

@@ -96,7 +96,7 @@ class ServerListener(SessionAcceptor):
     def route_accepted_connection(self, raw_sock, addr, packet, transport):
         if isinstance(packet, dict) and packet.get('type') == DATA_GREETING:
             web = getattr(self.server, 'web_service', None)
-            service = getattr(getattr(web, 'transfer_api', None), 'transfer_service', None)
+            service = getattr(getattr(web, 'assembly', None), 'transfer_service', None)
             handler = getattr(service, 'tcp_transport', None)
             if handler is not None:
                 handler.accept_reverse(raw_sock, packet, self)

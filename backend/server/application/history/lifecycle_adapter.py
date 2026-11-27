@@ -119,6 +119,7 @@ class LifecycleAdapter:
                     logger.exception('Unable to update Client Activity')
 
     def disconnected(self, conn):
+        self.coordinator.clear_connection_entries(conn)
         with self._lock:
             for key, state in list(self._active.items()):
                 if state['conn'] is not conn:

@@ -5,6 +5,7 @@ import pytest
 from server.application.transfers.transfer_service import TransferService
 from server.application.preferences.notification_history_store import NotificationHistoryStore
 from server.application.web.notification_history_api import WebNotificationHistoryApi
+from server.application.preferences.notification_history_service import NotificationHistoryService
 from pathlib import Path
 import ast
 from server.persistence.rch_database import RchDatabase
@@ -72,13 +73,13 @@ def test_notifications_have_sql_count_and_paginated_filtered_rows(database):
     assert len(last['notifications']) == 5
     assert len({n['id'] for p in (first, second, last) for n in p['notifications']}) == 45
 
-    errors = WebNotificationHistoryApi(store).get_history(notification_type='error')
+    errors = WebNotificationHistoryApi(NotificationHistoryService(store)).get_history(notification_type='error')
     assert errors['total_count'] == 45
     assert errors['filtered_count'] == 15
     assert len(errors['notifications']) == 15
     assert all(n['type'] == 'error' for n in errors['notifications'])
     with pytest.raises(ValueError, match='Invalid notification type'):
-        WebNotificationHistoryApi(store).get_history(notification_type='bogus')
+        WebNotificationHistoryApi(NotificationHistoryService(store)).get_history(notification_type='bogus')
     assert store.get_history()['total_count'] == 45
 
 

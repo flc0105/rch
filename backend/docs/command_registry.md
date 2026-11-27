@@ -48,7 +48,7 @@ Web Terminal / Server CLI
 
 ### `@shell_command` 是导出契约
 
-普通命令使用 `core.utils.decorator.desc`：
+普通命令使用 `client.commands.shell.decorators.shell_command`：
 
 ```python
 from client.commands.shell.decorators import shell_command

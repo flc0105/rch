@@ -1,5 +1,6 @@
 """Transfer batches own their durable identity; each file retains its native transfer."""
 
+from server.application.transfers.browser_upload_service import BrowserUploadService
 from server.application.web.transfer_api import WebTransferApi
 from server.application.preferences.notification_event_projector import NotificationEventProjector
 from server.application.transfers.transfer_service import TransferService
@@ -24,7 +25,7 @@ def fixture(tmp_path):
         history_store=notifications, server=None).record_event)
     service = TransferService(bus, db)
     from types import SimpleNamespace
-    return db, bus, notifications, service, WebTransferApi(service, command_execution_api=SimpleNamespace(submit_web_upload_batch=lambda batch: {'task_id': batch['batch_id']}))
+    return db, bus, notifications, service, BrowserUploadService(service, upload_task_service=SimpleNamespace(submit_batch=lambda batch: {'task_id': batch['batch_id']}))
 
 
 def begin(api, batch_id='batch-1', total=100, tab='tab', folders=3):
@@ -238,8 +239,8 @@ def test_cancel_batch_rejects_other_tab_and_cleans_grants(tmp_path):
         begin(api, total=3)
         first = member(api, 0, total=3)
         with pytest.raises(ValueError):
-            api.cancel_transfer('batch:batch-1', tab_id='other')
-        result = api.cancel_transfer('batch:batch-1', tab_id='tab')
+            WebTransferApi(service, api, None).cancel_transfer('batch:batch-1', tab_id='other')
+        result = WebTransferApi(service, api, None).cancel_transfer('batch:batch-1', tab_id='tab')
         assert result['state'] == 'cancelled'
         assert result['cancelled_files'] == 1 and result['unsubmitted_files'] == 2
         assert api.consume_browser_upload_grant(first['transfer_id'], first['browser_upload_token']) is None
@@ -256,7 +257,7 @@ def test_disconnect_and_idle_close_incomplete_submissions(tmp_path):
         begin(api, total=2)
         first = member(api, 0, total=2)
         service.complete_transfer(first['transfer_id'])
-        api.handle_client_disconnected('client')
+        service.fail_active_transfers_for_client('client', 'Client disconnected during file transfer')
         assert service.get_batch('batch-1')['state'] == 'failed'
         begin(api, 'idle', total=2)
         item = member(api, 0, total=2, batch_id='idle')
@@ -372,7 +373,7 @@ def test_batch_completed_byte_counts_do_not_include_browser_intake(tmp_path):
 def test_expired_unused_grant_fails_without_consuming_bytes(tmp_path, monkeypatch):
     db, _, _, service, api = fixture(tmp_path)
     try:
-        from server.application.web import transfer_api as module
+        from server.application.transfers import browser_upload_service as module
         monkeypatch.setattr(module.time, 'monotonic', lambda: 100)
         item = api.create_browser_upload_transfer(client_id='client', filename='a', total_bytes=1, tab_id='tab')
         monkeypatch.setattr(module.time, 'monotonic', lambda: 401)

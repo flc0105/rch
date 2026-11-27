@@ -317,6 +317,11 @@ class PtySessionService:
                     self._cleanup_timers.pop(session_id, None)
             raise
 
+    def get_ws_info(self, pty_session_id: str) -> dict:
+        with self._lock:
+            item = self._get_required(pty_session_id)
+            return {'pty_session_id': item['pty_session_id'], 'ws_token': item.get('ws_token') or ''}
+
     def _get_required(self, pty_session_id: str) -> dict:
         with self._lock:
             item = self._sessions.get(str(pty_session_id))

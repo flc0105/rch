@@ -12,6 +12,7 @@ class ActivityCoordinator:
         self.history_store = history_store
         self.quick_store = history_store.quick_store
         self._pending = {}
+        self._command_entries = {}
         self._lock = threading.RLock()
 
     def prepare(self, conn, operation, *, entry_id='', quick_command=None):
@@ -108,24 +109,23 @@ class ActivityCoordinator:
         self.history_store.update_entry_status_for_connection(conn, entry_id, final_status, cwd_end=cwd_end)
 
     def bind_command_entry(self, conn, command_id, entry_id):
-        if conn is None or not command_id or not entry_id:
-            return
-        try:
-            conn.bind_history_entry(command_id, entry_id)
-        except Exception:
-            pass
+        if conn is not None and command_id and entry_id:
+            with self._lock:
+                self._command_entries[(id(conn), command_id)] = (conn, entry_id)
 
     def get_bound_entry_id(self, conn, command_id):
-        try:
-            return conn.get_history_entry_id(command_id)
-        except Exception:
-            return ''
+        with self._lock:
+            item = self._command_entries.get((id(conn), command_id))
+            return item[1] if item is not None and item[0] is conn else ''
 
     def clear_command_entry(self, conn, command_id):
-        try:
-            conn.clear_history_entry(command_id)
-        except Exception:
-            pass
+        with self._lock:
+            self._command_entries.pop((id(conn), command_id), None)
+
+    def clear_connection_entries(self, conn):
+        with self._lock:
+            for key in [key for key in self._command_entries if key[0] == id(conn)]:
+                self._command_entries.pop(key, None)
 
     def bind_uploaded_artifact(self, conn, source_command_id, artifact):
         if conn is None or source_command_id is None or not isinstance(artifact, dict) or not artifact:

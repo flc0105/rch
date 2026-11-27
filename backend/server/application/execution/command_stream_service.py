@@ -104,16 +104,14 @@ class CommandStreamService:
         link_foreground_cancel: bool = False,
     ):
         session = self.get_connection(target)
-        return session.send_command(
-            command,
-            type=command_type,
-            extra=extra,
-            payload=payload,
-            domain=domain,
-            action=action,
-            history_entry_id=history_entry_id,
+        kwargs = dict(
+            type=command_type, extra=extra, payload=payload, domain=domain, action=action,
             **({'link_foreground_cancel': True} if link_foreground_cancel else {}),
         )
+        adapter = getattr(self.server, 'command_adapter', None)
+        if adapter is not None:
+            return adapter.send_command(session, command, entry_id=history_entry_id, **kwargs)
+        return session.send_command(command, **kwargs)
 
     def stream_structured_command(
         self,

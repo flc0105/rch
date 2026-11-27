@@ -65,21 +65,11 @@ class ClientSession:
             'command': previous.get('command') or str(command or '').strip(),
         }
 
-    def bind_history_entry(self, command_id: int, entry_id: str):
-        self.runtime.bind_history_entry(command_id, entry_id)
-
-    def get_history_entry_id(self, command_id: int) -> str:
-        return self.runtime.get_history_entry_id(command_id)
-
-    def clear_history_entry(self, command_id: int):
-        self.runtime.clear_history_entry(command_id)
-
-    def send_command(self, command: str, type='command', extra=None, history_entry_id: str = '', payload=None, domain='', action='', link_foreground_cancel=False):
+    def send_command(self, command: str, type='command', extra=None, payload=None, domain='', action='', link_foreground_cancel=False):
         return self.command_channel.send_command(
             command,
             type=type,
             extra=extra,
-            history_entry_id=history_entry_id,
             payload=payload,
             domain=domain, action=action,
             **({'link_foreground_cancel': True} if link_foreground_cancel else {}),
@@ -123,7 +113,6 @@ class ClientSession:
         command: str,
         source: str = '',
         task_id: str = '',
-        history_entry_id: str = '',
         web_task: bool = False,
         tab_id: str = '',
         cancel_policy: str = '',
@@ -133,7 +122,6 @@ class ClientSession:
             command=command,
             source=source,
             task_id=task_id,
-            history_entry_id=history_entry_id,
             web_task=web_task,
             tab_id=tab_id,
             cancel_policy=cancel_policy,

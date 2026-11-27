@@ -97,17 +97,6 @@ class WebTaskRunner:
             return current
         return {}
 
-    def _get_history_entry_id(self, context: TaskExecutionContext) -> str:
-        runtime_task = self._get_runtime_task_context(context)
-        if runtime_task.get('history_entry_id'):
-            return runtime_task.get('history_entry_id') or ''
-
-        if context.history_entry_id:
-            return context.history_entry_id
-
-        task = self._get_task(context.task_id)
-        return task.get('history_entry_id') or ''
-
     def _get_task_cancel_requested(self, context: TaskExecutionContext) -> bool:
         runtime_task = self._get_runtime_task_context(context)
         if runtime_task:
@@ -133,7 +122,7 @@ class WebTaskRunner:
         return None
 
     def _finalize_history(self, context: TaskExecutionContext, final_status: str):
-        history_entry_id = self._get_history_entry_id(context)
+        history_entry_id = context.history_entry_id
         self.activity_coordinator.finish(
             context.session,
             history_entry_id,
@@ -149,7 +138,7 @@ class WebTaskRunner:
             'command_result',
             {
                 'task_id': context.task_id,
-                'history_entry_id': self._get_history_entry_id(context),
+                'history_entry_id': context.history_entry_id,
                 'client_id': context.client_id,
                 'command': context.command,
                 'command_id': self._get_runtime_command_id(context),
@@ -171,7 +160,7 @@ class WebTaskRunner:
             'command_result_batch',
             {
                 'task_id': context.task_id,
-                'history_entry_id': self._get_history_entry_id(context),
+                'history_entry_id': context.history_entry_id,
                 'client_id': context.client_id,
                 'command': context.command,
                 'command_id': self._get_runtime_command_id(context),
@@ -191,7 +180,7 @@ class WebTaskRunner:
             'command_complete',
             {
                 'task_id': context.task_id,
-                'history_entry_id': self._get_history_entry_id(context),
+                'history_entry_id': context.history_entry_id,
                 'client_id': context.client_id,
                 'command': context.command,
                 'command_id': self._get_runtime_command_id(context),
@@ -310,7 +299,6 @@ class WebTaskRunner:
                 del context._result_batch
 
     def iter_command_events(self, context: TaskExecutionContext):
-        context.history_entry_id = self._get_history_entry_id(context)
         executor = self.command_executor_factory.create(context.session)
         yield from self.command_execution_pipeline.iter_events(
             context,
@@ -322,7 +310,6 @@ class WebTaskRunner:
     def iter_control_events(self, context: TaskExecutionContext):
         from core.protocol.message_types import MSG_TYPE_CONTROL
 
-        context.history_entry_id = self._get_history_entry_id(context)
         control = context.control
         if control is None:
             raise ValueError('Control request is required')

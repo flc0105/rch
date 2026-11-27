@@ -209,7 +209,7 @@ Web Remote Upload 的终端块由前台显示 `[Remote Upload]` 起始标题和�
 
 ### 从 HTTP / Socket 到 WebSocket 的进度传播
 
-Python Client 的受管理任务在独立 Worker 或当前命令/Control 内调用进度回调，并通过**Socket 的 `transfer_update` 消息**回报 Server；状态信息不混在命令 stdout/stderr 中。对于 Browser → Server 第一段，进度由 8085 的文件接收循环直接更新 Server 的 `TransferService`，不经过 Client Socket。
+Python Client 的受管理任务在独立 Worker 或当前命令/Control 内调用进度回调，并通过**Socket 的 `transfer_update` 消息**回报 Server；状态信息不混在命令 stdout/stderr 中。对于 Browser → Server 第一段，进度由 Browser Upload 业务服务通过 `TransferService` 更新；HTTP 层仅接收令牌与原始流。浏览器上传服务管理一次性 Grant、批次幂等、暂存文件与提交收尾，上传任务服务接管已暂存文件。
 
 Server 根据收到的进度字节数计算完成比例，对速率采用平滑计算，并在可用时推算 ETA；因此百分比是该阶段工作进度，而不是端到端文件完整性校验。进度上报通常做约 250 毫秒节流，完成点仍会被单独报告。发布 `transfer_updated` WebSocket 后，Web 订阅者刷新 Transfer Center；`file_transfer_lifecycle` 则提供开始、结束和失败等生命周期通知，二者服务不同目的。
 

@@ -60,6 +60,7 @@ class CommandDispatchAdapter:
         self.connection_lookup = connection_lookup
         self.lifecycle_adapter = None
         self._scope = contextvars.ContextVar('rch_activity_command_scope', default=None)
+        self._dispatch_entry = contextvars.ContextVar('rch_activity_dispatch_entry', default=None)
 
     def bind_lifecycle_adapter(self, adapter):
         self.lifecycle_adapter = adapter
@@ -160,6 +161,45 @@ class CommandDispatchAdapter:
 
     def suppress_query(self, conn, activity_id):
         self.coordinator.drop(activity_id)
+
+    def send_command(self, conn, command, *, entry_id='', **kwargs):
+        # Explicit intent belongs to the application dispatch scope, not the session.
+        token = self._dispatch_entry.set((conn, entry_id))
+        try:
+            return conn.send_command(command, **kwargs)
+        finally:
+            self._dispatch_entry.reset(token)
+
+    def dispatch_request(self, conn, data, send):
+        scoped = self._dispatch_entry.get()
+        entry_id = scoped[1] if scoped is not None and scoped[0] is conn else ''
+        command_id = data['id']
+        try:
+            entry_id = self.prepare_dispatch(conn, entry_id, data)
+        except Exception:
+            logger.exception('Unable to prepare request Activity')
+            entry_id = ''
+        self.coordinator.bind_command_entry(conn, command_id, entry_id)
+        try:
+            rows = send()
+        except BaseException:
+            self.coordinator.clear_command_entry(conn, command_id)
+            if entry_id:
+                self.coordinator.drop(entry_id)
+            raise
+        entry_id = self.dispatch(conn, entry_id, data)
+
+        def observed():
+            try:
+                yield from self.observe_result(conn, entry_id, data, rows)
+            finally:
+                try:
+                    close = getattr(rows, 'close', None)
+                    if close is not None:
+                        close()
+                finally:
+                    self.coordinator.clear_command_entry(conn, command_id)
+        return observed()
 
     def prepare_dispatch(self, conn, entry_id, data):
         if data['type'] != COMMAND_TYPE_CONTROL:

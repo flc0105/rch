@@ -124,14 +124,8 @@ class WebArtifactApi:
     def create_upload_temp_file(self, upload):
         return self.artifact_service.create_upload_temp_file(upload)
 
-    def create_upload_temp_path(self, filename: str, *, expected_size: int, owner: str = ''):
-        return self.artifact_service.create_upload_temp_path(filename, expected_size=expected_size, owner=owner)
-
     def reserve_upload_intake(self, size):
         return self.artifact_service.reserve_upload_intake(size)
-
-    def cleanup_upload_temp_file(self, temp_path: str):
-        self.artifact_service.cleanup_upload_temp_file(temp_path)
 
     def get_upload_temp_file_path(self, temp_id: str, filename: str):
         return self.artifact_service.get_upload_temp_file_path(temp_id, filename)

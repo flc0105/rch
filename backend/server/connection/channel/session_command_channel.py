@@ -5,9 +5,6 @@ import queue
 import time
 
 from core.protocol.result_envelope import ResultEvent
-import logging
-
-logger = logging.getLogger(__name__)
 from core.utils.timeouts import normalize_positive_timeout
 
 
@@ -54,66 +51,45 @@ class ClientSessionCommandChannel:
             'target_id': target_command_id,
         }
 
-    def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, history_entry_id: str = '', payload=None, domain='', action='', link_foreground_cancel=False):
+    def send_command(self, command: str, type=MSG_TYPE_COMMAND, extra=None, payload=None, domain='', action='', link_foreground_cancel=False):
         data = self.build_command_payload(command, type, extra, payload, domain, action)
 
         independent = type == MSG_TYPE_CONTROL and execution_policy(domain, action) == ExecutionPolicy.INDEPENDENT
         timeout = (normalize_positive_timeout((extra or {}).get('timeout')) or 3600) if independent else None
         if independent:
             data['extra'] = {**(extra or {}), 'timeout': timeout}
-        coordinator = getattr(self.session.context, 'activity_coordinator', None)
 
-        # Control Activity eligibility is decided only by the registered Action policy.
-        # Command/cancellation binding must not depend on whether Activity is recorded.
-        adapter = getattr(self.session.context, 'command_dispatch_adapter', None)
-        if adapter is not None:
-            try:
-                history_entry_id = adapter.prepare_dispatch(self.session, history_entry_id, data)
-            except Exception:
-                logger.exception("Unable to prepare request Activity")
-                history_entry_id = ""
-        bound_task = self.session.runtime.bind_command_execution(
-            data.get('id'),
-            session=self.session,
-            history_entry_id=history_entry_id,
-            coordinator=coordinator,
-            **({'bind_foreground': False} if independent else {}),
-        )
-        # Register before sending: a very fast Client (e.g. invalid download)
-        # can reply before the caller starts iterating wait_for_result().
-        pending = self.session.runtime.pending_results.register(data['id'], request=data)
-        if link_foreground_cancel:
-            # This nested Control belongs to a Server-owned foreground generator.
-            self.session.runtime.bind_foreground_command_id(data['id'])
-        try:
-            self.session.send(data)
-        except Exception:
+        bound_task = None
+
+        def dispatch():
+            nonlocal bound_task
+            bound_task = (None if independent else self.session.runtime.bind_foreground_command_id(data['id']))
+            # Register before sending: a fast Client may reply immediately.
+            pending = self.session.runtime.pending_results.register(data['id'], request=data)
             if link_foreground_cancel:
-                self.session.runtime.unbind_foreground_command_id(data['id'])
-            self.session.runtime.pending_results.remove(data['id'])
-            self.session.runtime.clear_history_entry(data['id'])
-            if adapter is not None and history_entry_id:
-                coordinator.drop(history_entry_id)
-            raise
-        # Persist only after the transport has accepted an actual Client command.
-        # The Activity policy has already been evaluated at the request boundary.
-        if adapter is not None:
-            history_entry_id = adapter.dispatch(self.session, history_entry_id, data)
-
-        if bound_task and bound_task.get('cancel_requested'):
-            self.send_cancel(data.get('id'))
-
-        results = self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
-                                       results=pending, timeout=timeout)
-        if adapter is not None:
-            results = adapter.observe_result(self.session, history_entry_id, data, results)
-        if link_foreground_cancel:
-            def linked_results():
-                try:
-                    yield from results
-                finally:
+                self.session.runtime.bind_foreground_command_id(data['id'])
+            try:
+                self.session.send(data)
+            except Exception:
+                if link_foreground_cancel:
                     self.session.runtime.unbind_foreground_command_id(data['id'])
-            return linked_results()
+                self.session.runtime.pending_results.remove(data['id'])
+                raise
+            results = self.wait_for_result(data['id'], command if type == MSG_TYPE_COMMAND else None,
+                                           results=pending, timeout=timeout)
+            if link_foreground_cancel:
+                def linked_results():
+                    try:
+                        yield from results
+                    finally:
+                        self.session.runtime.unbind_foreground_command_id(data['id'])
+                return linked_results()
+            return results
+
+        middleware = self.session.context.command_dispatch
+        results = middleware(self.session, data, dispatch) if middleware is not None else dispatch()
+        if bound_task and bound_task.get('cancel_requested'):
+            self.send_cancel(data['id'])
         return results
 
     def send_completion(self, payload: dict, *, timeout: float = 5.0):

@@ -25,10 +25,10 @@ from server.persistence.rch_database import RchDatabase
 TABLES = {
     'activity_records', 'agent_outputs', 'artifact_entries', 'artifact_folders',
     'background_job_files', 'background_job_messages', 'background_jobs',
-    'command_executions', 'command_recents', 'connection_sessions', 'device_group_members',
+    'command_recents', 'connection_sessions', 'device_group_members',
     'device_groups', 'external_tool_presets', 'keychain_entries', 'notifications',
     'pinned_commands', 'pinned_paths', 'recent_devices', 'saved_bind_targets', 'settings',
-    'transfer_records',
+    'transfer_batches', 'transfer_records',
 }
 
 

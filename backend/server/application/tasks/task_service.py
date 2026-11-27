@@ -118,7 +118,6 @@ class WebTaskService:
             command=context.command,
             source=context.source,
             task_id=context.task_id,
-            history_entry_id=context.history_entry_id,
             web_task=True,
             tab_id=context.tab_id,
             **({"cancel_policy": context.metadata["cancel_policy"]} if context.metadata.get("cancel_policy") else {}),
@@ -133,7 +132,7 @@ class WebTaskService:
 
     def _request_task_cancel(self, conn, task_id: str):
         self.task_store.request_cancel(task_id)
-        foreground_task = self._ensure_active_task(conn, task_id)
+        self._ensure_active_task(conn, task_id)
 
         cancel_info = conn.request_foreground_task_cancel(task_id=task_id)
         if not cancel_info:
@@ -146,8 +145,7 @@ class WebTaskService:
             conn.send_cancel(command_id)
 
         result = dict(cancel_info)
-        if not result.get('history_entry_id'):
-            result['history_entry_id'] = foreground_task.get('history_entry_id') or ''
+        result['history_entry_id'] = (self.task_store.get_task(task_id) or {}).get('history_entry_id') or ''
         return result
 
     def _resolve_cancellable_task(self, task_id: str):

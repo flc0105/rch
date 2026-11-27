@@ -43,7 +43,6 @@ Server 使用 API / Service / Store（或 Catalog）分层。API 负责请求和
 | Background Jobs | `background_jobs`、`background_job_messages`、`background_job_files` | Job 实例状态、输出消息、生成文件的引用 |
 | Artifact Manager → Saved / Shared Files | `artifact_entries`、`artifact_folders` | 文件索引、九种 Saved 分类及 Shared 逻辑目录；文件字节保留在磁盘 |
 | Agent Outputs | `agent_outputs` | 构建记录、构建时 Listener 快照、平台与连接信息；二进制构建产物保留在磁盘 |
-| 保留的数据库结构 | `command_executions` | 基础 Schema 中的保留表；Activity Center 使用 `activity_records` |
 
 以下每组“字段”列举的均为实际数据库列。**主键（PK）**决定记录唯一性；“引用”是业务关联，不一定存在数据库外键约束。
 
@@ -228,10 +227,6 @@ Bind 连接在 Server 手动连接成功后按 Host/Port 保存一条记录，�
 
 **与 Quick History 的关系：** 两者有不同的写入时机和记录规则。删除 Activity 不删除 Quick Recent 或 Pins；清除 Quick Recent 也不删除 Activity。实际录入范围、输出长度限制、敏感信息边界见 [Command History](command_history.md)。
 
-### `command_executions` — Schema 保留表
-
-该表属于当前基础 Schema 的保留结构。Activity Center 的执行记录以 `activity_records` 为准。
-
 ## 通知与界面偏好
 
 ### `notifications` — Notification Center 持久通知
@@ -402,8 +397,7 @@ Server 全局
 ├─ notifications            通知历史
 ├─ settings                 工具栏和通知偏好
 ├─ external_tool_presets    工具参数预设
-├─ agent_outputs            Agent 构建产物元数据
-└─ command_executions       仍保留的旧执行表（非现行 Activity 来源）
+└─ agent_outputs            Agent 构建产物元数据
 ```
 
 上述缩进表示**业务关联**，并不都对应 SQLite `FOREIGN KEY`：明确设有外键级联的只有 `device_group_members.group_id`，以及两个 Job 子表的 `job_id`。其他按 `machine_id`、`client_id`、`artifact_id` 的关联主要由业务服务维护；删除父侧记录时不要假设 SQLite 会自动清理所有关联数据。
@@ -442,7 +436,6 @@ sqlite3 -readonly runtime/rch.db 'PRAGMA integrity_check;'
 | --- | --- |
 | 登录后 Connections 仍有离线设备 | `recent_devices` 持久保留最近设备，不是当前 Socket 的实时清单。 |
 | Quick History 清空了，Pin 还在 | `command_recents` 和 `pinned_commands` 是独立表。 |
-| Activity 列表为空，但数据库有 `command_executions` | 当前 Activity 读 `activity_records`；旧表不是它的自动数据源。 |
 | 设备下线后 Connection History 仍可查看 | `connection_sessions` 保存连接生命周期快照。 |
 | Notifications 被清空，通知开关仍保留 | `notifications` 与 `settings.notification_preferences` 相互独立。 |
 | 删除 Job 的文件关联后磁盘空间没有变化 | `background_job_files` 存的是 Artifact 引用，不是 Artifact 实体文件。 |

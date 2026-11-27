@@ -33,6 +33,7 @@ class WebConnectionService:
         recent_device_store=None,
         connection_history_store=None,
         client_session_token_service=None,
+        transfer_service=None,
     ):
         self.server = server
         self.event_bus = event_bus
@@ -40,6 +41,7 @@ class WebConnectionService:
         self.recent_device_store = recent_device_store
         self.connection_history_store = connection_history_store
         self.client_session_token_service = client_session_token_service
+        self.transfer_service = transfer_service
 
     def _now(self):
         return datetime.now()
@@ -567,13 +569,12 @@ class WebConnectionService:
                 'task': build_foreground_task_snapshot(session),
             })
         )
-        session.context.command_history = self.server.command_history
-        session.context.activity_coordinator = self.server.activity_coordinator
         lifecycle = getattr(self.server, 'lifecycle_adapter', None)
         if lifecycle is not None:
             session.context.on_client_message_send = lifecycle.dispatch
             session.context.on_client_message_received = lifecycle.received
-        session.context.command_dispatch_adapter = getattr(self.server, 'command_adapter', None)
+        adapter = getattr(self.server, 'command_adapter', None)
+        session.context.command_dispatch = adapter.dispatch_request if adapter is not None else None
         session.context.artifact_service = self.artifact_service
         session.context.client_session_token_service = self.client_session_token_service
 
@@ -602,7 +603,7 @@ class WebConnectionService:
         session.context.on_monitor_error = monitor_service.handle_client_error
         session.context.on_monitor_closed = monitor_service.handle_client_closed
 
-        transfer_service = self.server.web_service.transfer_api.transfer_service
+        transfer_service = self.transfer_service
         session.context.on_transfer_register = (
             lambda data: register_inline_transfer(transfer_service, self.artifact_service, session, data)
         )
@@ -637,8 +638,7 @@ class WebConnectionService:
     def _close_transfer_data(self, session):
         if self.client_session_token_service is not None:
             self.client_session_token_service.revoke(session)
-        api = getattr(self.server.web_service, 'transfer_api', None)
-        transport = getattr(getattr(api, 'transfer_service', None), 'tcp_transport', None)
+        transport = getattr(self.transfer_service, 'tcp_transport', None)
         if transport is not None:
             transport.close_session(session)
         session.context.client_session_token = ''
@@ -705,9 +705,9 @@ class WebConnectionService:
         except Exception:
             pass
         try:
-            self.server.web_service.transfer_api.handle_client_disconnected(
-                session.session_info.client_id
-            )
+            if self.transfer_service is not None:
+                self.transfer_service.fail_active_transfers_for_client(
+                    session.session_info.client_id, 'Client disconnected during file transfer')
         except Exception:
             pass
         self.publish_connection_offline(session, termination_reason=reason)

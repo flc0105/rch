@@ -18,5 +18,4 @@ class WebTerminalApi:
         return self.pty_session_service.get_updates(pty_session_id, after_seq=after_seq)
 
     def get_pty_ws_info(self, pty_session_id: str) -> dict:
-        item = self.pty_session_service._get_required(pty_session_id)
-        return {'pty_session_id': item['pty_session_id'], 'ws_token': item.get('ws_token') or ''}
+        return self.pty_session_service.get_ws_info(pty_session_id)

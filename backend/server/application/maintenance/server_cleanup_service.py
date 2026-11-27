@@ -45,11 +45,11 @@ class ServerCleanupService:
     PLAN_TTL = 600
     MAX_PLANS = 4
 
-    def __init__(self, *, event_bus, notification_history_api, artifact_service,
+    def __init__(self, *, event_bus, notification_history_service, artifact_service,
                  agent_output_registry, cleanup_items, start_delay_seconds: int,
                  log_root_dir: str, settings_store, database, runtime_dir):
         self.event_bus = event_bus
-        self.notification_history_api = notification_history_api
+        self.notification_history_service = notification_history_service
         self.artifact_service = artifact_service
         self.agent_output_registry = agent_output_registry
         self.settings_store = settings_store
@@ -186,7 +186,7 @@ class ServerCleanupService:
 
     def _notifications(self):
         # Internal complete snapshot, not the Web notification page size.
-        rows = self.notification_history_api.get_history(limit=-1)['notifications']
+        rows = self.notification_history_service.list_cleanup_candidates()
         for row in rows:
             try:
                 modified = datetime.fromisoformat(row['shown_at'].replace('Z', '+00:00')).timestamp()
@@ -446,7 +446,7 @@ class ServerCleanupService:
         self.artifact_service.delete_orphan_for_cleanup(item.key, lambda: item.remove_files(result))
 
     def _delete_notification(self, item, result):
-        removed = self.notification_history_api.cleanup_notifications(
+        removed = self.notification_history_service.cleanup_notifications(
             [item.key], expected={item.key: json.loads(item.signature)}).get('removed', [])
         result['removed_records'] += len(removed)
         if removed:

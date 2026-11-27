@@ -8,10 +8,10 @@ Activity 只有一个生命周期所有者：`ActivityCoordinator`，负责操�
 
 系统只通过**两种事件适配方式**接入：
 
-- `CommandDispatchAdapter`：普通命令、Alias、全部 Control Domain 及 External Tool。Control 记录资格来自 Action 的 ActivityPolicy，业务入口只提供必要展示元数据，通用命令通道在消息成功交付传输层后确认派发；最终 Result/EOF 结束记录。
+- `CommandDispatchAdapter`：普通命令、Alias、全部 Control Domain 及 External Tool。Control 记录资格来自 Action 的 ActivityPolicy，业务入口只提供必要展示元数据，装配层注入的请求中间件在消息成功交付传输层后确认派发，并观察类型化 Result 的终态。
 - `LifecycleAdapter`：PTY、Screen View、Transfer，以及已登记 Artifact 对当前命令的关联。监听明确的 Session/Request/Transfer ID 和 Client 回执；早到回执、重复 Close、断线和超时仅更新原有 Activity。文件上传在 Browser→Server 暂存阶段不记 Activity，Client 转交确认后才创建。
 
-Application 装配层提供语义绑定，API 负责转发业务请求，业务会话服务负责运行状态，Client 传输层只负责发送和接收。**这些层不负责创建或结束 Activity，也不持有历史 ID 状态机**。Activity 记录失败不可反向阻断已经有效的业务操作；未发生 Client 派发的操作不得生成持久记录。Server 重启后遗留的 `running` Activity 统一结束为 `interrupted`，不建立额外表或协议兼容层。
+Activity Coordinator 独立保存会话与请求 ID 的关联，结果流结束或连接断开时释放。Application 装配层提供语义绑定，API 负责转发业务请求，业务会话服务负责运行状态，Client 传输层只负责发送和接收。**这些层不负责创建或结束 Activity，也不持有历史 ID 状态机**。Activity 记录失败不可反向阻断已经有效的业务操作；未发生 Client 派发的操作不得生成持久记录。Server 重启后遗留的 `running` Activity 统一结束为 `interrupted`，不建立额外表或协议兼容层。
 
 ## 一次操作如何进入 Activity
 

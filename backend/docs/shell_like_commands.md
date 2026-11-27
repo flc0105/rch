@@ -183,7 +183,7 @@ def bounded_demo(context, arg=''):
 
 ```python
 from client.commands.shell.decorators import shell_command
-from core.utils.decorator import confirm
+from client.runtime.execution.command_confirmation import confirm
 
 @shell_command('Show an approved demonstration', group='general')
 @confirm('Continue this harmless demonstration?')

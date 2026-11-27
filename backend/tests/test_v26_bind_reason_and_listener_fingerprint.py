@@ -62,6 +62,7 @@ def test_intentional_bind_close_overrides_transport_eof_in_history(monkeypatch):
     service.recent_device_store = None
     service.connection_history_store = SimpleNamespace(record_disconnected=Mock())
     service.client_session_token_service = None
+    service.transfer_service = SimpleNamespace(fail_active_transfers_for_client=Mock())
     service.publish_connection_offline = Mock()
     service.serialize_connection = lambda _session: {'client_id': 'bind-1', 'machine_id': 'machine-1'}
     def _disconnect_api():

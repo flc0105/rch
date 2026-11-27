@@ -12,7 +12,7 @@ from server.application.maintenance.cleanup_plan import Candidate
 from server.application.maintenance.server_cleanup_service import ServerCleanupService
 from server.application.preferences.notification_history_store import NotificationHistoryStore
 from server.application.preferences.settings_store import SettingsStore
-from server.application.web.notification_history_api import WebNotificationHistoryApi
+from server.application.preferences.notification_history_service import NotificationHistoryService
 from server.persistence.rch_database import RchDatabase
 
 
@@ -72,10 +72,10 @@ def setup(tmp_path):
     artifact = Artifacts(tmp_path / 'web_files' / 'artifacts')
     registry = AgentOutputRegistry(str(tmp_path / 'agent_output'), database)
     store = NotificationHistoryStore(database)
-    api = WebNotificationHistoryApi(store)
+    api = NotificationHistoryService(store)
     prefs = SettingsStore(database, 'server_cleanup')
     def make():
-        return ServerCleanupService(event_bus=None, notification_history_api=api, artifact_service=artifact,
+        return ServerCleanupService(event_bus=None, notification_history_service=api, artifact_service=artifact,
             agent_output_registry=registry, cleanup_items=('agent_build_temp', 'agent_transient_outputs', 'preview_cache', 'upload_tmp', 'cleanup_logs', 'tcp_transfer_residue', 'bootstrap_temp'),
             start_delay_seconds=0, log_root_dir=str(tmp_path / 'cleanup_logs'), settings_store=prefs,
             database=database, runtime_dir=tmp_path)

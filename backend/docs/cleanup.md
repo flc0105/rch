@@ -34,6 +34,8 @@ Server Runtime 由单个 Server 实例独占使用。构建和 Bootstrap 临时�
 
 ### 完成通知与清理报告
 
+通知候选查询与条件删除由 Notification History Service 提供，并统一发布通知中心更新事件；自动清理与 Web 通知中心共享通知业务契约。
+
 报告路径为 `<Server Runtime>/cleanup_logs/server_cleanup_<运行编号>.log`，独立于 Server 主日志。清理结束发送 **Server Cleanup Completed** 通知，报告可通过 **View Cleanup Log** 查看。报告包含各类别、实际处理的文件与记录、估算释放大小、跳过、未处理及错误详情。通知展示受 Notification Preferences 控制。
 
 ### Optimize Database

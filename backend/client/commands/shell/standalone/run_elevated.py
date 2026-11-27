@@ -11,7 +11,7 @@ from client.commands.shell.standalone._elevated_process import (
 )
 from client.commands.shell.standalone._elevated_win import WindowsElevation
 from client.runtime.execution.context import CommandCancelledError, CommandTimeoutError
-from core.utils.decorator import confirm
+from client.runtime.execution.command_confirmation import confirm
 from core.utils.parsing import split_shell_arguments
 
 

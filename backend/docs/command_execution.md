@@ -46,7 +46,7 @@ WebCommandExecutionApi（参数标准化）
   │
   ▼
 WebTaskService（定位 ClientSession）
-  ├─ CommandHistoryOrchestrator：根据记录策略创建 history entry
+  ├─ CommandDispatchAdapter：根据记录策略准备 Activity 意图
   ├─ WebTaskStore：创建内存 task_id，初始状态 running
   ├─ SessionExecutionRuntime：尝试占用前台执行槽
   └─ 启动 WebTaskRunner 后台线程 → HTTP 返回 task_id
@@ -56,7 +56,7 @@ CommandExecutionPipeline / CommandExecutor
         ├─ Server Built-in（可能在 Server 端完成）
         ├─ Alias 解析及远程命令计划
         └─ Client 指令 / ACMD / Script 等远程执行
-                │ 生成 command_id，绑定 history entry
+                │ 生成 command_id；Activity Adapter 关联执行事实
                 ▼
           ClientSessionCommandChannel → TCP → Client
                 │
@@ -66,8 +66,8 @@ CommandExecutionPipeline / CommandExecutor
                 ▼
 WebTaskRunner 消费执行事件
   ├─ 逐段发布 command_result WebSocket
-  ├─ 在允许记录时追加历史输出
-  ├─ 确定 success / error / cancelled
+  ├─ Activity Adapter 在允许记录时追加结构化结果
+  ├─ 根据 completed 确定执行终态
   └─ 发布 command_complete WebSocket、释放前台槽并清除临时 Task
                 │
                 ▼
@@ -90,7 +90,7 @@ WebTaskRunner 消费执行事件
 
 `task_id` 是 `uuid4().hex`，任务最初记录 `running`、`cancel_requested=false`，并附带 `client_id`、`machine_id`、`hostname`、`tab_id` 等上下文。它保存在 Server 的加锁内存字典中，**不是 SQLite 的任务表**。任务完成后 Runner 主动删除这条记录，因此不能将 `task_id` 当成长期有效的历史记录 ID。
 
-`command_id` 是每个 ClientSessionCommandChannel 自增的消息序号。**Server Built-in 不一定下发远程消息，因此可以有 `task_id` 而没有 `command_id`**；同理，不能假定二者数值相等。远程命令实际组装消息时，`SessionExecutionRuntime.bind_command_execution()` 将 `command_id` 同当前前台 Task 与 `history_entry_id` 绑定，避免取消、结果与历史错位。
+`command_id` 是每个 ClientSessionCommandChannel 自增的消息序号。**Server Built-in 不一定下发远程消息，因此可以有 `task_id` 而没有 `command_id`**；同理，不能假定二者数值相等。远程命令实际下发时，会话运行时绑定前台 Task 的 `command_id`。Activity Adapter 独立关联会话、`command_id` 与 Activity ID；会话本身不持有历史关联。
 
 `history_entry_id` 只在集中式记录策略允许时存在。Web Task 可以正常执行、产生 WebSocket 和最终状态，却根本没有对应历史条目；不应根据一个 Task 出现在 Terminal 就断言 SQLite 一定记录了它。详见 [Command History](command_history.md)。
 
@@ -124,7 +124,7 @@ Connection Info 的 **Task** 字段显示 `Idle`、`Running` 或 `Cancelling`；
 
 RCH 在单个 `ClientSession` 上保留一份当前前台 Task 运行态，不是所有浏览器标签页各自拥有一个互不影响的前台槽。普通 Web 命令提交时，在启动 Runner 之前调用 `acquire_foreground_task()`；如果该会话已经被另一前台任务占用，就抛出 `Another operation is running on this client. Please try again when it finishes.`，而不是把新命令悄悄排入一个没有界面的队列。
 
-占槽记录包括 `task_type`、`command`、`source`、`task_id`、`tab_id`（Web 来源）、可选 `history_entry_id`、稍后绑定的 `command_id`、`cancel_requested` 和 `cancel_state`。失败的提交会释放可能占到的槽、撤销本次创建的 Task，并清理尚未真正执行的历史条目；不会将这些失败准备步骤当作一次成功执行。
+占槽记录包括 `task_type`、`command`、`source`、`task_id`、`tab_id`（Web 来源）、稍后绑定的 `command_id`、`cancel_requested` 和 `cancel_state`。失败的提交会释放可能占到的槽、撤销本次创建的 Task，并清理尚未真正执行的历史条目；不会将这些失败准备步骤当作一次成功执行。
 
 后台执行线程结束时会在 `finally` 中释放当前会话的前台槽。仅使用 `task_id` 和命令文本匹配当前占槽对象，避免迟到的清理动作把下一条任务的槽释放掉。
 
@@ -195,7 +195,7 @@ Client 的执行上下文决定是否能取消：对于不支持取消的策略�
 
 **历史条目在任务提交阶段按策略创建，而非完成后无条件补写。** 集中的 `CommandHistoryRecordPolicy` 判断应否记录，避免把 Web 高频文件浏览、部分进程控制、Job 控制、上传、结构化 JSON 任务等大量操作污染用户命令历史。用户手动输入的普通命令与符合回放条件的执行通常会记录；Script 等其他模块不一定创建这一类历史条目。规则应在同一策略入口扩展，而不是在每个按钮里各写一套判断。
 
-对允许记录的执行，SQLite Entry 从 `running` 开始，连续输出追加 `status/text/eof` 等记录，并更新行数、字符数、截断标记。持久化输出有数量和字符上限，因此**实时 WebSocket 中看到的全部输出不保证永久完整保留在历史中**。最后更新 Entry 的成功/错误状态、结束时间及最终工作目录。`command_id → history_entry_id` 映射还允许关联命令产生的 Artifact；当等待流结束时，对应映射会清理；Client Session Token 随连接结束撤销。
+对允许记录的执行，SQLite Entry 从 `running` 开始，连续追加结构化 Result 事件，并更新行数、字符数、截断标记。持久化输出有数量和字符上限，因此**实时 WebSocket 中看到的全部输出不保证永久完整保留在历史中**。最后更新 Entry 的成功/错误状态、结束时间及最终工作目录。Activity Coordinator 按会话及 `command_id` 保存 Activity 关联，用于命令产生的 Artifact；结果流结束或连接断开时清理关联。Client Session Token 随连接结束撤销。
 
 Command History 与 Web Task 终态存在一个语义差别：历史的结束状态主要是 `success/error`，Web Task 可以进一步显示 `cancelled`。因此查询历史不能直接等价还原 Web 的每一项任务状态和取消 ACK。
 

@@ -1,9 +1,5 @@
-import time
-
 from flask import Blueprint, request
 
-from core.transfer_settings import DEFAULT_HTTP_TRANSFER_BUFFER_SIZE
-from core.utils.logger import logger
 from server.web.api_response import WebApiResponder
 from server.web.auth_guard import allow_anonymous
 
@@ -11,10 +7,7 @@ from server.web.auth_guard import allow_anonymous
 def create_browser_upload_blueprint(server_instance):
     """Raw, chunked browser upload on the main direct Werkzeug HTTP server."""
     app = Blueprint('browser_upload_content', __name__)
-
-    artifact_api = server_instance.web_service.artifact_api
-    command_execution_api = server_instance.web_service.command_execution_api
-    transfer_api = server_instance.web_service.transfer_api
+    uploads = server_instance.web_service.assembly.browser_upload_service
     responder = WebApiResponder()
 
     @app.route('/api/transfers/browser-upload/<transfer_id>/content', methods=['POST', 'OPTIONS'])
@@ -22,122 +15,12 @@ def create_browser_upload_blueprint(server_instance):
     def upload_browser_transfer(transfer_id):
         if request.method == 'OPTIONS':
             return '', 204
-
         upload_token = str(request.headers.get('X-RCH-Transfer-Token') or '').strip()
-        grant = transfer_api.consume_browser_upload_grant(transfer_id, upload_token)
+        grant = uploads.consume_browser_upload_grant(transfer_id, upload_token)
         if not grant:
             return responder.fail('Invalid or expired browser upload transfer token', 403)
-
-        tab_id = str(grant.get('tab_id') or '').strip()
-        client_id = str(grant.get('client_id') or '').strip()
-        target_path = str(grant.get('destination_path') or '').strip()
-        filename = str(grant.get('filename') or '').strip() or 'upload.bin'
-        expected_total = grant.get('total_bytes')
-        temp_path = ''
-
-        def _execute():
-            nonlocal temp_path
-            try:
-                if type(expected_total) is not int or expected_total < 0:
-                    raise ValueError('Invalid upload byte count')
-                normalized_expected_total = expected_total
-
-                if request.max_content_length is not None and normalized_expected_total > request.max_content_length:
-                    raise ValueError('Browser upload exceeds HTTP size limit')
-                request_content_length = request.content_length
-                if (
-                    normalized_expected_total is not None
-                    and request_content_length is not None
-                    and int(request_content_length) != normalized_expected_total
-                ):
-                    raise ValueError(
-                        f'Browser upload size mismatch: expected {normalized_expected_total} bytes, '
-                        f'request declared {int(request_content_length)} bytes'
-                    )
-
-                temp_path, _ = artifact_api.create_upload_temp_path(
-                    filename, expected_size=normalized_expected_total, owner=client_id)
-                received_bytes = 0
-                last_progress_sync = 0.0
-
-                with open(temp_path, 'wb', buffering=DEFAULT_HTTP_TRANSFER_BUFFER_SIZE) as output_file:
-                    while True:
-                        if transfer_api.is_browser_upload_cancel_requested(transfer_id):
-                            raise RuntimeError('Browser upload cancelled')
-
-                        chunk = request.stream.read(DEFAULT_HTTP_TRANSFER_BUFFER_SIZE)
-                        if not chunk:
-                            break
-
-                        if transfer_api.is_browser_upload_cancel_requested(transfer_id):
-                            raise RuntimeError('Browser upload cancelled')
-
-                        if received_bytes + len(chunk) > normalized_expected_total:
-                            raise ValueError('Browser upload exceeds declared size')
-                        output_file.write(chunk)
-                        received_bytes += len(chunk)
-
-                        now = time.monotonic()
-                        if now - last_progress_sync >= 0.25:
-                            transfer_api.update_browser_upload_progress(
-                                transfer_id,
-                                transferred_bytes=received_bytes,
-                                total_bytes=expected_total,
-                                tab_id=tab_id,
-                            )
-                            last_progress_sync = now
-
-                if normalized_expected_total is not None and received_bytes != normalized_expected_total:
-                    raise ValueError(
-                        f'Browser upload size mismatch: expected {normalized_expected_total} bytes, '
-                        f'received {received_bytes} bytes'
-                    )
-
-                transfer_api.update_browser_upload_progress(
-                    transfer_id,
-                    transferred_bytes=received_bytes,
-                    total_bytes=normalized_expected_total if normalized_expected_total is not None else received_bytes,
-                    tab_id=tab_id,
-                )
-                transfer_api.mark_browser_upload_staged(
-                    transfer_id,
-                    total_bytes=received_bytes,
-                    tab_id=tab_id,
-                )
-                transfer_api.clear_browser_upload_runtime(transfer_id)
-
-                if transfer_api.is_browser_upload_cancel_requested(transfer_id):
-                    raise RuntimeError('Browser upload cancelled')
-
-                result = command_execution_api.submit_web_upload(
-                    client_id,
-                    temp_path,
-                    filename,
-                    target_path,
-                    tab_id=tab_id,
-                    transfer_id=transfer_id,
-                    conflict_policy=grant.get('conflict_policy'),
-                    operation_id=grant.get('operation_id') or '',
-                    batch_id=grant.get('batch_id') or '',
-                )
-            except Exception as exc:
-                transfer_api.clear_browser_upload_runtime(transfer_id)
-                if temp_path:
-                    artifact_api.cleanup_upload_temp_file(temp_path)
-                try:
-                    transfer_api.fail_upload_transfer(transfer_id, str(exc), tab_id=tab_id)
-                except Exception:
-                    pass
-                raise
-            # The execution service already owns the staged file; a metadata
-            # write failure must not turn an accepted submission into a rejection.
-            try:
-                transfer_api.mark_browser_upload_accepted(transfer_id, tab_id=tab_id,
-                                                           task_id=result.get('task_id') or '')
-            except Exception:
-                logger.exception('Failed to record accepted browser upload %s', transfer_id)
-            return result
-
-        return responder.json_endpoint(_execute, default_error_status=500)
+        return responder.json_endpoint(lambda: uploads.receive_content(
+            transfer_id, grant, lambda size: request.stream.read(size), content_length=request.content_length,
+            max_content_length=request.max_content_length), default_error_status=500)
 
     return app

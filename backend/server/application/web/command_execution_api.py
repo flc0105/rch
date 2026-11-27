@@ -130,9 +130,6 @@ class WebCommandExecutionApi:
     def cancel_web_task(self, task_id: str):
         return self.task_service.cancel_web_task(self._normalize_task_id(task_id))
 
-    def submit_web_upload_batch(self, batch):
-        return self.upload_task_service.submit_batch(batch)
-
     def submit_web_upload(
         self,
         client_id: str,
