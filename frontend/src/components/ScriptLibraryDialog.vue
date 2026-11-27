@@ -21,6 +21,7 @@
             plain
             @click="createRemoteScriptPrompt"
           >
+            <Plus class="script-library-action-icon" :size="14" aria-hidden="true" />
             New
           </el-button>
 
@@ -30,6 +31,7 @@
             :loading="uploadLoading"
             @click="triggerScriptUpload"
           >
+            <Upload class="script-library-action-icon" :size="14" aria-hidden="true" />
             Upload
           </el-button>
 
@@ -38,6 +40,7 @@
             class="toolbar-btn"
             @click="createRemoteScriptFolderPrompt"
           >
+            <FolderPlus class="script-library-action-icon" :size="14" aria-hidden="true" />
             New Folder
           </el-button>
 
@@ -47,6 +50,7 @@
             :disabled="!selectedDirectory"
             @click="renameRemoteScriptFolder"
           >
+            <Pencil class="script-library-action-icon" :size="14" aria-hidden="true" />
             Rename Folder
           </el-button>
 
@@ -58,6 +62,7 @@
             :disabled="!selectedDirectory"
             @click="deleteRemoteScriptFolder"
           >
+            <Trash2 class="script-library-action-icon" :size="14" aria-hidden="true" />
             Delete Folder
           </el-button>
 
@@ -67,6 +72,7 @@
             :loading="loading"
             @click="loadScriptCatalog"
           >
+            <RefreshCw class="script-library-action-icon" :size="14" aria-hidden="true" />
             Refresh
           </el-button>
 
@@ -90,13 +96,20 @@
             clearable
             class="script-library-filter-control script-library-search"
             placeholder="Search scripts"
-          />
+          >
+            <template #prefix>
+              <Search :size="15" aria-hidden="true" />
+            </template>
+          </el-input>
         </div>
       </div>
 
       <div class="script-library-shell">
         <div class="script-library-tree panel-lite">
-          <div class="background-jobs-section-title">Folders</div>
+          <div class="background-jobs-section-title script-library-tree-title">
+            <Folder :size="16" aria-hidden="true" />
+            Folders
+          </div>
 
           <div class="script-library-pane-scroll">
             <el-tree
@@ -114,8 +127,10 @@
               @node-expand="handleScriptTreeNodeExpand"
               @node-collapse="handleScriptTreeNodeCollapse"
             >
-              <template #default="{ data }">
+              <template #default="{ data, node }">
                 <span class="script-tree-node">
+                  <FolderOpen v-if="node.expanded" class="script-tree-icon" :size="16" aria-hidden="true" />
+                  <Folder v-else class="script-tree-icon" :size="16" aria-hidden="true" />
                   <span class="script-tree-node-label">
                     {{ data.label }}
                   </span>
@@ -128,7 +143,8 @@
         <div class="script-library-directory panel-lite">
           <div class="script-library-directory-top">
             <div class="script-library-directory-title-block">
-              <div class="background-jobs-section-title">
+              <div class="background-jobs-section-title script-library-directory-title">
+                <FolderOpen :size="17" aria-hidden="true" />
                 {{ selectedDirectory || 'Scripts' }}
               </div>
 
@@ -149,8 +165,10 @@
                 class="script-library-card"
               >
                 <div class="script-library-card-main">
+                  <span class="script-library-card-icon-tile">
+                    <FileCode2 class="script-library-card-icon" :size="19" aria-hidden="true" />
+                  </span>
                   <div class="script-library-card-heading">
-                    <FileCode2 class="script-library-card-icon" :size="16" aria-hidden="true" />
                     <div
                       class="script-library-card-title"
                       :title="item.display_name || item.script_name"
@@ -170,6 +188,7 @@
                         size="small"
                         type="warning"
                       >
+                        <SlidersHorizontal class="script-library-tag-icon" :size="12" aria-hidden="true" />
                         Params
                       </el-tag>
                     </div>
@@ -198,6 +217,7 @@
                     :disabled="!isScriptSupportedForCurrentConnection(item)"
                     @click="openScriptRunDialog(item)"
                   >
+                    <Play class="script-library-action-icon" :size="14" aria-hidden="true" />
                     Run
                   </el-button>
 
@@ -206,6 +226,7 @@
                     plain
                     @click="openRemoteScriptEditor(item.script_name)"
                   >
+                    <Pencil class="script-library-action-icon" :size="14" aria-hidden="true" />
                     Edit
                   </el-button>
 
@@ -217,16 +238,19 @@
                       size="small"
                       plain
                     >
+                      <Ellipsis class="script-library-action-icon" :size="14" aria-hidden="true" />
                       More
                     </el-button>
 
                     <template #dropdown>
                       <el-dropdown-menu>
                         <el-dropdown-item command="rename">
+                          <Pencil class="script-library-action-icon" :size="14" aria-hidden="true" />
                           Rename
                         </el-dropdown-item>
 
                         <el-dropdown-item command="delete">
+                          <Trash2 class="script-library-action-icon" :size="14" aria-hidden="true" />
                           Delete
                         </el-dropdown-item>
                       </el-dropdown-menu>
@@ -301,7 +325,7 @@
 import { cancelTask } from '../api/tasksApi.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { FileCode2 } from '@lucide/vue'
+import { FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal } from '@lucide/vue'
 import {
   getScriptCatalog, getScriptRunOptions, runLibraryScript, createScriptFolder, renameScriptFolder,
   deleteScriptFolder, renameLibraryScript, uploadLibraryScript, deleteLibraryScript,
@@ -335,7 +359,7 @@ export default {
   name: 'ScriptLibraryDialog',
 
   components: {
-    FileCode2,
+    FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal,
     ScriptRunDialog,
   },
 
@@ -1698,20 +1722,96 @@ export default {
   padding-right: 4px;
 }
 
+/* Match the Device Sidebar's translucent, lightweight scrollbar. */
+.script-library-pane-scroll,
+:global(.script-library-overlay > .el-overlay-dialog > .script-library-dialog > .el-dialog__body) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.script-library-pane-scroll::-webkit-scrollbar,
+:global(.script-library-overlay > .el-overlay-dialog > .script-library-dialog > .el-dialog__body::-webkit-scrollbar) {
+  width: 8px;
+  height: 8px;
+}
+
+.script-library-pane-scroll::-webkit-scrollbar-track,
+:global(.script-library-overlay > .el-overlay-dialog > .script-library-dialog > .el-dialog__body::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+.script-library-pane-scroll::-webkit-scrollbar-thumb,
+:global(.script-library-overlay > .el-overlay-dialog > .script-library-dialog > .el-dialog__body::-webkit-scrollbar-thumb) {
+  background: rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.script-library-pane-scroll::-webkit-scrollbar-thumb:hover,
+:global(.script-library-overlay > .el-overlay-dialog > .script-library-dialog > .el-dialog__body::-webkit-scrollbar-thumb:hover) {
+  background-color: rgba(148, 163, 184, 0.58);
+}
+
+.script-library-tree {
+  background: #f8fafc;
+  border-color: #e8edf3;
+}
+
+.script-library-directory {
+  border-color: transparent;
+}
+
+.script-library-tree-title,
+.script-library-directory-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.script-library-tree-title > svg,
+.script-library-directory-title > svg {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.script-library-directory-title {
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+}
+
 .script-library-tree-view {
   min-height: 0;
+  background: transparent;
+  --el-tree-node-hover-bg-color: #eef2f7;
+}
+
+.script-library-tree-view :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background: #e8f0ff;
+  color: var(--primary);
+  font-weight: 600;
 }
 
 .script-library-tree-view :deep(.el-tree-node__content) {
   min-width: 0;
   height: 30px;
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .script-tree-node {
   display: inline-flex;
   align-items: center;
+  gap: 7px;
   min-width: 0;
+}
+
+.script-tree-icon {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.script-library-tree-view :deep(.el-tree-node.is-current > .el-tree-node__content) .script-tree-icon {
+  color: var(--primary);
 }
 
 .script-tree-node-label {
@@ -1735,6 +1835,7 @@ export default {
 .script-library-card-list {
   display: grid;
   gap: 12px;
+  padding: 2px 5px 8px 2px;
 }
 
 .script-library-card-list-single {
@@ -1744,22 +1845,48 @@ export default {
 .script-library-card {
   container-type: inline-size;
   min-width: 0;
-  padding: 14px 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 13px;
+  background: var(--bg-card);
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.035), 0 6px 16px rgba(15, 23, 42, 0.035);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
   align-items: center;
 }
 
+.script-library-card:hover,
+.script-library-card:focus-within {
+  border-color: rgba(37, 99, 235, 0.32);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.045), 0 7px 20px rgba(37, 99, 235, 0.07);
+}
+
 .script-library-card-main {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  column-gap: 13px;
+  row-gap: 5px;
+}
+
+.script-library-card-main > :not(.script-library-card-icon-tile) {
+  grid-column: 2;
+}
+
+.script-library-card-icon-tile {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  align-self: start;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: linear-gradient(150deg, #f7faff, #eaf1ff);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.10);
+  color: var(--primary);
 }
 
 .script-library-card-heading {
@@ -1772,7 +1899,17 @@ export default {
 
 .script-library-card-icon {
   flex: 0 0 auto;
-  color: var(--muted);
+}
+
+.script-library-action-icon,
+.script-library-tag-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+
+.script-library-tag-icon {
+  margin-right: 3px;
 }
 
 .script-library-card-title {
@@ -1780,11 +1917,10 @@ export default {
   margin: 0;
   font-size: 15px;
   line-height: 22px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: -0.015em;
   color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .script-library-card-path {
@@ -1824,15 +1960,23 @@ export default {
 .script-library-card-tags {
   margin: 0;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+}
+
+.script-library-card-tags :deep(.el-tag) {
+  border-radius: 999px;
+  font-size: 11px;
+  padding-inline: 7px;
 }
 
 .script-library-card-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   flex-wrap: nowrap;
   white-space: nowrap;
+  padding-left: 14px;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .script-library-empty {
@@ -1910,9 +2054,44 @@ export default {
   }
 }
 .script-library-card-actions :deep(.el-button) {
-  border-radius: 6px;
+  height: 32px;
+  border-radius: 8px;
+  padding-inline: 10px;
   justify-content: center;
 }
+
+.script-library-card-actions :deep(.el-button--primary.is-plain) {
+  font-weight: 600;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.script-library-card-actions :deep(.el-button--primary.is-plain:hover),
+.script-library-card-actions :deep(.el-button--primary.is-plain:focus-visible) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.script-library-card-actions :deep(.el-button--primary.is-disabled),
+.script-library-card-actions :deep(.el-button--primary.is-disabled:hover) {
+  background: var(--el-disabled-bg-color);
+  border-color: var(--el-disabled-border-color);
+  color: var(--el-disabled-text-color);
+}
+
+.script-library-card-actions :deep(.el-button.is-plain:not(.el-button--primary)) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.script-library-card-actions :deep(.el-button.is-plain:not(.el-button--primary):hover),
+.script-library-card-actions :deep(.el-button.is-plain:not(.el-button--primary):focus-visible) {
+  background: #f1f5f9;
+  border-color: #e8edf3;
+}
+
 .script-library-card-actions :deep(.el-dropdown) { flex: 0 0 auto; }
 
 /* Keep the compact desktop actions beside the text until the card needs a second row. */
@@ -1925,16 +2104,35 @@ export default {
     width: 100%;
     gap: 8px;
     align-items: stretch;
+    padding: 10px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
   }
   .script-library-card-actions :deep(.el-button),
   .script-library-card-actions :deep(.el-dropdown) { width: 100%; min-width: 0; }
 }
 
-/* On narrow cards, use the same two-column/last-full-row pattern as Jobs. */
+/* Keep all three actions together on narrow cards, with touch-friendly targets. */
 @container (width < 420px) {
-  .script-library-card-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .script-library-card-actions :deep(.el-button) { height: 32px; }
-  .script-library-card-actions :deep(.el-dropdown) { grid-column: 1 / -1; }
+  .script-library-card-actions { gap: 5px; }
+  .script-library-card-actions :deep(.el-button) { height: 32px; padding: 0 5px; }
+  .script-library-card-main { grid-template-columns: 30px minmax(0, 1fr); column-gap: 8px; }
+  .script-library-card-icon-tile { width: 30px; height: 30px; }
+}
+
+@media (max-width: 640px) {
+  .script-library-toolbar-left {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .script-library-toolbar :deep(.el-button.toolbar-btn) {
+    width: 100%;
+    min-width: 0;
+    padding: 0 5px;
+  }
+  .script-library-card { padding: 10px; gap: 10px; }
+  .script-library-directory { padding: 8px; }
 }
 </style>
 

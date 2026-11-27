@@ -8,7 +8,7 @@
       .one-liners-dialog, .process-dialog, .process-detail-dialog,
       .pty-dialog, .quick-actions-dialog, .quick-actions-editor-dialog, .quick-actions-parameters-dialog, .quick-actions-result-dialog, .remote-files-dialog,
       .remote-pins-dialog, .remote-file-picker-dialog, .remote-zip-peek-dialog, .screen-view-dialog, .script-library-dialog, .script-run-dialog,
-      .settings-dialog, .toolbox-dialog).el-dialog {
+      .settings-dialog, .toolbox-dialog, .server-cleanup-dialog).el-dialog {
     width: 100vw !important; max-width: 100vw !important;
     height: 100dvh !important; max-height: 100dvh !important;
     margin: 0 !important; border-radius: 0 !important;
@@ -23,7 +23,7 @@
       .one-liners-dialog, .process-dialog, .process-detail-dialog,
       .pty-dialog, .quick-actions-dialog, .quick-actions-editor-dialog, .quick-actions-parameters-dialog, .quick-actions-result-dialog, .remote-files-dialog,
       .remote-pins-dialog, .remote-file-picker-dialog, .remote-zip-peek-dialog, .screen-view-dialog, .script-library-dialog, .script-run-dialog,
-      .settings-dialog, .toolbox-dialog).el-dialog > .el-dialog__header { flex: 0 0 auto; }
+      .settings-dialog, .toolbox-dialog, .server-cleanup-dialog).el-dialog > .el-dialog__header { flex: 0 0 auto; }
   :is(.agent-builder-dialog, .agent-outputs-dialog, .artifact-dialog,
       .background-jobs-dialog, .background-job-detail-dialog, .clipboard-dialog, .connection-info-dialog, .command-history-dialog,
       .command-execution-detail-dialog, .device-group-manager-dialog,
@@ -32,7 +32,7 @@
       .one-liners-dialog, .process-dialog, .process-detail-dialog,
       .pty-dialog, .quick-actions-dialog, .quick-actions-editor-dialog, .quick-actions-parameters-dialog, .quick-actions-result-dialog, .remote-files-dialog,
       .remote-pins-dialog, .remote-file-picker-dialog, .remote-zip-peek-dialog, .screen-view-dialog, .script-library-dialog, .script-run-dialog,
-      .settings-dialog, .toolbox-dialog).el-dialog > .el-dialog__body {
+      .settings-dialog, .toolbox-dialog, .server-cleanup-dialog).el-dialog > .el-dialog__body {
     flex: 1 1 auto !important; min-height: 0 !important;
     overflow: auto;
   }
