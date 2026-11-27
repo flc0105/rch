@@ -104,11 +104,21 @@
         </div>
       </div>
 
-      <div class="script-library-shell">
+      <div class="script-library-shell" :class="{ 'script-library-tree-collapsed': !mobileTreeExpanded }">
         <div class="script-library-tree panel-lite">
           <div class="background-jobs-section-title script-library-tree-title">
             <Folder :size="16" aria-hidden="true" />
             Folders
+            <button
+              type="button"
+              class="script-library-tree-toggle"
+              :aria-expanded="mobileTreeExpanded"
+              aria-label="Toggle folders"
+              @click="mobileTreeExpanded = !mobileTreeExpanded"
+            >
+              <ChevronDown v-if="mobileTreeExpanded" :size="18" aria-hidden="true" />
+              <ChevronRight v-else :size="18" aria-hidden="true" />
+            </button>
           </div>
 
           <div class="script-library-pane-scroll">
@@ -127,9 +137,9 @@
               @node-expand="handleScriptTreeNodeExpand"
               @node-collapse="handleScriptTreeNodeCollapse"
             >
-              <template #default="{ data, node }">
+              <template #default="{ data }">
                 <span class="script-tree-node">
-                  <FolderOpen v-if="node.expanded" class="script-tree-icon" :size="16" aria-hidden="true" />
+                  <FolderOpen v-if="data.key === selectedScriptDirectoryTreeKey" class="script-tree-icon" :size="16" aria-hidden="true" />
                   <Folder v-else class="script-tree-icon" :size="16" aria-hidden="true" />
                   <span class="script-tree-node-label">
                     {{ data.label }}
@@ -149,12 +159,35 @@
               </div>
 
               <div class="background-job-module-key mono">
-                {{ scriptDirectoryItemCountText }}
+                <span v-if="currentScriptDirectoryFolders.length">{{ currentScriptDirectoryFolders.length }} {{ currentScriptDirectoryFolders.length === 1 ? 'folder' : 'folders' }} · </span>{{ scriptDirectoryItemCountText }}
               </div>
             </div>
           </div>
 
-          <div class="script-library-pane-scroll">
+          <div ref="scriptDirectoryPane" class="script-library-pane-scroll">
+            <div v-if="selectedDirectory || currentScriptDirectoryFolders.length" class="script-library-folder-list">
+              <button
+                v-if="selectedDirectory"
+                type="button"
+                class="script-library-folder-row script-library-parent-row"
+                @click="navigateScriptDirectory(getParentScriptDirectory(selectedDirectory))"
+              >
+                <ArrowUp :size="17" aria-hidden="true" />
+                <span class="script-library-folder-name">Up one level</span>
+              </button>
+              <button
+                v-for="folder in currentScriptDirectoryFolders"
+                :key="folder.key"
+                type="button"
+                class="script-library-folder-row"
+                :title="folder.path"
+                @click="navigateScriptDirectory(folder.path)"
+              >
+                <span class="script-library-folder-icon"><Folder :size="19" aria-hidden="true" /></span>
+                <span class="script-library-folder-name">{{ folder.label }}</span>
+                <ChevronRight class="script-library-folder-chevron" :size="16" aria-hidden="true" />
+              </button>
+            </div>
             <div
               v-if="filteredCurrentScriptDirectoryItems.length"
               class="script-library-card-list script-library-card-list-single"
@@ -261,7 +294,7 @@
             </div>
 
             <div
-              v-else
+              v-else-if="hasScriptSearch || !currentScriptDirectoryFolders.length"
               class="empty-state script-library-empty"
             >
               {{ hasScriptSearch ? 'No matching scripts' : 'No scripts in this folder' }}
@@ -325,7 +358,7 @@
 import { cancelTask } from '../api/tasksApi.js'
 import { createTerminalOperation, operationHeaders } from '../utils/terminalOperation.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal } from '@lucide/vue'
+import { FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal, ArrowUp, ChevronDown, ChevronRight } from '@lucide/vue'
 import {
   getScriptCatalog, getScriptRunOptions, runLibraryScript, createScriptFolder, renameScriptFolder,
   deleteScriptFolder, renameLibraryScript, uploadLibraryScript, deleteLibraryScript,
@@ -359,7 +392,7 @@ export default {
   name: 'ScriptLibraryDialog',
 
   components: {
-    FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal,
+    FileCode2, Plus, Upload, FolderPlus, Pencil, Trash2, RefreshCw, Play, Ellipsis, Search, Folder, FolderOpen, SlidersHorizontal, ArrowUp, ChevronDown, ChevronRight,
     ScriptRunDialog,
   },
 
@@ -406,6 +439,7 @@ export default {
       scriptCatalogDirectories: [],
       selectedDirectory: '',
       scriptSearchText: '',
+      mobileTreeExpanded: false,
       scriptTreeRenderKey: 0,
       scriptTreeExpandedKeys: [],
       scriptDirectorySelectionContextKey: '',
@@ -467,6 +501,16 @@ export default {
 
     selectedScriptDirectoryTreeKey() {
       return this.getScriptDirectoryTreeKey(this.selectedDirectory)
+    },
+
+    currentScriptDirectoryFolders() {
+      // Both panes use the same sorted tree, including empty folders.
+      let node = this.scriptDirectoryTreeData[0]
+      for (const part of this.normalizeScriptDirectoryPath(this.selectedDirectory).split('/').filter(Boolean)) {
+        node = node?.children.find(child => child.label === part)
+        if (!node) return []
+      }
+      return node?.children || []
     },
 
     currentScriptDirectoryItems() {
@@ -862,9 +906,26 @@ export default {
       return parts.slice(0, -1).join('/')
     },
 
+    selectScriptDirectory(directory) {
+      this.selectedDirectory = this.normalizeScriptDirectoryPath(directory)
+      this.$nextTick(() => {
+        const pane = this.$refs.scriptDirectoryPane
+        if (pane) pane.scrollTop = 0
+      })
+    },
+
     handleScriptTreeNodeClick(node) {
       if (!node) return
-      this.selectedDirectory = this.normalizeScriptDirectoryPath(node.path || '')
+      this.selectScriptDirectory(node.path)
+    },
+
+    navigateScriptDirectory(directory) {
+      this.selectScriptDirectory(directory)
+      // Reveal the current directory in the existing tree without remounting it.
+      this.scriptTreeExpandedKeys = this.includeScriptTreeAncestorKeys([
+        ...this.scriptTreeExpandedKeys,
+        this.selectedScriptDirectoryTreeKey,
+      ])
     },
 
     handleScriptMoreCommand(item, command) {
@@ -1832,6 +1893,78 @@ export default {
   min-width: 0;
 }
 
+/* Directory rows share the script list's spacing without competing with the script actions. */
+.script-library-folder-list {
+  display: grid;
+  gap: 7px;
+  padding: 2px 5px 8px 2px;
+}
+
+.script-library-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.script-library-folder-row:hover,
+.script-library-folder-row:focus-visible {
+  background: #f8fafc;
+  border-color: rgba(37, 99, 235, 0.32);
+}
+
+.script-library-folder-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #fff5e5;
+  color: #a16207;
+  flex: 0 0 auto;
+}
+
+.script-library-folder-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.script-library-folder-chevron,
+.script-library-parent-row > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.script-library-parent-row {
+  min-height: 36px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  padding: 5px 8px;
+}
+
+.script-library-tree-toggle {
+  display: none;
+  margin-left: auto;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
 .script-library-card-list {
   display: grid;
   gap: 12px;
@@ -2035,6 +2168,11 @@ export default {
   .script-library-directory {
     height: auto;
   }
+
+  .script-library-tree-toggle { display: inline-flex; align-items: center; }
+  .script-library-shell.script-library-tree-collapsed { grid-template-rows: auto minmax(0, 1fr); }
+  .script-library-tree-collapsed .script-library-tree > .script-library-pane-scroll { display: none; }
+  .script-library-tree-collapsed .script-library-tree-title { margin-bottom: 0; }
 }
 
 @media (max-width: 768px), (max-height: 720px) {
@@ -2218,6 +2356,12 @@ export default {
     min-height: 0 !important;
     overflow: hidden !important;
     min-width: 0;
+  }
+  .script-library-overlay .script-library-shell.script-library-tree-collapsed {
+    grid-template-rows: auto auto;
+  }
+  .script-library-overlay .script-library-tree-collapsed .script-library-tree {
+    height: auto !important;
   }
   .script-library-overlay .script-library-directory {
     max-width: 100%;

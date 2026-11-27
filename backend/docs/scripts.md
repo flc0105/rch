@@ -26,7 +26,7 @@ Script 与 Shell-like、ACMD 共用 Client 前台执行基础设施；ScriptMana
 
 Server 的 `ScriptCatalogService` 是 Script Library、终端 `script list` 和 `script view/exec` 参数补全共享的目录扫描与 Metadata 来源：递归搜索 Script 根目录中的 `.py` 文件，并根据文件本身和源码里的 `SCRIPT_METADATA` 构造 Catalog；目录列表另外由文件系统遍历得到。读取元数据使用 Python AST 的静态字面量提取，而不是为显示列表执行脚本代码。Metadata 应写成源码里可静态解析的字典，供 UI 构建参数表单。
 
-Web Script Library 提供文件夹树、脚本搜索与选择、源码编辑入口，以及创建、上传、重命名、删除 Script 和目录。上传接口只接受 `.py`；重命名和删除会实际修改 Server 文件系统，删除整个文件夹时也会递归删除内容。Catalog 根据磁盘中的 Script 源文件实时扫描生成。修改文件内容后重新请求 Catalog，即按磁盘中当前源码重新读入元数据；已经提交的执行任务不会因后续编辑而中途替换运行代码。
+Web Script Library 提供文件夹树、当前目录的子文件夹和脚本列表、返回上级目录、脚本搜索与选择、源码编辑入口，以及创建、上传、重命名、删除 Script 和目录。上传接口只接受 `.py`；重命名和删除会实际修改 Server 文件系统，删除整个文件夹时也会递归删除内容。Catalog 根据磁盘中的 Script 源文件实时扫描生成。修改文件内容后重新请求 Catalog，即按磁盘中当前源码重新读入元数据；已经提交的执行任务不会因后续编辑而中途替换运行代码。
 
 目录路径会规范化为相对于 Script 根目录的路径；文件的识别名称以该相对路径为准。目录、脚本重命名会影响此后通过原名称查找或 `scripts.run()` 引用的调用方，应同步修改引用关系。
 
@@ -337,7 +337,7 @@ Run API 要求 `script_name` 非空、`params` 为对象，并明确提供 `pres
 
 `script list` 与 `script list --json` 使用同一份扫描与 Metadata，按连接设备的 `os_alias` 和脚本 `SCRIPT_METADATA.platforms` 过滤；未声明或声明为空时不显示，**不根据目录名推断平台**。补全 `script exec <path>` 复用这份判断。`script exec` 及 Script Library UI 显式指定脚本时依旧能解析完整 Library 路径，不按列表结果限制；Script Library UI 的 Catalog/展示完全不参与这一过滤。
 
-Web Script Library 的目录导航不承担平台筛选职责。首次打开默认选中 `common` 目录（如存在），否则选中 `root`；关闭后重新打开同一设备时保留用户上次选择的目录，切换目标设备时回到默认目录。目录中的脚本平台适用性始终取决于各脚本的 `SCRIPT_METADATA.platforms`，与目录名无关。
+Web Script Library 的目录导航不承担平台筛选职责。左右两侧共用当前目录，右侧可以直接进入子文件夹或返回上级；左侧打开的文件夹图标表示当前目录，展开箭头独立表示树节点的展开状态。手机端可以折叠目录树，直接在右侧目录列表导航。脚本搜索仍递归当前目录及其子目录。首次打开默认选中 `common` 目录（如存在），否则选中 `root`；关闭后重新打开同一设备时保留用户上次选择的目录，切换目标设备时回到默认目录。目录中的脚本平台适用性始终取决于各脚本的 `SCRIPT_METADATA.platforms`，与目录名无关。
 
 ## JSON Viewer 行操作回归脚本
 
