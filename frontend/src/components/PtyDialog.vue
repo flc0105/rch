@@ -169,6 +169,7 @@ export default {
       ptyBackend: '',
       ptyError: '',
       ptyTerm: null,
+      ptyClearPending: null,
       ptyFitAddon: null,
       ptyInputQueue: '',
       ptyFlushTimer: null,
@@ -478,6 +479,7 @@ export default {
     },
 
     disposePtyTerminal() {
+      this.ptyClearPending = null
       if (this._ptyWindowResizeHandler) {
         window.removeEventListener('resize', this._ptyWindowResizeHandler)
         this._ptyWindowResizeHandler = null
@@ -503,6 +505,7 @@ export default {
     },
 
     clearPtyTerminal() {
+      this.ptyClearPending = null
       if (this.ptyTerm) {
         try { this.ptyTerm.clear() } catch (_) {}
         try { this.ptyTerm.reset() } catch (_) {}
@@ -511,11 +514,40 @@ export default {
 
     clearPtyOutput() {
       const term = this.ptyTerm
-      if (!term) return
+      if (!term || this.ptyClearPending) return
 
-      // Queue behind pending output; erase the screen and scrollback without resetting terminal modes.
-      term.write('\x1b[2J\x1b[3J\x1b[H', () => {
-        if (this.ptyTerm !== term) return
+      const sessionId = this.ptySessionId
+      if (this.ptyBackend === 'ConPTY' || this.ptyBackend === 'WinPTY') {
+        // Windows owns a separate console screen. Moving the browser cursor to
+        // row zero would desynchronize subsequent absolute-position output.
+        this.ptyClearPending = []
+        const pending = this.ptyClearPending
+        const isCurrent = () => this.ptyTerm === term && this.ptySessionId === sessionId && this.ptyClearPending === pending
+        term.write('', () => {
+          if (!isCurrent()) return
+          const { cursorX, cursorY } = term.buffer.active
+          let erase = '\x1b[3J'
+          // Do not change application-relative coordinates or pending autowrap.
+          if (!term.modes.originMode && cursorX < term.cols) {
+            if (cursorY > 0) erase += `\x1b[${cursorY};${term.cols}H\x1b[1J`
+            if (cursorY < term.rows - 1) erase += `\x1b[${cursorY + 2};1H\x1b[0J`
+            erase += `\x1b[${cursorY + 1};${cursorX + 1}H`
+          }
+          term.write(erase, () => {
+            if (!isCurrent()) return
+            this.ptyClearPending = null
+            term.clearSelection()
+            for (const text of pending) term.write(text)
+            this.focusPtyInput()
+          })
+        })
+        return
+      }
+
+      // Unix PTYs do not maintain a separate console screen buffer.
+      term.write('', () => {
+        if (this.ptyTerm !== term || this.ptySessionId !== sessionId) return
+        term.clear()
         term.clearSelection()
         this.focusPtyInput()
       })
@@ -523,7 +555,9 @@ export default {
 
     writePtyOutput(text) {
       if (!text) return
-      if (this.ptyTerm) {
+      if (this.ptyClearPending) {
+        this.ptyClearPending.push(text)
+      } else if (this.ptyTerm) {
         this.ptyTerm.write(text)
       }
     },
