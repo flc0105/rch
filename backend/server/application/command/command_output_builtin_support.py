@@ -2,11 +2,11 @@ import os
 import re
 from datetime import datetime
 
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from core.protocol.result_envelope import ResultEnvelope
 from core.utils.parsing import parse
 from server.application.artifact.artifact_events import publish_artifact_created
-from .wrapped_result import inner_output_text, inner_terminal_status, inner_result_event
+from .wrapped_result import iter_inner_results
 
 
 class CommandOutputBuiltinSupport:
@@ -116,7 +116,7 @@ class CommandOutputBuiltinSupport:
         if not inner_command:
             message = 'Usage: saveout <client-command>'
             envelope = ResultEnvelope(status='error', message=message).as_payload()
-            yield ResultChunk(0, message, True, terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, message)
             return
 
         output_kind = 'command'
@@ -129,27 +129,14 @@ class CommandOutputBuiltinSupport:
         started = self._now()
         started_at = started.isoformat(timespec='seconds')
         final_status = 'interrupted'
-        fallback_status = None
-        saw_protocol_events = False
-        saw_terminal = False
 
         try:
             executor = self._build_inner_executor(inner_command)
             with open(file_path, 'w', encoding='utf-8', errors='replace') as file_obj:
-                for item in executor():
-                    event = inner_result_event(item)
-                    saw_protocol_events |= event is not None
-                    terminal = inner_terminal_status(item)
-                    if terminal is not None:
-                        final_status = terminal
-                        saw_terminal = True
-                    elif event is None and not hasattr(item, 'eof'):
-                        # A local builtin may still yield plain (status, text) tuples.
-                        fallback_status = int(item[0] or 0)
-                    self._append_chunk(file_obj, inner_output_text(item))
-                if not saw_terminal:
-                    final_status = ('success' if fallback_status == 1 else 'error') if (
-                        not saw_protocol_events and fallback_status is not None) else 'interrupted'
+                for item in iter_inner_results(executor()):
+                    if item.terminal_status is not None:
+                        final_status = item.terminal_status
+                    self._append_chunk(file_obj, item.visible_text())
         except Exception as exc:
             final_status = 'error'
             with open(file_path, 'a', encoding='utf-8', errors='replace') as file_obj:
@@ -178,5 +165,4 @@ class CommandOutputBuiltinSupport:
             f'size: {size} bytes',
         ])
         envelope = ResultEnvelope(status=final_status, message=message).as_payload()
-        yield ResultChunk(1 if final_status in ('success', 'partial') else 0,
-                          message, True, terminal_authoritative=True, event=envelope)
+        yield ResultEvent(envelope, message)

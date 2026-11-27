@@ -2,6 +2,7 @@ import os
 import threading
 from collections import deque
 from dataclasses import dataclass
+from functools import partial
 
 from core.protocol.message_types import MSG_TYPE_TRANSFER_START, MSG_TYPE_TRANSFER_CANCEL
 from server.application.command.command_execution_event import CommandExecutionEvent
@@ -33,13 +34,31 @@ class UploadExecutionService:
     def format_display_command(cls, filename: str) -> str:
         return f'{cls.REMOTE_UPLOAD_LABEL} {filename}'
 
-    def __init__(self, server, command_stream_service, artifact_service=None, transfer_service=None):
+    def __init__(self, server, command_stream_service, artifact_service=None, transfer_service=None, task_store=None):
         self.server = server
         self.command_stream_service = command_stream_service
         self.artifact_service = artifact_service
         self.transfer_service = transfer_service
+        self.task_store = task_store
         self._batch_changed = threading.Condition()
         self._batch_queues = {}
+
+    def cancel_task(self, task, mark_requested, *, transfer_id=''):
+        transfer = self.transfer_service.find_active_transfer_by_task_id(task['task_id'])
+        if transfer is None and transfer_id:
+            transfer = (self.transfer_service.get_batch(transfer_id[6:]) if transfer_id.startswith('batch:')
+                        else self.transfer_service.get_transfer(transfer_id, tab_id=task.get('tab_id', '')))
+        if not transfer or transfer.get('state') != 'running':
+            raise ValueError('task is not cancellable')
+        if (task['client_id'] != transfer.get('client_id') or
+                (task.get('tab_id') and task['tab_id'] != transfer.get('tab_id'))):
+            raise ValueError('transfer does not belong to task client')
+        if transfer.get('cancel_supported') is False:
+            raise ValueError('current transfer mode does not support cancellation')
+        mark_requested()
+        self.transfer_service.cancel_operation(transfer['transfer_id'], tab_id=task.get('tab_id', ''),
+            connection_lookup=self.server.get_target_connection_by_client_id)
+        return {'transfer_id': transfer['transfer_id']}
 
     def open_browser_batch(self, batch_id):
         with self._batch_changed:
@@ -185,6 +204,7 @@ class UploadExecutionService:
         artifact_service = None
         staged_path = ''
         safe_name = ''
+        cancel_handler = None
         active_transfer_id = str(transfer_id or '').strip()
         effective_command = (command or self.format_display_command(self._transfer_filename(local_path, display_name))).strip()
 
@@ -249,6 +269,13 @@ class UploadExecutionService:
                 )
                 active_transfer_id = transfer.get('transfer_id') or ''
 
+
+            # A Terminal upload may run inside an ordinary command task.
+            # Register its cancellation capability without replacing an enclosing batch handler.
+            if task_id and self.task_store is not None:
+                handler = partial(self.cancel_task, transfer_id=active_transfer_id)
+                if self.task_store.register_cancel_handler(task_id, handler):
+                    cancel_handler = handler
 
             payload = {
                 'source': source,
@@ -340,6 +367,8 @@ class UploadExecutionService:
                 },
             )
         finally:
+            if cancel_handler is not None:
+                self.task_store.unregister_cancel_handler(task_id, cancel_handler)
             if artifact_service is not None and staged_path:
                 self._cleanup_staged_upload(artifact_service, staged_path)
             elif self.artifact_service is not None:

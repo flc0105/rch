@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+from core.protocol.result_envelope import ResultStreamState
 
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
 
@@ -39,56 +40,21 @@ class CommandStreamService:
     def collect_envelope(result_iter) -> CollectedCommandResult:
         """Collect a request without inferring its final outcome from stream chunks."""
         parts = []
-        completion = None
+        state = ResultStreamState()
         for item in result_iter:
-            event = getattr(item, 'event', None)
-            if not isinstance(event, dict):
-                value = item[1] if len(item) > 1 else None
-                event = value if isinstance(value, dict) and value.get('event_type') else None
-            else:
-                value = item[1] if len(item) > 1 else None
-
-            if event is not None:
-                phase = event.get('event_type')
-                if phase == 'completed':
-                    if completion is not None:
-                        raise RuntimeError('Duplicate completed Result event')
-                    completion = event
-                if phase == 'started':
-                    continue
-                # A command may be rendered by the calling domain already;
-                # the original data stays separate for machine consumers.
-                from core.utils.output_marker import render_result_message
-                if phase == 'progress':
-                    displayed = render_result_message(event)
-                elif isinstance(value, str):
-                    displayed = value
-                else:
-                    displayed = str(event.get('message') or '')
-                    if not displayed and 'data' in event:
-                        displayed = json.dumps(event['data'], ensure_ascii=False)
-                if displayed:
-                    parts.append(displayed)
-                continue
-
-            # Builtins can still supply local, already-rendered text; only an
-            # authoritative completed Result may establish the final status.
-            if value is not None:
-                parts.append(str(value))
-
-        if completion is None:
+            state.accept(item)
+            displayed = item.visible_text(data_indent=None)
+            if displayed:
+                parts.append(displayed)
+        if state.completion is None:
             raise RuntimeError('Result stream ended without completed event')
+        completion = state.completion.event
         data = completion.get('data')
         return CollectedCommandResult(
             status=completion['status'],
             text='\n'.join(part for part in parts if part).strip(),
             data=data if isinstance(data, (dict, list)) else None,
         )
-
-    def collect_result(self, result_iter):
-        """Text projection for synchronous consumers of a collected Result."""
-        result = self.collect_envelope(result_iter)
-        return (1 if result.status in ('success', 'partial') else 0), result.text
 
     @staticmethod
     def json_payload(result: CollectedCommandResult, *, command_type=COMMAND_TYPE_COMMAND) -> dict:
@@ -184,7 +150,7 @@ class CommandStreamService:
         action: str = '',
         history_entry_id: str = '',
     ) -> str:
-        status, text = self.collect_result(
+        result = self.collect_envelope(
             self.stream_command(
                 target,
                 command,
@@ -196,10 +162,10 @@ class CommandStreamService:
             )
         )
 
-        if status != 1:
-            raise RuntimeError(text or 'Remote command failed')
+        if result.status not in ('success', 'partial'):
+            raise RuntimeError(result.text or 'Remote command failed')
 
-        return text
+        return result.text
 
     def run_json_command(
         self,

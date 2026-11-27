@@ -27,15 +27,19 @@ class ClipboardSessionService:
         rows = session.send_command('', type=MSG_TYPE_CONTROL, domain=ControlDomain.CLIPBOARD,
                                     action=action, payload=payload,
                                     extra={'timeout': self.REQUEST_TIMEOUT_SECONDS, 'tab_id': tab_id})
-        status, result = 0, None
-        for status, result in rows:
-            pass
-        if status != 1:
-            if result is None:
-                raise ConnectionError('Client disconnected')
-            message = result.get('message') if isinstance(result, dict) else result
-            if isinstance(result, dict) and result.get('status') == 'timed_out':
+        from core.protocol.result_envelope import ResultStreamState
+        state = ResultStreamState()
+        for item in rows:
+            state.accept(item)
+        if state.completion is None:
+            raise ConnectionError('Client disconnected')
+        result = state.completion.event
+        if not state.completion.succeeded:
+            message = result.get('message') or ''
+            if state.terminal_status == 'timed_out':
                 raise TimeoutError(message or 'Clipboard operation timed out')
+            if state.terminal_status == 'interrupted':
+                raise ConnectionError(message or 'Client disconnected')
             raise RuntimeError(str(message or 'Clipboard operation failed'))
         if action == ClipboardAction.SET:
             return {'message': str(result.get('message') or '')} if isinstance(result, dict) else {}

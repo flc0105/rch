@@ -1,5 +1,5 @@
 """Server builtin for saved, manually managed TCP Tunnel instances."""
-from core.protocol.result_envelope import ResultEnvelope
+from core.protocol.result_envelope import ResultEnvelope, ResultEvent
 from core.utils.command_output import render_result_payload, ResultDataShape
 from tunnel.instances import instance_service_for, validate_name
 
@@ -48,11 +48,11 @@ class TunnelBuiltinSupport:
             else:
                 raise ValueError(f'Unsupported tunnel action: {op}')
             envelope = ResultEnvelope(data=result).as_payload()
-            return 1, render_result_payload(envelope, invocation.output_format,
-                                            view='data', shape=ResultDataShape.FLAT)
+            return ResultEvent(envelope, render_result_payload(envelope, invocation.output_format,
+                                            view='data', shape=ResultDataShape.FLAT))
         except (OSError, ValueError, RuntimeError) as exc:
             envelope = ResultEnvelope(status='error', message=str(exc)).as_payload()
-            return 0, render_result_payload(envelope, invocation.output_format)
+            return ResultEvent(envelope, render_result_payload(envelope, invocation.output_format))
 
     @staticmethod
     def _config(args):

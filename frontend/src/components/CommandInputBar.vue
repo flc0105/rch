@@ -253,6 +253,12 @@ export default {
   if (this.handleLocalFrontendCommand(command)) {
     return
   }
+  // Enter and the Run button share the local in-flight task guard. The
+  // Server still decides whether another tab's foreground slot allows this command.
+  if (this.sending || this.hasRunningWebTask) {
+    ElMessage.warning('A command is already running')
+    return
+  }
 
   const cancelPolicy = this.getSubmittedCommandCancelPolicy(command)
   const clientId = this.selectedId
@@ -465,12 +471,13 @@ export default {
         return
       }
 
+      const clientId = this.selectedId
       this.cancelSending = true
+      // Record the request before dispatch: a fast completion can beat HTTP.
+      this.$emit('append-output', clientId, formatTerminalCancelRequestedLine(taskId), 'info', { task_id: taskId })
 
       try {
         await cancelTask(taskId)
-
-        this.$emit('append-output', this.selectedId, formatTerminalCancelRequestedLine(taskId), 'info')
         ElMessage.success('Cancel request sent')
       } catch (e) {
         this.cancelSending = false

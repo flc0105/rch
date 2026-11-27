@@ -111,7 +111,8 @@ class WebTaskRunner:
     def _get_task_cancel_requested(self, context: TaskExecutionContext) -> bool:
         runtime_task = self._get_runtime_task_context(context)
         if runtime_task:
-            return bool(runtime_task.get('cancel_requested'))
+            if runtime_task.get('cancel_requested'):
+                return True
 
         task = self._get_task(context.task_id)
         return bool(task.get('cancel_requested'))
@@ -215,7 +216,6 @@ class WebTaskRunner:
                              envelope=None):
         text = '' if result is None else str(result)
         self._publish_stream_chunk(context, status, text, envelope)
-        summary.record_chunk(status, text)
 
     def _record_task_event(self, context: TaskExecutionContext, event: CommandExecutionEvent, summary: TaskStreamSummary):
         if event.event_type == CommandExecutionEvent.STARTED:
@@ -225,6 +225,8 @@ class WebTaskRunner:
             return
         if event.payload.get('result_terminal'):
             summary.terminal_status = event.payload['result_terminal']
+            if summary.terminal_status == WebTaskStatus.CANCELLED:
+                self.task_store.request_cancel(context.task_id)
             envelope = event.payload.get('result_envelope')
             if event.text or (envelope and envelope.get('type') != 'result'):
                 self._publish_stream_chunk(context, event.status, event.text, envelope)
@@ -245,8 +247,7 @@ class WebTaskRunner:
 
         if event.event_type == CommandExecutionEvent.ERROR:
             reason = str(event.payload.get('failure_reason') or '')
-            if reason:
-                summary.mark_dispatch_failure(reason)
+            summary.mark_dispatch_failure(reason)
             self._record_stream_chunk(context, 0, event.text, summary, event.payload.get('result_envelope'))
             return
 
@@ -259,6 +260,7 @@ class WebTaskRunner:
             return
 
         if event.event_type == CommandExecutionEvent.COMPLETED:
+            summary.mark_completed(event.ok)
             return
 
     def _consume_event_iter(self, context: TaskExecutionContext, event_iter, summary: TaskStreamSummary):
@@ -266,9 +268,7 @@ class WebTaskRunner:
             self._record_task_event(context, event, summary)
 
     def _resolve_final_status(self, context: TaskExecutionContext, summary: TaskStreamSummary) -> str:
-        return summary.resolve_final_status(
-            cancel_requested=self._get_task_cancel_requested(context)
-        )
+        return summary.resolve_final_status()
 
     def _finalize_stream(self, context: TaskExecutionContext, final_status: str, summary: TaskStreamSummary):
         self.task_store.finish_task(
@@ -309,7 +309,7 @@ class WebTaskRunner:
             finally:
                 del context._result_batch
 
-    def _iter_command_events(self, context: TaskExecutionContext):
+    def iter_command_events(self, context: TaskExecutionContext):
         context.history_entry_id = self._get_history_entry_id(context)
         executor = self.command_executor_factory.create(context.session)
         yield from self.command_execution_pipeline.iter_events(
@@ -319,7 +319,7 @@ class WebTaskRunner:
             swallow_exception=True,
         )
 
-    def _iter_control_events(self, context: TaskExecutionContext):
+    def iter_control_events(self, context: TaskExecutionContext):
         from core.protocol.message_types import MSG_TYPE_CONTROL
 
         context.history_entry_id = self._get_history_entry_id(context)
@@ -327,49 +327,19 @@ class WebTaskRunner:
         if control is None:
             raise ValueError('Control request is required')
         yield CommandExecutionEvent.started(context.command)
-        ok = True
-        for item in self.remote_execution_service.stream_command(
+        rows = self.remote_execution_service.stream_command(
             context.session, '', command_type=MSG_TYPE_CONTROL,
             domain=control.domain, action=control.action, payload=control.payload,
             history_entry_id=context.history_entry_id,
-        ):
-            event = CommandExecutionPipeline.build_result_event(item)
-            if not event.payload.get('intermediate_result') and event.event_type in (CommandExecutionEvent.ERROR, CommandExecutionEvent.CANCELLED):
-                ok = False
-            yield event
-        yield CommandExecutionEvent.completed(ok)
-
-    def _iter_upload_events(self, context: TaskExecutionContext):
-        context.history_entry_id = self._get_history_entry_id(context)
-        yield from self.remote_execution_service.iter_upload_events(
-            context.session,
-            context.metadata.get('local_path') or '',
-            remote_path=context.metadata.get('remote_path') or '',
-            display_name=context.metadata.get('display_name') or '',
-            history_entry_id=context.history_entry_id,
-            source=context.source,
-            task_id=context.task_id,
-            command=context.command,
-            tab_id=self._get_task_tab_id(context),
-            transfer_id=context.metadata.get('transfer_id') or '',
-            conflict_policy=context.metadata.get('conflict_policy'),
-            batch_id=context.metadata.get('batch_id') or '',
         )
+        yield from CommandExecutionPipeline.iter_result_events(rows)
 
-    def _release_task(self, context: TaskExecutionContext) -> None:
-        context.session.release_foreground_task(task_id=context.task_id, command=context.command)
+    def run_task(self, context: TaskExecutionContext, events, release_foreground: bool):
+        def event_stream():
+            yield from events(context)
 
-    def run_command_task(self, context: TaskExecutionContext):
         try:
-            self._run_task_events(context, self._iter_command_events(context))
+            self._run_task_events(context, event_stream())
         finally:
-            self._release_task(context)
-
-    def run_control_task(self, context: TaskExecutionContext):
-        try:
-            self._run_task_events(context, self._iter_control_events(context))
-        finally:
-            self._release_task(context)
-
-    def run_upload_task(self, context: TaskExecutionContext):
-        self._run_task_events(context, self._iter_upload_events(context))
+            if release_foreground:
+                context.session.release_foreground_task(task_id=context.task_id, command=context.command)

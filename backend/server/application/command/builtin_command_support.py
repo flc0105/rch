@@ -5,7 +5,7 @@ from core.utils.formatting import format_dict
 from server.application.scripts.script_run_service import prepare_script_control
 from core.platform.catalog_visibility import visible_on_platform
 from server.application.command.command_execution_event import CommandExecutionEvent
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from server.application.history.quick_history import QuickHistoryRecordPolicy
 from server.config.config import SCRIPT_PATH
 
@@ -48,15 +48,13 @@ class UploadBuiltinSupport:
                 if event.text:
                     progress_text = (f'Uploading {os.path.basename(filename)}...'
                                      if event.payload.get('stage') == 'staged' else event.text)
-                    yield 1, {'event_type': CommandExecutionEvent.PROGRESS,
-                              'text': progress_text, **event.payload}
+                    yield ResultEvent.progress(progress_text)
             elif event.event_type == CommandExecutionEvent.ERROR:
                 failure_message = event.text or 'Upload failed'
             elif event.event_type == CommandExecutionEvent.CANCELLED:
                 cancelled = True
                 if not event.payload.get('terminal'):
-                    yield 0, {**event.payload, 'event_type': CommandExecutionEvent.CANCELLED,
-                              'text': event.text or 'cancelled', 'failure_reason': 'cancelled'}
+                    yield ResultEvent.completed('cancelled', event.text or 'cancelled')
             elif event.event_type == CommandExecutionEvent.COMPLETED:
                 if cancelled:
                     continue  # The cancellation event already owns the terminal state.
@@ -65,9 +63,7 @@ class UploadBuiltinSupport:
                            if ok else failure_message or 'Upload failed')
                 envelope = ResultEnvelope(status='success' if ok else 'error',
                                           message=message).as_payload()
-                yield ResultChunk(1 if ok else 0,
-                                  render_result_payload(envelope, invocation.output_format), True,
-                                  terminal_authoritative=True, event=envelope)
+                yield ResultEvent(envelope, render_result_payload(envelope, invocation.output_format))
 
 
 class ScriptBuiltinSupport:
@@ -87,13 +83,13 @@ class ScriptBuiltinSupport:
         from core.protocol.control import ControlDomain, ConfigurationAction
         if not self.use_foreground_guard and self.conn is not None:
             self.conn.runtime.set_foreground_cancel_policy('none')
-        status, result = self.remote_execution_service.run_foreground_control(
+        completion = self.remote_execution_service.run_foreground_control(
             self.conn, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},
             task_type='runtime_config', source='script_options',
             foreground=self.use_foreground_guard)
-        if status != 1 or not isinstance(result, dict):
-            raise RuntimeError(str(result) or 'Unable to read Configuration')
-        config = result.get('data')
+        if not completion.succeeded:
+            raise RuntimeError(completion.event.get('message') or 'Unable to read Configuration')
+        config = completion.event.get('data')
         if not isinstance(config, dict) or not isinstance(config.get('items'), list):
             raise RuntimeError('Invalid Configuration GET result')
         return config
@@ -124,13 +120,12 @@ class ScriptBuiltinSupport:
             output_format, layout = resolve_presentation(args, ResultDataShape.LINES)
             text = render_result_payload(envelope, output_format,
                                          view='data', shape=layout, line_field='name')
-            yield ResultChunk(1, text, True, terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, text)
             return
         if subcommand == 'view':
             with open(self._resolve_script_path(args['name']), 'rt', encoding='utf-8') as source:
                 envelope = ResultEnvelope(message=source.read()).as_payload()
-            yield ResultChunk(1, render_result_payload(envelope, invocation.output_format), True,
-                              terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, render_result_payload(envelope, invocation.output_format))
             return
         if subcommand == 'exec':
             yield from self.execute_script_file(args)
@@ -248,8 +243,7 @@ class AliasBuiltinSupport:
         else:
             output = render_result_payload(envelope, invocation.output_format,
                                            view=view, shape=shape)
-        yield ResultChunk(1 if success else 0, output,
-                          True, terminal_authoritative=True, event=envelope)
+        yield ResultEvent(envelope, output)
 
 
 class PinnedPathBuiltinSupport:
@@ -290,31 +284,27 @@ class PinnedPathBuiltinSupport:
             envelope = ResultEnvelope(data=rows,
                                       message='No saved pinned paths for current host').as_payload()
             fmt, layout = resolve_presentation(invocation.arguments, ResultDataShape.TABLE)
-            yield ResultChunk(1, render_result_payload(envelope, fmt,
-                              view='data', shape=layout, line_field='name'), True,
-                              terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, render_result_payload(envelope, fmt,
+                              view='data', shape=layout, line_field='name'))
             return
 
         if not name:
             envelope = ResultEnvelope(status='error', message='Pinned path name is required').as_payload()
-            yield ResultChunk(0, render_result_payload(envelope, invocation.output_format), True,
-                              terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, render_result_payload(envelope, invocation.output_format))
             return
 
         matched_item = self.pinned_path_store.get_item_by_name(self._get_machine_id(), name)
         if matched_item is None:
             envelope = ResultEnvelope(status='error', message=f'Pinned path not found: {name}').as_payload()
-            yield ResultChunk(0, render_result_payload(envelope, invocation.output_format), True,
-                              terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, render_result_payload(envelope, invocation.output_format))
             return
 
         target_path = str(matched_item.get('path') or '').strip()
         resolved_command = self._build_cd_command(target_path)
         # History retains the original gopin command; downstream cd keeps its stream.
         message = f'gopin {name} -> {resolved_command}'
-        yield ResultChunk(1, render_result_payload(ResultEnvelope(message=message).as_payload(),
-                                       invocation.output_format), False, terminal_authoritative=True,
-                          event={'event_type': 'chunk', 'message': message})
+        yield ResultEvent({'event_type': 'chunk', 'message': message}, render_result_payload(ResultEnvelope(message=message).as_payload(),
+                                       invocation.output_format))
 
         command_processor = self.command_processor_factory()
         executor = command_processor(resolved_command)
@@ -382,9 +372,7 @@ class HistoryBuiltinSupport:
         from core.protocol.result_envelope import ResultEnvelope
         from core.utils.command_output import render_result_payload
         message = f'sending command: {resolved_command}'
-        yield ResultChunk(1, render_result_payload(ResultEnvelope(message=message).as_payload()),
-                          False, terminal_authoritative=True,
-                          event={'event_type': 'chunk', 'message': message})
+        yield ResultEvent({'event_type': 'chunk', 'message': message}, render_result_payload(ResultEnvelope(message=message).as_payload()))
 
         command_processor = self.command_processor_factory()
         executor = command_processor(resolved_command)
@@ -412,15 +400,14 @@ class HistoryBuiltinSupport:
             text = render_result_payload(envelope, output_format, view='data', shape=layout,
                                          line_field='command', footer=('Tip: use history run <index> or !<index> to run a history item quickly'
                                                  if output_format == 'text' else ''))
-            yield ResultChunk(1, text, True, terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, text)
             return
 
         if action == 'clear':
             # Quick Recent is cleared; the independent Pinned store is untouched.
             self.command_history.clear_history_for_connection(self.conn)
             envelope = ResultEnvelope(message='Command history cleared').as_payload()
-            yield ResultChunk(1, render_result_payload(envelope, output_format), True,
-                              terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, render_result_payload(envelope, output_format))
             return
 
         if action == 'run':
@@ -431,8 +418,7 @@ class HistoryBuiltinSupport:
                 resolved_command = self._resolve_history_command_by_index(history_index)
             except ValueError as exc:
                 envelope = ResultEnvelope(status='error', message=str(exc)).as_payload()
-                yield ResultChunk(0, render_result_payload(envelope, output_format), True,
-                                  terminal_authoritative=True, event=envelope)
+                yield ResultEvent(envelope, render_result_payload(envelope, output_format))
                 return
             # The nested Client command can stream; preserve its own result chunks.
             for item in self._run_history_item(resolved_command):
@@ -466,6 +452,5 @@ class RttBuiltinSupport:
         from core.utils.command_output import ResultDataShape, render_result_payload, resolve_presentation
         envelope = ResultEnvelope(data=payload).as_payload()
         output, layout = resolve_presentation(invocation.arguments, ResultDataShape.FLAT)
-        yield ResultChunk(1, render_result_payload(envelope, output,
-                          view='data', shape=layout, width=24), True,
-                          terminal_authoritative=True, event=envelope)
+        yield ResultEvent(envelope, render_result_payload(envelope, output,
+                          view='data', shape=layout, width=24))

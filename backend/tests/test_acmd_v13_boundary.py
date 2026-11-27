@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 from client.commands.acmd.common.inspection import image_info, sqlite_query
 from core.utils.command_output import (ResultDataShape, StructuredCommandResult,
-    project_result_chunks, project_result_output_texts, result_visible_text)
-from core.protocol.message_queue import ResultChunk
+    project_result_events, project_result_output_texts, result_visible_text)
+from core.protocol.result_envelope import ResultEvent
 from core.protocol.result_envelope import result_wire_event
 from rchcli.rchcli import RemoteConsole
 from server.application.terminal.pty_session_service import PtySessionService
@@ -44,11 +44,11 @@ def test_cli_history_and_live_terminal_use_identical_projection():
         event = result_wire_event(1, 1, StructuredCommandResult(
             status=1, data=data, shape=ResultDataShape.TABLE,
             formats=('table', 'records', 'json')).as_event(requested=fmt))
-        chunk = ResultChunk(1, event, True, terminal_authoritative=True, event=event)
-        shown = next(project_result_chunks([chunk]))
-        assert shown.event is event and shown[1] == result_visible_text(event)
-        assert project_result_output_texts([event]) == [shown[1]]
-        assert list(RemoteConsole._activity_output([event], project_result_output_texts([event])))[0][0] == shown[1]
+        chunk = ResultEvent(event)
+        shown = next(project_result_events([chunk]))
+        assert shown.event is event and shown.visible_text() == result_visible_text(event)
+        assert project_result_output_texts([event]) == [shown.visible_text()]
+        assert list(RemoteConsole._activity_output([event], project_result_output_texts([event])))[0][0] == shown.visible_text()
     error = result_wire_event(2, 0, 'Business failed')
     assert result_visible_text(error) is None
     assert list(RemoteConsole._activity_output([error]))[0][0] == 'Business failed'

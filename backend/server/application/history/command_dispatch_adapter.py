@@ -7,7 +7,6 @@ import uuid
 
 from core.protocol.control import ControlDomain, ScriptAction
 from server.application.history.control_activity import should_record
-from core.protocol.message_queue import result_terminal_status
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from server.application.history.activity_definitions import (
     ActivityAction, ActivityKind, ActivityOperation, operation_summary,
@@ -202,34 +201,30 @@ class CommandDispatchAdapter:
         return ''
 
     def observe_result(self, conn, entry_id, data, rows):
-        authoritative = data['type'] == COMMAND_TYPE_CONTROL
+        finalize_on_completion = data['type'] == COMMAND_TYPE_CONTROL
         if not entry_id:
             yield from rows
             return
         final = None
         try:
             for item in rows:
-                status, result = item[:2]
-                eof = bool(getattr(item, 'eof', False))
-                if authoritative and hasattr(item, 'eof'):
-                    item.terminal_authoritative = True
-                if eof:
-                    final = result_terminal_status(status, result)
+                result = item.event
+                outcome = item.terminal_status
+                if outcome is not None:
+                    final = outcome
                 try:
-                    wire = getattr(item, 'event', None)
-                    if isinstance(wire, dict):
-                        self.coordinator.append_client_result(conn, entry_id, wire)
-                    if eof and isinstance(result, dict):
+                    self.coordinator.append_client_result(conn, entry_id, result)
+                    if outcome is not None:
                         self.coordinator.add_references(conn, entry_id, result.get('references'))
-                    if eof and authoritative:
-                        self.coordinator.finish(conn, entry_id, final in ('success', 'partial'), status=final)
+                        if finalize_on_completion:
+                            self.coordinator.finish(conn, entry_id, item.succeeded, status=outcome)
                 except Exception:
                     logger.exception('Unable to record request result')
                 yield item
-            if authoritative and final is None:
+            if finalize_on_completion and final is None:
                 self._interrupt_request(conn, entry_id, 'interrupted')
         except BaseException as exc:
-            if authoritative and final is None:
+            if finalize_on_completion and final is None:
                 final = ('timed_out' if isinstance(exc, TimeoutError) else
                          'interrupted' if isinstance(exc, (ConnectionError, EOFError, GeneratorExit)) else 'error')
                 self._interrupt_request(conn, entry_id, final)

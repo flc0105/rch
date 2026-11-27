@@ -6,7 +6,8 @@ from server.application.command.builtin_command_handler import BuiltinCommandHan
 from server.application.command.command_planner import CommandPlanner
 from server.application.execution.remote_execution_service import RemoteExecutionService
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
-from core.utils.command_output import project_result_chunks
+from core.utils.command_output import project_result_events
+from core.protocol.result_envelope import ResultEvent
 from server.application.tasks.task_types import TASK_TYPE_COMMAND
 
 class CommandExecutor:
@@ -60,10 +61,10 @@ class CommandExecutor:
         # alias 现在保留用户原始输入，不再把 history entry 改写为展开后的真实命令。
         if resolved_command:
             platform_suffix = f' [{alias_platform}]' if alias_platform else ''
-            yield 1, f'alias {alias_name}{platform_suffix} -> {resolved_command}'
+            yield ResultEvent.chunk(f'alias {alias_name}{platform_suffix} -> {resolved_command}')
 
     def _yield_error(self, error):
-        yield 0, str(error)
+        yield ResultEvent.completed('error', str(error))
 
     def _create_plan_executor(self):
         return self._execute_remote_plan
@@ -97,7 +98,7 @@ class CommandExecutor:
                 domain=plan.get('domain', ''), action=plan.get('action', ''), payload=plan.get('payload'),
                 history_entry_id=self.current_history_entry_id,
             )
-        return lambda: project_result_chunks(execute())
+        return lambda: project_result_events(execute())
 
     def get_command_candidates(self):
         return self.builtin_handler.get_command_candidates()

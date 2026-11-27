@@ -4,7 +4,7 @@ from threading import Lock
 import queue
 import time
 
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 import logging
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ class ClientSessionCommandChannel:
             self.send_cancel(data.get('id'))
 
         results = self.wait_for_result(data.get('id'), command if type == MSG_TYPE_COMMAND else None,
-                                       results=pending, timeout=timeout, terminal_authoritative=type == MSG_TYPE_CONTROL)
+                                       results=pending, timeout=timeout)
         if adapter is not None:
             results = adapter.observe_result(self.session, history_entry_id, data, results)
         if link_foreground_cancel:
@@ -143,10 +143,9 @@ class ClientSessionCommandChannel:
                         raise TimeoutError('Completion request timed out') from None
                     if event is None:
                         raise ConnectionError('Client disconnected')
-                    final = event.get('event_type') == 'completed'
-                    status = 1 if not final or event.get('status') in ('success', 'partial') else 0
-                    yield ResultChunk(status, event, final, True, event=event)
-                    if final:
+                    result = ResultEvent(event)
+                    yield result
+                    if result.terminal_status is not None:
                         break
             finally:
                 self.session.runtime.pending_results.remove(request_id)
@@ -158,7 +157,7 @@ class ClientSessionCommandChannel:
         self.session.send(data)
         return data
 
-    def wait_for_result(self, command_id: int, command: str = '', results=None, timeout=None, terminal_authoritative=False):
+    def wait_for_result(self, command_id: int, command: str = '', results=None, timeout=None):
         yield from self.session.runtime.wait_for_result(
-            self.session, command_id, command, results=results, timeout=timeout, terminal_authoritative=terminal_authoritative,
+            self.session, command_id, command, results=results, timeout=timeout,
         )

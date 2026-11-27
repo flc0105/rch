@@ -94,7 +94,9 @@ def environment(request, monkeypatch, tmp_path):
         def run_foreground_control(self, conn, domain, action, payload, **kwargs):
             assert conn is session and domain is ControlDomain.TUNNEL
             self.calls.append((action, dict(payload)))
-            return client_adapter.execute(SimpleNamespace(_checkpoint=lambda: None), action, payload)
+            from core.protocol.result_envelope import ResultEvent, result_wire_event
+            status, result = client_adapter.execute(SimpleNamespace(_checkpoint=lambda: None), action, payload)
+            return ResultEvent(result_wire_event(1, status, result))
 
     remote = Remote()
     service = TunnelInstanceService(server)
@@ -307,7 +309,9 @@ def test_mtls_shared_listener_and_revoked_client_socket(tmp_path, target, monkey
 
     class Remote:
         def run_foreground_control(self, conn, domain, action, payload, **kwargs):
-            return client_adapter.execute(SimpleNamespace(_checkpoint=lambda: None), action, payload)
+            from core.protocol.result_envelope import ResultEvent, result_wire_event
+            status, result = client_adapter.execute(SimpleNamespace(_checkpoint=lambda: None), action, payload)
+            return ResultEvent(result_wire_event(1, status, result))
 
     try:
         front = unused_port()

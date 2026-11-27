@@ -1,6 +1,6 @@
 from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
 from core.protocol.result_envelope import ResultEnvelope
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from core.utils.command_output import OutputFormat, render_result_payload
 from core.utils.command_help import render_grouped_client_help
 from server.application.command.builtin_command_support import (
@@ -156,8 +156,7 @@ class BuiltinCommandHandler:
         except ValueError as exc:
             output_format = getattr(exc, 'output_format', OutputFormat.TEXT)
             envelope = ResultEnvelope(status='error', message=str(exc)).as_payload()
-            return iter((ResultChunk(0, render_result_payload(envelope, output_format), True,
-                                     terminal_authoritative=True, event=envelope),))
+            return iter((ResultEvent(envelope, render_result_payload(envelope, output_format)),))
 
     def server_help(self, invocation):
         target = str(invocation.arguments.get('target') or '').strip()
@@ -181,8 +180,7 @@ class BuiltinCommandHandler:
         except ValueError as exc:
             status, result = 0, str(exc)
         envelope = ResultEnvelope(status='success' if status == 1 else 'error', message=result).as_payload()
-        yield ResultChunk(status, render_result_payload(envelope, invocation.output_format), True,
-                          terminal_authoritative=True, event=envelope)
+        yield ResultEvent(envelope, render_result_payload(envelope, invocation.output_format))
 
     def _client_help(self):
         """Recreate the Client's native help groups from the handshake manifest."""
@@ -211,15 +209,13 @@ class BuiltinCommandHandler:
         try:
             yield from self.upload_support.upload(invocation)
         except (FileNotFoundError, ValueError) as exc:
-            yield 0, render_result_payload(ResultEnvelope(
-                status='error', message=str(exc)).as_payload(), invocation.output_format)
+            envelope = ResultEnvelope(status='error', message=str(exc)).as_payload()
+            yield ResultEvent(envelope, render_result_payload(envelope, invocation.output_format))
 
     def saveout(self, invocation):
         for item in self.command_output_support.saveout(invocation.arguments['command']):
-            status, message = item[:2]
             envelope = item.event
-            yield ResultChunk(status, render_result_payload(envelope, invocation.output_format), True,
-                              terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, render_result_payload(envelope, invocation.output_format))
 
     def notify(self, invocation):
         for item in self.command_notify_support.notify(invocation.arguments['command']):

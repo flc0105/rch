@@ -1,6 +1,6 @@
 """Server-only Configuration CLI, sharing the Web Configuration Control."""
 from core.protocol.control import ControlDomain, ConfigurationAction, WatchdogAction, execution_policy, ExecutionPolicy
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from core.protocol.result_envelope import ResultEnvelope
 from core.utils.configuration_cli import configuration_cli_items
 from core.utils.command_output import (OutputFormat, ResultDataShape, render_result_payload, resolve_presentation)
@@ -38,43 +38,35 @@ class ConfigurationBuiltinSupport:
         output_format, layout = (resolve_presentation(args, ResultDataShape.GROUPED)
                                  if invocation.action == 'list' else (invocation.output_format, None))
         for item in self._send(ControlDomain.CONFIGURATION, action, payload):
-            status, result = item[:2]
-            final = getattr(item, 'eof', True)
-            if not final:
+            result = item.event
+            if item.terminal_status is None:
                 if output_format != 'json':
-                    yield ResultChunk(status, str(result.get('message') or '') if isinstance(result, dict) else str(result), False,
-                                      terminal_authoritative=True, event=getattr(item, 'event', None))
+                    yield item.with_text(str(result.get('message') or ''))
                 continue
-            if not isinstance(result, dict) or result.get('event_type') != 'completed':
-                result = ResultEnvelope(status='error', message=(
-                    str(result) if status != 1 else 'Invalid Configuration response')).as_payload()
-                status = 0
-            if status == 1 and action == ConfigurationAction.GET:
-                result = {**result, 'data': configuration_cli_items(result['data'])}
-            text = render_result_payload(result, output_format,
-                                         view='data' if action == ConfigurationAction.GET and status == 1 else 'message',
+            displayed = result
+            if item.succeeded and action == ConfigurationAction.GET:
+                try:
+                    displayed = {**result, 'data': configuration_cli_items(result['data'])}
+                except (KeyError, ValueError, TypeError) as exc:
+                    item = ResultEvent.completed('error', str(exc) or 'Invalid Configuration response')
+                    displayed = item.event
+            text = render_result_payload(displayed, output_format,
+                                         view='data' if action == ConfigurationAction.GET and item.succeeded else 'message',
                                          shape=layout or ResultDataShape.TABLE, line_field=('group', 'key'),
-                                         line_separator='.', group_field='group',
-                                         key_field='key',
-                                         value_field='value')
-            yield ResultChunk(status, text, True, terminal_authoritative=True,
-                              event=getattr(item, 'event', None))
+                                         line_separator='.', group_field='group', key_field='key', value_field='value')
+            yield item.with_text(text)
 
     def watchdog(self, invocation):
         for item in self._send(ControlDomain.WATCHDOG, WatchdogAction.STATUS, {}):
-            status, result = item[:2]
-            final = getattr(item, 'eof', True)
-            if not final:
+            result = item.event
+            if item.terminal_status is None:
                 if invocation.output_format != OutputFormat.JSON:
-                    yield ResultChunk(status, str(result.get('message') or '') if isinstance(result, dict) else str(result), False,
-                                      terminal_authoritative=True, event=getattr(item, 'event', None))
+                    yield item.with_text(str(result.get('message') or ''))
                 continue
-            if status != 1 or not isinstance(result, dict) or not isinstance(result.get('data'), dict):
-                message = (result.get('message') if isinstance(result, dict) else str(result))
-                envelope = ResultEnvelope(status='error', message=message or 'Watchdog status unavailable').as_payload()
-                text = render_result_payload(envelope, invocation.output_format)
-                yield ResultChunk(0, text, True, terminal_authoritative=True, event=getattr(item, 'event', None))
+            if item.succeeded and not isinstance(result.get('data'), dict):
+                item = ResultEvent.completed('error', result.get('message') or 'Watchdog status unavailable')
+            if not item.succeeded:
+                yield item.with_text(render_result_payload(item.event, invocation.output_format))
                 continue
             output, layout = resolve_presentation(invocation.arguments, ResultDataShape.GROUPED)
-            text = render_result_payload(result, output, view='data', shape=layout)
-            yield ResultChunk(status, text, True, terminal_authoritative=True, event=getattr(item, 'event', None))
+            yield item.with_text(render_result_payload(item.event, output, view='data', shape=layout))

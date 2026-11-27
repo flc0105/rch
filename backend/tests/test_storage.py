@@ -107,7 +107,7 @@ def test_document_write_cannot_escape_its_root(library, tmp_path):
 
 
 def test_activity_records_each_result_and_server_time_together(tmp_path, monkeypatch):
-    from core.protocol.message_queue import ResultChunk
+    from core.protocol.result_envelope import ResultEvent
     from core.protocol.result_envelope import build_result_wire_event, result_wire_event
     from server.application.history.activity_coordinator import ActivityCoordinator
     from server.application.history.activity_definitions import ActivityOperation
@@ -129,8 +129,8 @@ def test_activity_records_each_result_and_server_time_together(tmp_path, monkeyp
     assert set(final) == {'type', 'id', 'event_type', 'status', 'message', 'data'}
     adapter = CommandDispatchAdapter(coordinator, lambda _: conn)
     chunks = adapter.observe_result(conn, entry_id, request, [
-        ResultChunk(1, first, 0, event=first),
-        ResultChunk(1, final, 1, event=final),
+        ResultEvent(first),
+        ResultEvent(final),
     ])
     first_time = '2026-11-20T01:02:01.123+00:00'
     final_time = '2026-11-20T01:02:03.456+00:00'

@@ -228,18 +228,11 @@ def project_result_output_texts(results):
     return [result_visible_text(item) for item in results]
 
 
-def project_result_chunks(items):
-    """Present remote structured Results while preserving their raw events for History."""
-    from core.protocol.message_queue import ResultChunk
-
+def project_result_events(items):
+    """Present structured Results without replacing their execution facts."""
     for item in items:
-        wire = getattr(item, 'event', None)
-        visible = result_visible_text(wire)
-        if visible is None:
-            yield item
-        else:
-            yield ResultChunk(item[0], visible, item.eof,
-                              item.terminal_authoritative, event=wire)
+        visible = result_visible_text(item.event)
+        yield item if visible is None else item.with_text(visible)
 
 
 def render_result_payload(payload: dict, output_format: str = 'text', *,

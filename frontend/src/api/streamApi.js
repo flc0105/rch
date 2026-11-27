@@ -52,11 +52,8 @@ export function openWebEventStream(tabId) {
     stream.readyState = WebSocket.CONNECTING
     const ws = new WebSocket(url)
     socket = ws
-    ws.onopen = () => {
-      if (stopped || ws !== socket) return
-      stream.readyState = WebSocket.OPEN
-      dispatch('open', {})
-    }
+    // The Server sends its cursor after replaying retained command events.
+    // Reconcile foreground/history only after that replay has been delivered.
     ws.onmessage = (message) => {
       if (stopped || ws !== socket) return
       try {
@@ -67,8 +64,13 @@ export function openWebEventStream(tabId) {
           cursor = Number(item.cursor) || 0
           epoch = String(item.epoch || '')
           saveCursor()
+          if (stream.readyState !== WebSocket.OPEN) {
+            stream.readyState = WebSocket.OPEN
+            dispatch('open', {})
+          }
           return
         }
+        if (item.cursor != null && cursor !== null && Number(item.cursor) <= cursor) return
         if (item.event) dispatch(item.event, {
           data: JSON.stringify(item.data ?? {}),
           lastEventId: String(item.id || ''),

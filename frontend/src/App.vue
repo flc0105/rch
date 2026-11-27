@@ -961,11 +961,13 @@ export default {
           ...this.foregroundNoticeEntries, [id]: { status: 'closed', taskKey: '' },
         }
       }
+      const previousTask = this.foregroundTasks[id]
       this.foregroundTasks = { ...this.foregroundTasks, [id]: task }
-      // The task slot is authoritative; a missing completion event must not leave Run disabled.
-      // Never clear a different task while an actual server task is still active.
-      if (task.state === 'Idle' && this.activeTaskIds[id]) {
-        void this.recoverFinishedTask(id, this.activeTaskIds[id])
+      // The shared slot can end while this tab has an independent Web task.
+      // Only a matching slot release proves that this task has finished.
+      const activeId = this.activeTaskIds[id]
+      if (task.state === 'Idle' && activeId) {
+        void this.recoverFinishedTask(id, activeId, '', previousTask?.task_id === activeId)
       }
       this.syncForegroundTaskNotice(id, task, admittedNow)
     },
@@ -1654,7 +1656,7 @@ export default {
   },
 
   async mounted() {
-    this.ensureTabId()
+    await this.initializeTabId()
     await Promise.all([
       this.loadConnections(),
       this.loadDeviceGroups(),
@@ -1665,6 +1667,7 @@ export default {
     ])
     await this.initializeTerminalHistory()
     this.initSSE()
+    document.addEventListener('visibilitychange', this.flushTerminalRenderQueues)
     // Start code-only warmup after first paint; dialogs/PTY sockets are not mounted.
     this.cancelIdleWarmup = scheduleIdleWarmup([
       () => loadOptionalDialog('externalTools'),
@@ -1690,6 +1693,9 @@ export default {
     this.cancelIdleWarmup?.()
     this.foregroundQuerySequence += 1
     if (this.eventSource) this.eventSource.close()
+    document.removeEventListener('visibilitychange', this.flushTerminalRenderQueues)
+    this.flushTerminalRenderQueues()
+    this._releaseTabIdentity?.()
 
     if (this.statusTickTimer) {
       clearInterval(this.statusTickTimer)

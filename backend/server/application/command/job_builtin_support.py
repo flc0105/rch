@@ -6,7 +6,7 @@ from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.platform.catalog_visibility import visible_on_platform
 from core.protocol.job_control import build_job_control_request, validate_job_control_result
 from core.utils.command_output import ResultDataShape, render_result_payload, resolve_presentation
-from core.protocol.result_envelope import ResultEnvelope
+from core.protocol.result_envelope import ResultEnvelope, ResultEvent, ResultStreamState
 
 
 class JobBuiltinSupport:
@@ -26,7 +26,8 @@ class JobBuiltinSupport:
 
     @staticmethod
     def _failure(message, output_format):
-        return render_result_payload(ResultEnvelope(status='error', message=str(message)).as_payload(), output_format)
+        result = ResultEvent.completed('error', str(message))
+        return result.with_text(render_result_payload(result.event, output_format))
 
     def _send(self, action, *, output_format="text", layout=None, **payload):
         # Already inside the terminal's foreground slot: never acquire it again.
@@ -35,31 +36,25 @@ class JobBuiltinSupport:
         kwargs = {'command_type': COMMAND_TYPE_CONTROL, 'domain': ControlDomain.JOB, 'action': action}
         if entry_id:
             kwargs['history_entry_id'] = entry_id
-        pending_result = None
+        state = ResultStreamState()
         for item in self.remote_execution_service.stream_command(self.conn, '', payload=request, **kwargs):
-            # JSON mode produces a single machine-readable document on stdout;
-            # progress is still recorded by the shared request Activity observer.
-            if pending_result is not None and output_format != 'json':
-                yield pending_result
-            pending_result = item
-        if pending_result is None:
-            yield 0, self._failure('Job control returned no result', output_format)
+            state.accept(item)
+            # JSON mode has one machine-readable document; progress remains in Activity.
+            if item.terminal_status is None and output_format != 'json':
+                yield item
+        completed = state.completion
+        if completed is None:
+            result = ResultEvent.completed('interrupted', 'Job control returned no result')
+            yield result.with_text(render_result_payload(result.event, output_format))
             return
-        status, text, *rest = pending_result
         try:
-            result = validate_job_control_result(text, action)
+            result = validate_job_control_result(completed.event, action)
         except (ValueError, TypeError):
-            if status == 1:
-                yield (0, self._failure('Invalid Job control response', output_format), *rest)
-            else:
-                yield pending_result  # Preserve structured cancellation/timeout and EOF.
+            yield self._failure('Invalid Job control response', output_format) if completed.succeeded else completed
             return
-        from core.protocol.message_queue import ResultChunk
-        view = 'data' if action in (JobAction.PS, JobAction.STATUS) and status == 1 else 'message'
+        view = 'data' if action in (JobAction.PS, JobAction.STATUS) and completed.succeeded else 'message'
         shape = ResultDataShape.TABLE if action == JobAction.PS else ResultDataShape.FLAT
-        yield ResultChunk(status, render_result_payload(result, output_format, view=view, shape=layout or shape),
-                          getattr(pending_result, 'eof', True), terminal_authoritative=True,
-                          event=getattr(pending_result, 'event', None))
+        yield completed.with_text(render_result_payload(result, output_format, view=view, shape=layout or shape))
 
     def _job_logs(self, name, follow=False):
         """Stream reports for a single fully parsed Job key."""
@@ -71,15 +66,15 @@ class JobBuiltinSupport:
                         and any(str(item.get(key) or '').casefold() == name.casefold()
                                 for key in ('job_key', 'job_name', 'job_id'))), None)
             if not row:
-                yield 0, f'No reported Job found for: {name}'
+                yield ResultEvent.completed('error', f'No reported Job found for: {name}')
                 return
             job_id = str(row.get('job_id') or '')
             if not job_id:
-                yield 0, 'Job record is missing its job_id'
+                yield ResultEvent.completed('error', 'Job record is missing its job_id')
                 return
             job = self.background_job_service.get_job(self.client_id, job_id)
-            yield 1, (f"Job {job.get('job_key') or job.get('job_name') or name} "
-                      f"[{job.get('state') or 'unknown'}] {job_id}")
+            yield ResultEvent.chunk(f"Job {job.get('job_key') or job.get('job_name') or name} "
+                                   f"[{job.get('state') or 'unknown'}] {job_id}")
             cursor = 0
             while True:
                 # These records describe historical Job output. An error report
@@ -98,23 +93,24 @@ class JobBuiltinSupport:
                     if text:
                         if int(message.get('status') or 0) == 0:
                             text = '[error] ' + text
-                        yield 1, text
+                        yield ResultEvent.chunk(text)
                 if not follow:
+                    yield ResultEvent.completed()
                     return
                 if str(job.get('state') or '').lower() not in ('running', 'stopping'):
-                    yield 1, '[Job finished]'
+                    yield ResultEvent.completed(message='[Job finished]')
                     return
                 # Foreground Task cancellation is the existing Web/CLI Ctrl+C
                 # mechanism. No separate control command or CLI parser is needed.
                 for _ in range(10):
                     task = self.conn.get_foreground_task() or {}
                     if task.get('cancel_requested'):
-                        yield 0, 'command cancelled'
+                        yield ResultEvent.completed('cancelled', 'command cancelled')
                         return
                     time.sleep(0.2)
                 job = self.background_job_service.get_job(self.client_id, job_id)
         except (ValueError, FileNotFoundError, LookupError) as exc:
-            yield 0, str(exc)
+            yield ResultEvent.completed('error', str(exc))
 
     def execute_subcommand(self, invocation):
         """Consume one typed Server invocation; no CLI string parsing here."""
@@ -133,11 +129,10 @@ class JobBuiltinSupport:
                     for item in jobs if item.get('job_name')]
             result = ResultEnvelope(message='No background jobs available' if not rows else '',
                                     data=rows).as_payload()
-            from core.protocol.message_queue import ResultChunk
             output_format, layout = resolve_presentation(args, ResultDataShape.LINES)
             text = render_result_payload(result, output_format, view='data',
                                          shape=layout, line_field='name')
-            yield ResultChunk(1, text, True, terminal_authoritative=True, event=result)
+            yield ResultEvent(result, text)
             return
 
         if subcommand == 'logs':
@@ -149,7 +144,7 @@ class JobBuiltinSupport:
             try:
                 mode = self.background_job_service.prepare_job_start(self.client_id, args['name'], args['mode'])
             except (ValueError, FileNotFoundError) as exc:
-                yield 0, self._failure(str(exc), output_format)
+                yield self._failure(str(exc), output_format)
                 return
             yield from self._send(JobAction.START, output_format=output_format,
                                   job_name=args['name'], params=params, execution_mode=mode)

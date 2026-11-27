@@ -9,7 +9,7 @@ from client.session.control import SessionControl
 from client.config import runtime_config
 from client.config.runtime_config_effects import RuntimeConfigEffects
 from core.protocol.control import SessionAction
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from server.application.connection.connection_service import WebConnectionService
 
 
@@ -72,7 +72,7 @@ def test_revision_status_only_queries_client_when_outdated(monkeypatch):
             calls.append(kwargs['action'])
             event = {'event_type': 'completed', 'status': 'success',
                      'data': {'files': {'a.py': 'client'}}}
-            return iter([ResultChunk(1, event, True, event=event)])
+            return iter([ResultEvent(event)])
     session = FakeSession()
     server = SimpleNamespace(get_target_connection_by_client_id=lambda client_id: session)
     service = WebConnectionService(server, None, None)
@@ -95,8 +95,7 @@ def test_revision_status_only_queries_client_when_outdated(monkeypatch):
     assert calls == [SessionAction.GET_REVISION_FILES]
     # The variable query uses the same typed Session Control response channel.
     session.send_command = lambda *args, **kwargs: iter([
-        ResultChunk(1, {'data': {'items': []}}, True,
-                    event={'event_type': 'completed', 'status': 'success', 'data': {'items': []}}),
+        ResultEvent({'event_type': 'completed', 'status': 'success', 'data': {'items': []}}),
     ])
     assert service.get_variable_manifest('id') == []
 

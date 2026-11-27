@@ -15,7 +15,7 @@ from client.runtime.execution.context_store import ExecutionContextStore
 from client.runtime.execution.runtime import ExecutionRuntime
 from client.scripts.manager import ScriptManager
 from core.protocol.control import ControlDomain, ScriptAction
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from server.application.execution.command_stream_service import CommandStreamService
 from server.connection.runtime.pending_results import PendingResults
 from server.connection.runtime.session_execution_runtime import SessionExecutionRuntime
@@ -99,9 +99,8 @@ def packet(request_id, phase, *, status=None, message=None, data=None):
 
 
 def rows(*items):
-    for event, legacy_status in items:
-        yield ResultChunk(legacy_status, event, event['event_type'] == 'completed',
-                          terminal_authoritative=True, event=event)
+    for event, _ in items:
+        yield ResultEvent(event)
 
 
 def test_pending_queue_is_event_native_and_rejects_duplicate_terminal():
@@ -126,10 +125,10 @@ def test_pending_disconnect_finishes_locally_without_a_wire_result():
     result = list(runtime.wait_for_result(conn, 99, 'test', results=events))
     assert len(result) == 2
     assert result[0].event['event_type'] == 'chunk'
-    assert result[-1].event is None
-    assert result[-1][1]['event_type'] == 'completed'
-    assert result[-1][1]['status'] == 'interrupted'
-    assert result[-1][0] == 0 and result[-1].eof
+    assert 'type' not in result[-1].event
+    assert result[-1].phase == 'completed'
+    assert result[-1].terminal_status == 'interrupted'
+    assert not result[-1].succeeded
 
 
 def test_invalid_structured_data_and_missing_completion_do_not_succeed():

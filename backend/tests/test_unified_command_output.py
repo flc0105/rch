@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from core.protocol.result_envelope import ResultEnvelope
 from core.utils.command_output import (
     ResultDataShape, StructuredCommandResult, render_result_payload,
@@ -121,13 +121,13 @@ def test_xt_list_uses_one_data_source_and_preserves_columns():
     support._build_cli_list_payload = lambda: [
         {'exec_name': 'curl', 'package_id': 'net'}, {'exec_name': 'grep', 'package_id': 'text'}]
     run = lambda args: support._render_cli_list(registry.parse_invocation('xt', f'exec list {args}').arguments)
-    assert run('')[1] == 'curl\ngrep'
-    assert 'EXEC' in run('--format table')[1] and 'PACKAGE' in run('--format table')[1]
-    assert 'exec_name: curl' not in run('--format records')[1]  # projected display header
-    assert 'EXEC: curl' in run('--format records')[1]
+    assert run('').visible_text() == 'curl\ngrep'
+    assert 'EXEC' in run('--format table').visible_text() and 'PACKAGE' in run('--format table').visible_text()
+    assert 'exec_name: curl' not in run('--format records').visible_text()  # projected display header
+    assert 'EXEC: curl' in run('--format records').visible_text()
     expected = [{'exec_name': 'curl', 'package_id': 'net'}, {'exec_name': 'grep', 'package_id': 'text'}]
-    assert json.loads(run('--json')[1]) == expected
-    assert json.loads(run('--format table --json')[1]) == expected
+    assert json.loads(run('--json').visible_text()) == expected
+    assert json.loads(run('--format table --json').visible_text()) == expected
 
 
 def test_xt_package_table_yes_no_and_json_boolean_are_separate():
@@ -138,12 +138,12 @@ def test_xt_package_table_yes_no_and_json_boolean_are_separate():
     output = support._render_rows(rows, invocation.arguments, line_field='package_id',
         columns=(('package_id', 'PACKAGE'), ('display_name', 'NAME'), ('installed', 'INSTALLED')),
         text_values={'installed': {True: 'yes', False: 'no'}})
-    assert 'yes' in output[1] and 'no' in output[1]
+    assert 'yes' in output.visible_text() and 'no' in output.visible_text()
     invocation = registry.parse_invocation('xt', 'package list --format json')
     output = support._render_rows(rows, invocation.arguments, line_field='package_id',
         columns=(('package_id', 'PACKAGE'), ('display_name', 'NAME'), ('installed', 'INSTALLED')),
         text_values={'installed': {True: 'yes', False: 'no'}})
-    assert json.loads(output[1]) == rows
+    assert json.loads(output.visible_text()) == rows
 
 
 def test_config_grouped_default_and_table_json_options():
@@ -152,18 +152,18 @@ def test_config_grouped_default_and_table_json_options():
         {'group': 'system', 'key': 'mode', 'value': 'auto', 'default_value': 'manual'},
         {'group': 'network', 'key': 'timeout', 'value': 20, 'default_value': 30},
     ]}).as_payload()
-    support._send = lambda *_: iter([ResultChunk(1, control_result, True, event=control_result)])
+    support._send = lambda *_: iter([ResultEvent(control_result)])
     run = lambda tail: next(support.config(registry.parse_invocation('config', tail)))
-    assert '[network]\ntimeout = 20' in run('list')[1]
-    assert run('list --format kv')[1] == 'timeout = 20\nmode = auto'
-    assert run('list -f kv')[1] == run('list --format kv')[1]
-    assert 'default' in run('list --format table')[1]
-    assert 'group: network' in run('list --format records')[1]
-    rows = json.loads(run('list --json')[1])
+    assert '[network]\ntimeout = 20' in run('list').visible_text()
+    assert run('list --format kv').visible_text() == 'timeout = 20\nmode = auto'
+    assert run('list -f kv').visible_text() == run('list --format kv').visible_text()
+    assert 'default' in run('list --format table').visible_text()
+    assert 'group: network' in run('list --format records').visible_text()
+    rows = json.loads(run('list --json').visible_text())
     assert rows[0]['default'] == 30
-    assert json.loads(run('list --format table --json')[1]) == rows
-    assert json.loads(run('list -f json')[1]) == rows
-    assert json.loads(run('list --format kv --json')[1]) == rows
+    assert json.loads(run('list --format table --json').visible_text()) == rows
+    assert json.loads(run('list -f json').visible_text()) == rows
+    assert json.loads(run('list --format kv --json').visible_text()) == rows
 
 
 def test_config_kv_never_rewrites_real_config_keys():
@@ -176,16 +176,16 @@ def test_config_kv_never_rewrites_real_config_keys():
         {'group': 'preview', 'key': 'PREVIEW_IMAGE_COMPRESS_ENABLED',
          'value': False, 'default_value': True},
     ]}).as_payload()
-    support._send = lambda *_: iter([ResultChunk(1, control_result, True, event=control_result)])
+    support._send = lambda *_: iter([ResultEvent(control_result)])
     run = lambda tail: next(support.config(registry.parse_invocation('config', tail)))
-    assert run('list --format kv')[1] == (
+    assert run('list --format kv').visible_text() == (
         'COMMAND_DEFAULT_SHELL_TIMEOUT = 60\n'
         'RECONNECT_BACKOFF_MIN_SECONDS = 5\n'
         'PREVIEW_IMAGE_COMPRESS_ENABLED = False'
     )
-    assert '[command]\nCOMMAND_DEFAULT_SHELL_TIMEOUT = 60' in run('list')[1]
-    assert 'group' in run('list --format table')[1]
-    rows = json.loads(run('list --format json')[1])
+    assert '[command]\nCOMMAND_DEFAULT_SHELL_TIMEOUT = 60' in run('list').visible_text()
+    assert 'group' in run('list --format table').visible_text()
+    rows = json.loads(run('list --format json').visible_text())
     assert rows[0] == {'group': 'command', 'key': 'COMMAND_DEFAULT_SHELL_TIMEOUT',
                        'value': 60, 'default': 30}
 
@@ -214,12 +214,12 @@ def test_watchdog_default_grouped_flat_rejected_and_json_untouched():
     support = ConfigurationBuiltinSupport.__new__(ConfigurationBuiltinSupport)
     data = {'service': {'running': True, 'last_check': 'now'}, 'worker': {'status': 'ok'}}
     event = ResultEnvelope(data=data).as_payload()
-    support._send = lambda *_: iter([ResultChunk(1, event, True, event=event)])
+    support._send = lambda *_: iter([ResultEvent(event)])
     run = lambda tail: next(support.watchdog(registry.parse_invocation('watchdog', tail)))
-    assert '[service]' in run('')[1]
-    assert 'running = True' in run('')[1]
-    assert json.loads(run('--json')[1]) == data
-    assert json.loads(run('--format json')[1]) == data
+    assert '[service]' in run('').visible_text()
+    assert 'running = True' in run('').visible_text()
+    assert json.loads(run('--json').visible_text()) == data
+    assert json.loads(run('--format json').visible_text()) == data
     with pytest.raises(ValueError, match='Unsupported --format value'):
         run('--format records')
 
@@ -248,14 +248,14 @@ def test_history_numbered_and_detail_json_keep_stored_indices():
             {'index': 4, 'command': 'acmd ps', 'is_pinned': False},
             {'index': 18, 'command': 'help client', 'is_pinned': True}]
         run = lambda tail: next(support.history(registry.parse_invocation('history', tail)))
-        assert '  4  acmd ps' in run('')[1]
-        assert ' 18  help client' in run('')[1]
-        assert 'Tip: use history run' in run('')[1]
-        assert 'index' in run('--format table')[1]
-        assert 'command: acmd ps' in run('--format records')[1]
-        data = json.loads(run('--json')[1])
+        assert '  4  acmd ps' in run('').visible_text()
+        assert ' 18  help client' in run('').visible_text()
+        assert 'Tip: use history run' in run('').visible_text()
+        assert 'index' in run('--format table').visible_text()
+        assert 'command: acmd ps' in run('--format records').visible_text()
+        data = json.loads(run('--json').visible_text())
         assert [row['index'] for row in data] == [4, 18]
-        assert json.loads(run('--format json')[1]) == data
+        assert json.loads(run('--format json').visible_text()) == data
         sys.modules.pop(name, None)
 
 
@@ -263,7 +263,7 @@ def test_acmd_ps_native_json_preserves_action_payload(monkeypatch):
     from client.commands.acmd.standalone import ps as command
     from core.commands.argument_validator import ArgumentCommandValidator
     from client.runtime.execution.process.process_service import ProcessService
-    from core.utils.command_output import project_result_chunks
+    from core.utils.command_output import project_result_events
     from core.protocol.result_envelope import result_wire_event
     monkeypatch.setattr(ProcessService, 'list_processes', lambda *_: [
         {'pid': 98, 'ppid': 1, 'name': 'python', 'username': 'a', 'status': 'running'}])
@@ -274,8 +274,8 @@ def test_acmd_ps_native_json_preserves_action_payload(monkeypatch):
     assert result.view['actions'][0]['refresh'] is True and '_actions' not in result.data[0]
     def show(fmt):
         wire = result_wire_event(100, result.status, result.as_event(requested=fmt))
-        entry = ResultChunk(1, wire, True, event=wire)
-        return next(project_result_chunks([entry]))[1]
+        entry = ResultEvent(wire)
+        return next(project_result_events([entry])).visible_text()
     assert json.loads(show('json')) == result.data
     assert 'pid: 98' in show('records')
     assert '_actions' not in show('table')
@@ -283,7 +283,7 @@ def test_acmd_ps_native_json_preserves_action_payload(monkeypatch):
 def test_acmd_python_packages_loaded_is_same_data_all_layouts(monkeypatch):
     from client.commands.acmd.standalone import python_packages as command
     from core.commands.argument_validator import ArgumentCommandValidator
-    from core.utils.command_output import project_result_chunks
+    from core.utils.command_output import project_result_events
     from core.protocol.result_envelope import result_wire_event
     from types import SimpleNamespace
     monkeypatch.setattr(command.metadata, 'packages_distributions', lambda: {'fakepkg': ['FakeDist']})
@@ -296,8 +296,8 @@ def test_acmd_python_packages_loaded_is_same_data_all_layouts(monkeypatch):
     assert result.formats == ('lines', 'table', 'records', 'json')
     def show(fmt):
         wire = result_wire_event(100, result.status, result.as_event(requested=fmt))
-        entry = ResultChunk(1, wire, True, event=wire)
-        return next(project_result_chunks([entry]))[1]
+        entry = ResultEvent(wire)
+        return next(project_result_events([entry])).visible_text()
     assert show(None) == 'FakeDist'
     assert 'version' in show('table')
     assert 'package: FakeDist' in show('records')

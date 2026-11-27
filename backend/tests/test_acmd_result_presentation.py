@@ -8,10 +8,10 @@ import pytest
 from client.commands.acmd.registry import ArgumentCommandRegistry
 from client.commands.acmd.standalone.ps import ps
 from client.runtime.execution.process.process_service import ProcessService
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from core.protocol.result_envelope import result_wire_event, build_result_wire_event
 from core.utils.command_output import StructuredCommandResult, ResultDataShape
-from core.utils.command_output import project_result_chunks
+from core.utils.command_output import project_result_events
 from server.application.command.command_planner import CommandPlanner
 from server.application.command.command_execution_pipeline import CommandExecutionPipeline
 from server.application.execution.command_stream_service import CommandStreamService
@@ -22,11 +22,11 @@ def _result(data, *, shape=ResultDataShape.TABLE, formats=('table', 'records', '
     structured = StructuredCommandResult(status=status, data=data, shape=shape,
                                          formats=formats, source=source, message=message, **fields)
     wire = result_wire_event(100, status, structured.as_event(requested=requested))
-    return ResultChunk(status, wire, True, terminal_authoritative=True, event=wire)
+    return ResultEvent(wire)
 
 
 def _show(entry):
-    return next(project_result_chunks((entry,)))
+    return next(project_result_events((entry,)))
 
 
 @pytest.mark.parametrize('args,requested', [
@@ -60,8 +60,8 @@ def test_message_error_ignores_invalid_data_layout_selection():
                     source='message', message='Operation rejected', status=0,
                     formats=('message', 'json'))
     shown = _show(entry)
-    assert shown[0] == 0
-    assert shown[1] == 'Operation rejected'
+    assert not shown.succeeded
+    assert shown.visible_text() == 'Operation rejected'
     assert shown.event is entry.event
 
 
@@ -79,12 +79,12 @@ def test_native_data_default_records_json_and_raw_history():
     assert entry.event['message'] == ''
     assert entry.event['presentation'] == {
         'source': 'data', 'default': 'table'}
-    assert 'runner' in _show(entry)[1]
-    assert 'pid: 7' in _show(_result(data, requested='records'))[1]
-    assert json.loads(_show(_result(data, requested='json'))[1]) == data
+    assert 'runner' in _show(entry).visible_text()
+    assert 'pid: 7' in _show(_result(data, requested='records')).visible_text()
+    assert json.loads(_show(_result(data, requested='json')).visible_text()) == data
     shown = _show(entry)
     assert shown.event is entry.event and shown.event['data'] is data
-    assert CommandExecutionPipeline.build_result_event(shown).text == shown[1]
+    assert CommandExecutionPipeline.build_result_event(shown).text == shown.visible_text()
     collected = CommandStreamService.collect_envelope(iter([shown]))
     assert collected.data == data and collected.status == 'success'
 
@@ -107,8 +107,8 @@ def test_client_rejects_unsupported_result_layout_with_english_message(monkeypat
     wire = result_wire_event(123, status, event)
     assert wire['data'] == event['data']
     assert wire['status'] == 'error'
-    shown = _show(ResultChunk(status, wire, True, terminal_authoritative=True, event=wire))
-    assert shown[1] == event['message']  # Terminal displays only the error, not data.
+    shown = _show(ResultEvent(wire))
+    assert shown.visible_text() == event['message']  # Terminal displays only the error, not data.
     assert shown.event is wire
     from core.utils.command_output import project_result_output_texts
     assert project_result_output_texts([wire]) == [event['message']]
@@ -119,7 +119,7 @@ def test_client_rejects_unsupported_result_layout_with_english_message(monkeypat
 
 def test_error_results_do_not_generate_format_not_supported_warning():
     wire = result_wire_event(9, 0, 'No process found for pid 99')
-    entry = ResultChunk(0, wire, True, terminal_authoritative=True, event=wire)
+    entry = ResultEvent(wire)
     shown = _show(entry)
     assert shown is entry
     assert wire['status'] == 'error'
@@ -131,21 +131,21 @@ def test_mode_specific_result_declares_own_formats_without_server_guessing():
                      formats=('lines', 'table', 'records', 'json'), line_field='module')
     detail = _result({'module': 'a', 'found': True}, shape=ResultDataShape.FLAT,
                      formats=('flat', 'kv', 'json'))
-    assert _show(loaded)[1] == 'a'
-    assert _show(detail)[1].startswith('module')
+    assert _show(loaded).visible_text() == 'a'
+    assert _show(detail).visible_text().startswith('module')
     assert json.loads(_show(_result({'module': 'a', 'found': True}, shape=ResultDataShape.FLAT,
-                                     formats=('flat', 'kv', 'json'), requested='json'))[1])['found'] is True
+                                     formats=('flat', 'kv', 'json'), requested='json')).visible_text())['found'] is True
 
 
 def test_message_result_may_offer_explicit_json_data():
     entry = _result({'ok': True}, shape=ResultDataShape.FLAT,
                     source='message', message='Operation completed',
                     formats=('message', 'flat', 'kv', 'json'))
-    assert _show(entry)[1] == 'Operation completed'
+    assert _show(entry).visible_text() == 'Operation completed'
     assert json.loads(_show(_result({'ok': True}, shape=ResultDataShape.FLAT, source='message',
-                                    message='Operation completed', formats=('message', 'flat', 'kv', 'json'), requested='json'))[1]) == {'ok': True}
+                                    message='Operation completed', formats=('message', 'flat', 'kv', 'json'), requested='json')).visible_text()) == {'ok': True}
     assert 'ok = True' in _show(_result({'ok': True}, shape=ResultDataShape.FLAT,
-                                       source='message', formats=('message', 'flat', 'kv', 'json'), requested='kv'))[1]
+                                       source='message', formats=('message', 'flat', 'kv', 'json'), requested='kv')).visible_text()
     assert entry.event['message'] == 'Operation completed'
 
 
@@ -153,16 +153,16 @@ def test_empty_rows_message_only_applies_to_text_layout():
     entry = _result([], shape=ResultDataShape.LINES, line_field='module',
                     formats=('lines', 'table', 'records', 'json'),
                     message='No matching loaded third-party modules')
-    assert _show(entry)[1] == 'No matching loaded third-party modules'
-    assert json.loads(_show(_result([], shape=ResultDataShape.LINES, formats=('lines', 'json'), requested='json'))[1]) == []
+    assert _show(entry).visible_text() == 'No matching loaded third-party modules'
+    assert json.loads(_show(_result([], shape=ResultDataShape.LINES, formats=('lines', 'json'), requested='json')).visible_text()) == []
 
 
 def test_boolean_text_mapping_does_not_modify_raw_data():
     entry = _result([{'name': 'en0', 'up': True}],
                     text_values={'up': {'True': 'yes', 'False': 'no'}})
-    assert 'yes' in _show(entry)[1]
+    assert 'yes' in _show(entry).visible_text()
     assert entry.event['data'][0]['up'] is True
-    assert json.loads(_show(_result([{'name': 'en0', 'up': True}], requested='json'))[1])[0]['up'] is True
+    assert json.loads(_show(_result([{'name': 'en0', 'up': True}], requested='json')).visible_text())[0]['up'] is True
 
 
 def test_broken_presentation_rejected_on_wire():
@@ -227,9 +227,9 @@ def test_server_executor_projects_results_without_command_kind_checks():
     executor.remote_execution_service = Remote()
     shown = next(executor._execute_remote_plan({
         'command_type': 'acmd'})())
-    assert 'pid: 42' in shown[1] and shown.event is entry.event
+    assert 'pid: 42' in shown.visible_text() and shown.event is entry.event
     other = next(executor._execute_remote_plan({'command_type': 'command'})())
-    assert 'pid: 42' in other[1] and other.event is entry.event
+    assert 'pid: 42' in other.visible_text() and other.event is entry.event
     assert seen == ['acmd', 'command']
 
 @pytest.mark.parametrize('flags,expected_key,expected_value', [
@@ -269,10 +269,10 @@ def test_ps_actions_are_raw_json_metadata_not_extra_declared_table_columns(monke
     assert list(event['data'][0]) == ['pid', 'ppid', 'name', 'username', 'status']
     assert 'columns' not in event['presentation']
     wire = result_wire_event(88, status, event)
-    text = _show(ResultChunk(status, wire, True, terminal_authoritative=True, event=wire))[1]
+    text = _show(ResultEvent(wire)).visible_text()
     assert all(field in text for field in ('pid', 'ppid', 'name', 'username', 'status'))
     assert '_actions' not in text and 'Kill' not in text
-    records = _show(_result(event['data'], requested='records'))[1]
+    records = _show(_result(event['data'], requested='records')).visible_text()
     assert 'name: demo' in records and '_actions' not in records
     assert wire['view']['actions'][0]['refresh'] is True
     status, default_event = registry.execute({'name': 'ps', 'args': {}})
@@ -290,7 +290,7 @@ def test_activity_detail_reuses_live_projection_and_keeps_raw_result_unchanged()
     before = deepcopy(events)
     text = project_result_output_texts(events)
     assert text[:2] == [None, None]
-    assert text[2] == _show(entry)[1]
+    assert text[2] == _show(entry).visible_text()
     assert 'pid: 42' in text[2] and '_actions:' in text[2]
     assert events == before
     # Invocation text cannot change the recorded presentation selection.
@@ -328,7 +328,7 @@ def test_actual_activity_detail_api_projects_output_without_touching_result_json
     item = reader.get_execution_entry('machine', 'id')
     assert item['result'] == before['result']
     assert item['recorded_at'] == before['recorded_at']
-    assert item['output_texts'] == [_show(_result([{'pid': 12, 'name': 'worker'}], requested='records'))[1]]
+    assert item['output_texts'] == [_show(_result([{'pid': 12, 'name': 'worker'}], requested='records')).visible_text()]
     assert item['files'] == [] and item['file_count'] == 0
 
     # Message-only results retain the original detail payload and existing UI fallback.

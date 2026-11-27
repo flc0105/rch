@@ -305,9 +305,9 @@ class WebConnectionService:
                                        domain=ControlDomain.SESSION, action=action, payload={},
                                        extra={'timeout': 30})
         for result in results:
-            if not result.eof:
+            if result.terminal_status is None:
                 continue
-            event = result.event or {}
+            event = result.event
             if event.get('status') != 'success':
                 raise RuntimeError(str(event.get('message') or 'Client metadata query failed'))
             data = event.get('data')

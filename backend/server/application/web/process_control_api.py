@@ -18,13 +18,13 @@ class WebProcessControlApi:
         self.remote_execution_service = remote_execution_service
 
     def _terminate_process(self, client_id: str, pid: int):
-        status, result = self.remote_execution_service.run_foreground_control(
+        completion = self.remote_execution_service.run_foreground_control(
             client_id, ControlDomain.PROCESS, ProcessAction.KILL, {'pid': int(pid)},
             task_type='process', source='web_process',
         )
-        if status != 1:
-            raise RuntimeError(str(result.get('message') if isinstance(result, dict) else result))
-        return result.get('message', '') if isinstance(result, dict) else result
+        if not completion.succeeded:
+            raise RuntimeError(completion.event.get('message') or 'Remote process operation failed')
+        return completion.event.get('message', '')
 
     def kill_process(self, client_id: str, pid: int, name: str = ''):
         return self._terminate_process(client_id, pid)

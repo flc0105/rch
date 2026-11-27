@@ -1,4 +1,5 @@
 from server.application.command.command_types import COMMAND_TYPE_COMMAND
+from core.protocol.result_envelope import ResultStreamState
 from server.application.execution.command_stream_service import CommandStreamService
 from server.application.execution.foreground_execution_service import ForegroundExecutionService
 from server.application.execution.upload_execution_service import UploadExecutionService
@@ -22,7 +23,7 @@ class RemoteExecutionService:
       统一走事件流接口 iter_upload_events，不再保留旧 tuple 流兼容层
     """
 
-    def __init__(self, server, artifact_service=None, transfer_service=None):
+    def __init__(self, server, artifact_service=None, transfer_service=None, task_store=None):
         self.server = server
         self.artifact_service = artifact_service
         self.transfer_service = transfer_service
@@ -36,6 +37,7 @@ class RemoteExecutionService:
             self.command_stream_service,
             artifact_service=self.artifact_service,
             transfer_service=self.transfer_service,
+            task_store=task_store,
         )
 
     def get_connection(self, target):
@@ -114,9 +116,6 @@ class RemoteExecutionService:
 
     def run_completion(self, target, payload: dict, *, timeout: float = 5.0) -> dict:
         return self.command_stream_service.run_completion(target, payload, timeout=timeout)
-
-    def collect_result(self, result_iter):
-        return self.command_stream_service.collect_result(result_iter)
 
     def stream_foreground_command(
         self,
@@ -207,8 +206,7 @@ class RemoteExecutionService:
         from core.protocol.control import execution_policy, ExecutionPolicy
         if execution_policy(domain, action) == ExecutionPolicy.INDEPENDENT:
             foreground = False
-        status, result = 0, ''
-        progress = []
+        state = ResultStreamState()
         stream = self.stream_foreground_command if foreground else self.stream_command
         options = {'task_type': task_type, 'source': source} if foreground else {}
         for item in stream(
@@ -217,21 +215,10 @@ class RemoteExecutionService:
             history_entry_id=history_entry_id,
             **options,
         ):
-            status, result = item[0], item[1] if len(item) > 1 else ''
-            if isinstance(result, str) and result:
-                progress.append(result)
-        if isinstance(result, dict):
-            return status, result
-        return status, '\n'.join(progress).strip()
-
-    def open_browser_upload_batch(self, batch_id):
-        self.upload_execution_service.open_browser_batch(batch_id)
-
-    def close_browser_upload_batch(self, batch_id):
-        self.upload_execution_service.close_browser_batch(batch_id)
-
-    def enqueue_browser_upload(self, batch_id, target, local_path, **options):
-        return self.upload_execution_service.enqueue_browser_upload(batch_id, target, local_path, **options)
+            state.accept(item)
+        if state.completion is None:
+            raise RuntimeError('Result stream ended without completed event')
+        return state.completion
 
     def iter_upload_events(
         self,

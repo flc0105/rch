@@ -83,20 +83,29 @@ export default {
             if (id) this.taskOutputCounts = { ...this.taskOutputCounts, [id]: (this.taskOutputCounts[id] || 0) + count };
         },
 
-        async recoverFinishedTask(clientId, taskId, historyEntryId = '') {
+        async recoverFinishedTask(clientId, taskId, historyEntryId = '', foregroundEnded = false) {
             const id = String(taskId || '').trim();
             if (!id || this.completedTaskIds[id]) return;
             const entryId = String(historyEntryId || this.activeTaskHistoryIds[id] || '').trim();
             const conn = (this.connections || []).find(item => item.client_id === clientId);
             const machineId = String(conn?.machine_id || '').trim();
-            const alreadyDelivered = this.taskOutputCounts[id] || 0;
-            // Release the UI immediately, even when the history endpoint is temporarily unavailable.
-            this.markTaskCompleted(clientId, id);
-            if (!entryId || !machineId) return;
+            // An Idle foreground slot says nothing about an independent task.
+            // Only a known slot release or a finished Activity can retire it.
+            if (!entryId || !machineId) {
+                if (foregroundEnded) this.markTaskCompleted(clientId, id);
+                return;
+            }
             try {
                 const { getCommandExecutionEntry } = await import('../api/commandHistoryApi.js');
                 const entry = await getCommandExecutionEntry(machineId, entryId);
-                if (entry.client_id !== clientId || !entry.finished_at) return;
+                if (this.completedTaskIds[id]) return;
+                if (entry.client_id !== clientId || !entry.finished_at) {
+                    if (foregroundEnded) this.markTaskCompleted(clientId, id);
+                    return;
+                }
+                // A live event may have arrived while the Activity was loading.
+                const alreadyDelivered = this.taskOutputCounts[id] || 0;
+                this.markTaskCompleted(clientId, id);
                 // Dialog presentations own their output; do not echo them into Terminal.
                 if (entry.presentation && entry.presentation !== 'terminal') return;
                 const records = activityOutputRecords(entry.result, { terminal: true, outputTexts: entry.output_texts });
@@ -126,6 +135,7 @@ export default {
                     entry.invocation?.command || entry.action || '', finishText,
                 ), finishKind, { task_id: id, recovered: true, execution_status: entry.status });
             } catch (error) {
+                if (foregroundEnded && !this.completedTaskIds[id]) this.markTaskCompleted(clientId, id);
                 console.warn('Unable to recover finished task output', error);
             }
         },

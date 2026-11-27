@@ -6,15 +6,15 @@ from server.application.execution.execution_context import TaskExecutionContext
 from server.application.execution.upload_execution_service import UploadExecutionService
 from server.application.tasks.task_runner import WebTaskRunner
 from server.application.tasks.task_service import WebTaskService
+from server.application.execution.upload_task_service import UploadTaskService
 
 
 def test_standalone_web_upload_retains_native_task_events():
     service = object.__new__(WebTaskService)
-    service.file_service = SimpleNamespace(upload_tmp_dir='/tmp')
     captured = []
-    service._submit_request = lambda request: captured.append(request) or {'task_id': 'single'}
-    service.submit_web_upload('client', '/tmp/file', 'example.jpg', tab_id='tab',
-                              command='[Remote Upload] example.jpg')
+    service.submit = lambda request: captured.append(request) or {'task_id': 'single'}
+    uploads = UploadExecutionService(None, None)
+    UploadTaskService(service, uploads).submit_upload('client', '/tmp/file', 'example.jpg', tab_id='tab')
     assert len(captured) == 1
     request = captured[0]
     assert request.command == '[Remote Upload] example.jpg'
@@ -103,10 +103,12 @@ def test_batch_submission_creates_exactly_one_native_upload_task():
     from server.application.web.command_execution_api import WebCommandExecutionApi
     opened, requests, queued = [], [], []
     task_service = object.__new__(WebTaskService)
-    task_service._submit_request = lambda request: requests.append(request) or {'task_id': 'parent'}
-    remote = SimpleNamespace(open_browser_upload_batch=opened.append,
+    task_service.submit = lambda request: requests.append(request) or {'task_id': 'parent'}
+    remote = SimpleNamespace(open_browser_batch=opened.append,
+        format_display_command=UploadExecutionService.format_display_command, cancel_task=lambda *_: None,
         enqueue_browser_upload=lambda *args, **kwargs: queued.append((args, kwargs)) or {})
-    api = WebCommandExecutionApi(task_service, remote_execution_service=remote)
+    api = WebCommandExecutionApi(task_service, upload_task_service=UploadTaskService(task_service, remote),
+                                 task_runner=None)
     api.submit_web_upload_batch({'batch_id': 'b', 'total_files': 2, 'destination_path': '/dest',
         'client_id': 'c', 'tab_id': 'tab', 'transfer_id': 'batch:b'})
     for i in range(2):
@@ -114,7 +116,7 @@ def test_batch_submission_creates_exactly_one_native_upload_task():
                               transfer_id=f'f{i}', batch_id='b')
     assert opened == ['b'] and len(requests) == 1 and len(queued) == 2
     assert requests[0].metadata['operation_id'] == 'b'
-    assert requests[0].runner_name == 'run_upload_task'
+    assert callable(requests[0].events) and callable(requests[0].cancel_handler)
     assert requests[0].use_foreground_guard is False
 
 

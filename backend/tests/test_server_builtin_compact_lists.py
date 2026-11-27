@@ -38,7 +38,7 @@ def supports():
 def _result(support, command, tail):
     invocation = SERVER_COMMAND_REGISTRY.parse_invocation(command, tail)
     result = next(iter(support(invocation)))
-    assert result[0] == 1 and result.eof and result.terminal_authoritative
+    assert result.succeeded and result.terminal_status == "success"
     assert result.event['status'] == 'success'
     return result
 
@@ -69,11 +69,11 @@ def test_script_list_keeps_catalog_for_json_and_detail(supports):
     run = lambda tail: _result(script.script, 'script', tail)
     rows = [{'name': 'common/alpha.py', 'display_name': 'Alpha', 'description': 'test', 'params': ['target']},
             {'name': 'mac/beta.py', 'display_name': 'Beta', 'description': 'other', 'params': ['limit']}]
-    assert run('list')[1] == 'common/alpha.py\nmac/beta.py'
-    assert run('list --format table')[1] == render_result_payload(run('list --format table').event,
+    assert run('list').visible_text() == 'common/alpha.py\nmac/beta.py'
+    assert run('list --format table').visible_text() == render_result_payload(run('list --format table').event,
                                                         view='data', shape=ResultDataShape.TABLE)
-    assert json.loads(run('list --json')[1]) == rows
-    assert json.loads(run('list --format table --json')[1]) == rows
+    assert json.loads(run('list --json').visible_text()) == rows
+    assert json.loads(run('list --format table --json').visible_text()) == rows
     assert run('list').event['data'] == rows
 
 
@@ -87,11 +87,11 @@ def test_job_list_keeps_catalog_for_json_and_detail():
          'metadata': {'platforms': ['linux']}},
     ])
     run = lambda tail: _result(job.execute_subcommand, 'job', tail)
-    assert run('list')[1] == 'mac/watch'
-    assert 'Watch events' in run('list --format table')[1]
-    assert json.loads(run('list --json')[1]) == [
+    assert run('list').visible_text() == 'mac/watch'
+    assert 'Watch events' in run('list --format table').visible_text()
+    assert json.loads(run('list --json').visible_text()) == [
         {'name': 'mac/watch', 'display_name': 'Watch', 'description': 'Watch events'}]
-    assert run('list').event['data'] == json.loads(run('list --json')[1])
+    assert run('list').event['data'] == json.loads(run('list --json').visible_text())
 
 
 def test_alias_list_keeps_resolved_platform_and_command_for_json(supports):
@@ -101,12 +101,12 @@ def test_alias_list_keeps_resolved_platform_and_command_for_json(supports):
         {'platform': 'mac', 'alias': 'psx', 'command': 'acmd ps --json'},
     ]
     run = lambda tail: _result(alias.alias, 'alias', tail)
-    assert run('list')[1] == 'll = shell ls -la\npsx = acmd ps --json'
-    assert run('list --format lines')[1] == 'll\npsx'
-    assert run('-f lines')[1] == 'll\npsx'
-    assert 'platform' in run('--format table')[1]
-    assert json.loads(run('--json')[1]) == run('').event['data']
-    assert json.loads(run('list --format table --json')[1]) == run('').event['data']
+    assert run('list').visible_text() == 'll = shell ls -la\npsx = acmd ps --json'
+    assert run('list --format lines').visible_text() == 'll\npsx'
+    assert run('-f lines').visible_text() == 'll\npsx'
+    assert 'platform' in run('--format table').visible_text()
+    assert json.loads(run('--json').visible_text()) == run('').event['data']
+    assert json.loads(run('list --format table --json').visible_text()) == run('').event['data']
 
 
 @pytest.mark.parametrize('name', ['script', 'job', 'alias'])
@@ -118,21 +118,21 @@ def test_list_rejects_unknown_flag(name):
 def test_alias_empty_result_is_readable(supports):
     alias = supports.AliasBuiltinSupport.__new__(supports.AliasBuiltinSupport)
     alias._build_resolved_alias_payload = lambda: []
-    assert _result(alias.alias, 'alias', '')[1] == 'No aliases configured'
-    assert _result(alias.alias, 'alias', '--format lines')[1] == 'No aliases configured'
-    assert json.loads(_result(alias.alias, 'alias', '--json')[1]) == []
+    assert _result(alias.alias, 'alias', '').visible_text() == 'No aliases configured'
+    assert _result(alias.alias, 'alias', '--format lines').visible_text() == 'No aliases configured'
+    assert json.loads(_result(alias.alias, 'alias', '--json').visible_text()) == []
 
 
 def test_script_empty_result_keeps_empty_json(supports):
     script = supports.ScriptBuiltinSupport.__new__(supports.ScriptBuiltinSupport)
     script.list_script_catalog = lambda: []
-    assert _result(script.script, 'script', '')[1] == 'No data to display'
-    assert json.loads(_result(script.script, 'script', '--json')[1]) == []
+    assert _result(script.script, 'script', '').visible_text() == 'No data to display'
+    assert json.loads(_result(script.script, 'script', '--json').visible_text()) == []
 
 
 def test_job_empty_result_keeps_empty_json():
     job = JobBuiltinSupport.__new__(JobBuiltinSupport)
     job.conn = SimpleNamespace(session_info=SimpleNamespace(os_alias='linux'))
     job.job_catalog_service = SimpleNamespace(list_background_job_catalog=lambda: [])
-    assert _result(job.execute_subcommand, 'job', '')[1] == 'No background jobs available'
-    assert json.loads(_result(job.execute_subcommand, 'job', '--json')[1]) == []
+    assert _result(job.execute_subcommand, 'job', '').visible_text() == 'No background jobs available'
+    assert json.loads(_result(job.execute_subcommand, 'job', '--json').visible_text()) == []

@@ -102,7 +102,9 @@ class WebEventBus:
 
         normalized_target_tab_id = str(target_tab_id or '').strip()
         if not normalized_target_tab_id:
-            return True
+            # Command output has no broadcast semantics, even if an API caller
+            # omitted its tab header. Durable Activity/notifications still work.
+            return event_type not in self._command_replay_types
 
         subscriber_tab_id = str(subscriber.get('tab_id') or '').strip()
         return subscriber_tab_id == normalized_target_tab_id

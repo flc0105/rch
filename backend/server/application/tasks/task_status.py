@@ -28,83 +28,23 @@ class WebTaskStatus:
 
 @dataclass
 class TaskStreamSummary:
-    """
-    Web 任务结果流汇总器。
-
-    职责：
-    - 统一收口 result stream 的终态判断
-    - 区分“失败输出”和“非致命提示输出”
-    - 统一推导 success / error / cancelled
-    """
-
-    terminal_status: str = ""
-    has_failure: bool = False
-    has_cancelled_output: bool = False
-    has_timeout_output: bool = False
-    has_explicit_timeout: bool = False
-    has_explicit_cancelled: bool = False
-    has_connection_interruption: bool = False
-
-    NON_FATAL_ERROR_TEXTS = {
-        'command does not support cancellation',
-        'current python execution mode does not support cancellation',
-    }
-
-    def record_chunk(self, status: int, text: str):
-        normalized_status = int(status or 0)
-        normalized_text = str(text or '').strip().lower()
-
-        if 'command cancelled' in normalized_text or normalized_text == 'cancelled':
-            self.has_cancelled_output = True
-
-        if 'timed out' in normalized_text:
-            self.has_timeout_output = True
-
-        if normalized_status == 0:
-            if (
-                normalized_text not in self.NON_FATAL_ERROR_TEXTS
-                and 'does not support cancellation' not in normalized_text
-            ):
-                self.has_failure = True
+    """Track explicit execution outcomes, never presentation text."""
+    terminal_status: str = ''
 
     def mark_cancelled(self):
-        self.has_explicit_cancelled = True
-        self.has_failure = True
+        self.terminal_status = WebTaskStatus.CANCELLED
 
     def mark_exception(self, exc=None):
-        self.has_failure = True
-        if isinstance(exc, TimeoutError):
-            self.has_explicit_timeout = True
-        elif isinstance(exc, (ConnectionError, EOFError)):
-            self.has_connection_interruption = True
+        self.terminal_status = (WebTaskStatus.TIMED_OUT if isinstance(exc, TimeoutError) else
+                                WebTaskStatus.INTERRUPTED if isinstance(exc, (ConnectionError, EOFError)) else
+                                WebTaskStatus.ERROR)
 
     def mark_dispatch_failure(self, reason: str):
-        self.has_failure = True
-        if reason == 'timed_out':
-            self.has_explicit_timeout = True
-        elif reason == 'interrupted':
-            self.has_connection_interruption = True
+        self.terminal_status = reason if reason in WebTaskStatus.TERMINAL_STATUSES else WebTaskStatus.ERROR
 
-    def is_success(self) -> bool:
-        return self.terminal_status == WebTaskStatus.SUCCESS if self.terminal_status else not self.has_failure
+    def mark_completed(self, ok: bool):
+        if not self.terminal_status:
+            self.terminal_status = WebTaskStatus.SUCCESS if ok else WebTaskStatus.ERROR
 
-    def resolve_final_status(self, cancel_requested: bool = False) -> str:
-        if self.terminal_status:
-            return self.terminal_status
-        if self.has_explicit_cancelled or (cancel_requested and self.has_cancelled_output):
-            return WebTaskStatus.CANCELLED
-        if self.has_explicit_timeout:
-            return WebTaskStatus.TIMED_OUT
-        if self.has_connection_interruption:
-            return WebTaskStatus.INTERRUPTED
-        if cancel_requested and self.has_timeout_output:
-            return WebTaskStatus.CANCELLED
-        return WebTaskStatus.SUCCESS if self.is_success() else WebTaskStatus.ERROR
-
-
-
-
-
-
-
-
+    def resolve_final_status(self) -> str:
+        return self.terminal_status or WebTaskStatus.INTERRUPTED

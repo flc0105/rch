@@ -11,7 +11,7 @@ from client.commands.shell.common import session as session_commands
 from client.connection import handshake
 from client.session.control import SessionControl
 from core.protocol.control import SessionAction
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from server.application.connection.connection_service import WebConnectionService
 from server.application.preferences.notification_event_projector import NotificationEventProjector
 
@@ -43,7 +43,7 @@ def test_revision_details_detect_source_changed_after_process_started(monkeypatc
         session_info = SimpleNamespace(client_revision=old_revision)
         def send_command(self, *args, **kwargs):
             event = {'event_type': 'completed', 'status': 'success', 'data': detail}
-            yield ResultChunk(1, event, True, event=event)
+            yield ResultEvent(event)
     service = WebConnectionService(
         SimpleNamespace(get_target_connection_by_client_id=lambda _id: FakeSession()), None, None)
     monkeypatch.setattr(service, '_build_connection_state', lambda _session: 'online')

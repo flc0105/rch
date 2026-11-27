@@ -1,4 +1,4 @@
-from core.protocol.message_queue import ResultChunk
+from core.protocol.result_envelope import ResultEvent
 from typing import Optional
 
 from core.protocol.message_queue import MessageQueue
@@ -132,7 +132,7 @@ class ClientSessionRuntime:
         return self._execution_runtime.get_foreground_task()
 
     # ------------------ result wait ------------------ #
-    def wait_for_result(self, connection, command_id: int, command: Optional[str], *, results=None, timeout=None, terminal_authoritative=False):
+    def wait_for_result(self, connection, command_id: int, command: Optional[str], *, results=None, timeout=None):
         """
         主线程等待接收结果，并保存执行记录
         """
@@ -154,14 +154,11 @@ class ClientSessionRuntime:
                     interrupted = {
                         'event_type': 'completed', 'status': 'interrupted', 'message': 'Client disconnected',
                     }
-                    yield ResultChunk(0, interrupted, True, terminal_authoritative)
+                    yield ResultEvent(interrupted)
                     break
-                # Business executors still consume ResultChunk's text/tuple view;
-                # the pending queue and request lifecycle use the original event.
-                final = event['event_type'] == 'completed'
-                status = (1 if not final or event['status'] in ('success', 'partial') else 0)
-                yield ResultChunk(status, event, final, terminal_authoritative, event=event)
-                if final:
+                result = ResultEvent(event)
+                yield result
+                if result.terminal_status is not None:
                     break
         finally:
             self.pending_results.remove(command_id)

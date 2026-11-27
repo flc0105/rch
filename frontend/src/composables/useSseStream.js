@@ -5,6 +5,7 @@ import {
     TERMINAL_BACKGROUND_PREFIX,
 } from './terminalMarkers.js';
 import { openWebEventStream } from '../api/streamApi.js';
+import { claimTabIdentity } from '../utils/tabIdentity.js';
 import { loadNotificationPreferences } from '../api/notificationPreferencesApi.js';
 import { loadTransfers } from '../api/transferApi.js';
 import { loadNotificationHistory } from '../api/notificationHistoryApi.js';
@@ -83,7 +84,7 @@ export default {
             const previous = append ? (this.transferItems || []).filter(item => item?.state !== 'running') : [];
             this.transferHistoryLoading = true;
             try {
-                const payload = await loadTransfers(this.ensureTabId(), {
+                const payload = await loadTransfers(this.tabId, {
                     limit: 20, offset: previous.length, machineId: this.transferMachineId,
                 });
                 if (requestId !== this.transferPageRequest) return;
@@ -223,7 +224,7 @@ export default {
         initSSE() {
             if (this.eventSource) this.eventSource.close();
 
-            const tabId = this.ensureTabId();
+            const tabId = this.tabId;
             const es = openWebEventStream(tabId);
             this.eventSource = es;
 
@@ -356,7 +357,7 @@ export default {
 
             const handleCommandResults = (payload, results) => {
                 const items = Array.isArray(results) ? results : [];
-                if (!items.length) return;
+                if (!items.length || this.completedTaskIds[payload.task_id]) return;
                 this.noteTaskOutput?.(payload.task_id, items.filter(item => item.text).length);
                 const metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {};
                 const isQuickActionDialog = metadata.quick_action === true && metadata.quick_action_presentation === 'dialog';
@@ -398,6 +399,7 @@ export default {
 
             es.addEventListener('command_complete', async (event) => {
                 const payload = JSON.parse(event.data);
+                if (this.completedTaskIds[payload.task_id]) return;
                 const metadata = payload.metadata && typeof payload.metadata === 'object' ? {...payload.metadata} : {};
                 const statusText = String(payload.status || '').trim();
 
@@ -554,31 +556,12 @@ this.appendOutput(payload.client_id, `${TERMINAL_BACKGROUND_PREFIX} ${payload.te
             };
         },
 
-        ensureTabId() {
-            const key = 'rat_web_tab_id';
-            let tabId = '';
-
-            try {
-                tabId = String(sessionStorage.getItem(key) || '').trim();
-            } catch (e) {
-                tabId = '';
-            }
-
-            if (!tabId) {
-                if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-                    tabId = window.crypto.randomUUID();
-                } else {
-                    tabId = `tab_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-                }
-
-                try {
-                    sessionStorage.setItem(key, tabId);
-                } catch (e) {
-                }
-            }
-
-            this.tabId = tabId;
-            return tabId;
+        async initializeTabId() {
+            if (this.tabId) return this.tabId;
+            const identity = await claimTabIdentity();
+            this.tabId = identity.id;
+            this._releaseTabIdentity = identity.release;
+            return this.tabId;
         },
 
         getTabScopedHeaders(extra = {}) {

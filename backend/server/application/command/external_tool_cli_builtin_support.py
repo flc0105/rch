@@ -9,7 +9,13 @@ from core.protocol.control import ControlDomain, ExternalToolAction as A
 from core.external_tools.payload import client_control_request
 from server.application.command.command_types import COMMAND_TYPE_CONTROL
 from core.utils.command_output import (StructuredCommandResult, ResultDataShape,
-                                       resolve_presentation, render_structured_result)
+                                       resolve_presentation, render_presented_result)
+from core.protocol.result_envelope import ResultEvent
+
+
+def _render_structured(result, *, output_format):
+    event = result.as_event(requested='json' if output_format == 'json' else None)
+    return ResultEvent(event, render_presented_result(event))
 
 
 class ExternalToolCliBuiltinSupport:
@@ -164,11 +170,11 @@ class ExternalToolCliBuiltinSupport:
         rows = self._build_cli_list_payload()
         output, layout = resolve_presentation(args, ResultDataShape.LINES)
         if not rows and output != 'json':
-            return 1, 'No installed external tool Exec commands for this Client.'
+            return ResultEvent.completed(message='No installed external tool Exec commands for this Client.')
         result = StructuredCommandResult(status=1, data=rows, shape=layout,
                                          line_field='exec_name',
                                          columns=(('exec_name', 'EXEC'), ('package_id', 'PACKAGE')))
-        return render_structured_result(result, output_format=output)
+        return _render_structured(result, output_format=output)
 
     def _format_info(self, exec_name: str, args: dict):
         target = self._resolve_exec_target(exec_name)
@@ -181,7 +187,7 @@ class ExternalToolCliBuiltinSupport:
         install_status = self._install_status_text(status_map.get((package_id, package_key)))
 
         output, layout = resolve_presentation(args, ResultDataShape.FLAT)
-        return render_structured_result(
+        return _render_structured(
             StructuredCommandResult(
                 status=1,
                 data={
@@ -210,28 +216,18 @@ class ExternalToolCliBuiltinSupport:
         path = str(item.get('executable_path') or '')
         if item.get('error') or not item.get('installed') or not path:
             raise FileNotFoundError(str(item.get('error') or item.get('message') or 'External tool executable is not installed'))
-        yield 1, path
+        yield ResultEvent.completed(message=path)
 
     def _run_exec(self, exec_name: str, raw_args: str):
         target = self._resolve_exec_target(exec_name)
         payload = self._build_client_payload(target, raw_args=raw_args)
-        from core.utils.output_marker import render_result_message
         for item in self._control_events(A.EXEC, payload):
-            event = getattr(item, 'event', None) or item[1]
-            if not isinstance(event, dict):
-                yield item
+            if item.phase == 'started':
                 continue
-            phase = event.get('event_type')
-            if phase == 'started':
-                continue
-            if phase == 'progress':
-                text = render_result_message(event)
+            if item.terminal_status is not None and not item.succeeded and not item.visible_text():
+                yield item.with_text('External Tool execution failed')
             else:
-                text = str(event.get('message') or '')
-            if text:
-                yield item[0], text
-            elif phase == 'completed' and item[0] == 0:
-                yield 0, 'External Tool execution failed'
+                yield item
 
     def _nested_result(self, action, payload: dict):
         remote = self.runtime_service.remote_execution_service
@@ -268,7 +264,7 @@ class ExternalToolCliBuiltinSupport:
         result = StructuredCommandResult(status=1, data=rows, shape=layout,
                                          line_field=line_field, columns=columns,
                                          line_separator=line_separator, text_values=text_values)
-        return render_structured_result(result, output_format=output)
+        return _render_structured(result, output_format=output)
 
     def _installed_packages(self, packages: list[dict]) -> dict[tuple[str, str], dict]:
         builder = self.runtime_service.payload_builder
@@ -353,7 +349,7 @@ class ExternalToolCliBuiltinSupport:
         except Exception as exc:
             self._publish_xt_lifecycle('package', operation, package_id, 'failed', error=str(exc))
             raise
-        return 1, message or f'Package {package_id} {operation} completed'
+        return ResultEvent.completed(message=message or f'Package {package_id} {operation} completed')
 
     def _module_list(self, args: dict):
         package = self.catalog_service.get_package(args['package'])
@@ -435,8 +431,8 @@ class ExternalToolCliBuiltinSupport:
                 self._publish_xt_lifecycle('instance', 'start', target, 'error', error=str(exc))
                 raise
             self._publish_xt_lifecycle('instance', 'create', target, 'started')
-            return 1, f'Created and started {meta["tool_id"]}/{instance_id} (pid {confirmed.get("pid")})'
-        return 1, f'Created {meta["tool_id"]}/{instance_id}'
+            return ResultEvent.completed(message=f'Created and started {meta["tool_id"]}/{instance_id} (pid {confirmed.get("pid")})')
+        return ResultEvent.completed(message=f'Created {meta["tool_id"]}/{instance_id}')
 
     def _instance_list(self, args: dict):
         target = args['name'] or ''
@@ -491,7 +487,7 @@ class ExternalToolCliBuiltinSupport:
         cursor = ''
         while True:
             if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
-                yield 0, 'command cancelled'
+                yield ResultEvent.completed('cancelled', 'command cancelled')
                 return
             try:
                 data = self._nested_json(A.READ_INSTANCE_LOGS, {
@@ -499,25 +495,24 @@ class ExternalToolCliBuiltinSupport:
                 })
             except Exception:
                 if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
-                    yield 0, 'command cancelled'
+                    yield ResultEvent.completed('cancelled', 'command cancelled')
                     return
                 raise
             if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
-                yield 0, 'command cancelled'
+                yield ResultEvent.completed('cancelled', 'command cancelled')
                 return
             if data.get('reset'):
-                yield 1, '[Log rotated]'
+                yield ResultEvent.chunk('[Log rotated]')
             content = str(data.get('content') or '')
             if content:
-                yield 1, content
+                yield ResultEvent.chunk(content)
             if not data.get('running'):
-                if not content:
-                    yield 1, '[Log stream ended]'
+                yield ResultEvent.completed(message='' if content else '[Log stream ended]')
                 return
             cursor = str(data.get('cursor') or '')
             for _ in range(5):
                 if (self.conn.get_foreground_task() or {}).get('cancel_requested'):
-                    yield 0, 'command cancelled'
+                    yield ResultEvent.completed('cancelled', 'command cancelled')
                     return
                 time.sleep(0.2)
 
@@ -565,11 +560,11 @@ class ExternalToolCliBuiltinSupport:
                     confirmed = self._instance_status(payload)
                     if confirmed.get('running') is not True:
                         raise RuntimeError('Instance exited immediately after start; see instance logs')
-                    yield 1, f'{"Restarted" if operation == "restart" else "Started"} {meta["tool_id"]}/{instance_id} (pid {confirmed.get("pid")})'
+                    yield ResultEvent.completed(message=f'{"Restarted" if operation == "restart" else "Started"} {meta["tool_id"]}/{instance_id} (pid {confirmed.get("pid")})')
                 if operation == 'stop':
                     dispatched = True
                     self._nested_message(A.STOP_INSTANCE, payload)
-                    yield 1, f'Stopped {meta["tool_id"]}/{instance_id}'
+                    yield ResultEvent.completed(message=f'Stopped {meta["tool_id"]}/{instance_id}')
             except Exception as exc:
                 if dispatched:
                     self._publish_xt_lifecycle('instance', operation,
@@ -582,16 +577,16 @@ class ExternalToolCliBuiltinSupport:
                 'running': result.get('running'), 'pid': result.get('pid') or '',
                 'started_at': result.get('started_at') or '', 'stopped_at': result.get('stopped_at') or '',
             }
-            yield render_structured_result(StructuredCommandResult(status=1, data=summary,
-                                          shape='dict', width=16), output_format='json' if json_output else 'table')
+            yield _render_structured(StructuredCommandResult(status=1, data=summary,
+                                          shape='dict', width=16), output_format='json' if json_output else 'text')
         if operation == 'logs':
             if follow:
                 yield from self._follow_instance_logs(payload)
                 return
             data = self._nested_json(A.READ_INSTANCE_LOGS, {**payload, 'max_bytes': 65536})
             if data.get('reset'):
-                yield 1, '[Log rotated]'
-            yield 1, str(data.get('content') or '') or 'No log output.'
+                yield ResultEvent.chunk('[Log rotated]')
+            yield ResultEvent.completed(message=str(data.get('content') or '') or 'No log output.')
         return f'{meta["tool_id"]}/{instance_id}'
 
     def xt(self, invocation):
@@ -600,7 +595,7 @@ class ExternalToolCliBuiltinSupport:
         args = invocation.arguments
         if action in ('help', 'exec.help'):
             from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
-            yield 1, SERVER_COMMAND_REGISTRY.help('xt exec' if action == 'exec.help' else 'xt')
+            yield ResultEvent.completed(message=SERVER_COMMAND_REGISTRY.help('xt exec' if action == 'exec.help' else 'xt'))
         elif action == 'exec.list':
             yield self._render_cli_list(args)
         elif action == 'exec.info':
@@ -618,7 +613,7 @@ class ExternalToolCliBuiltinSupport:
             operation = action.split('.')[1]
             outcome = self._package_action(operation, args)
             self._publish_xt_lifecycle('package', operation, args['package'],
-                                       'completed', result={'message': outcome[1]})
+                                       'completed', result={'message': outcome.visible_text()})
             yield outcome
         elif action == 'module.list':
             yield self._module_list(args)

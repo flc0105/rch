@@ -25,21 +25,16 @@ class WebRemoteFileService:
         self.transfer_service = transfer_service
 
     def _run_control(self, client_id, action, payload, *, json_result=False, batch=False):
-        status, result = self.remote_execution_service.run_foreground_control(
+        completion = self.remote_execution_service.run_foreground_control(
             client_id, ControlDomain.REMOTE_FILES, action, payload,
             task_type='remote_file', source='web_remote_file',
         )
-        # The transport returns the complete Result Envelope; this domain uses
-        # the underlying Remote Files data/text according to the requested action.
-        if isinstance(result, dict) and result.get('event_type') == 'completed':
-            envelope = result
-            result = envelope.get('data') if json_result else envelope.get('message', '')
-            if batch and isinstance(result, dict):
-                result = {**result, 'message': envelope.get('message') or ''}
-            elif status != 1:
-                raise RuntimeError(str(envelope.get('message') or 'Remote file operation failed'))
-        elif status != 1:
-            raise RuntimeError(str(result or 'Remote file operation failed'))
+        envelope = completion.event
+        result = envelope.get('data') if json_result else envelope.get('message', '')
+        if batch and isinstance(result, dict):
+            result = {**result, 'message': envelope.get('message') or ''}
+        elif not completion.succeeded:
+            raise RuntimeError(envelope.get('message') or 'Remote file operation failed')
         if json_result and not isinstance(result, dict):
             raise RuntimeError('Invalid remote JSON payload: expected object')
         if not json_result and not isinstance(result, str):

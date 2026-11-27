@@ -1,4 +1,6 @@
-from server.application.execution.upload_execution_service import UploadExecutionService
+from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+from server.application.tasks.task_service import WebExecutionTaskRequest
+from server.application.tasks.task_types import TASK_TYPE_COMMAND
 from core.protocol.control import ControlDomain, ConfigurationAction, WatchdogAction
 
 
@@ -13,8 +15,10 @@ class WebCommandExecutionApi:
     - 为 CLI 等非路由调用方创建命令执行器
     """
 
-    def __init__(self, task_service, command_executor_factory=None, remote_execution_service=None):
+    def __init__(self, task_service, command_executor_factory=None, remote_execution_service=None, *, upload_task_service, task_runner):
         self.task_service = task_service
+        self.task_runner = task_runner
+        self.upload_task_service = upload_task_service
         self.command_executor_factory = command_executor_factory
         self.remote_execution_service = remote_execution_service
 
@@ -73,32 +77,35 @@ class WebCommandExecutionApi:
             metadata: dict | None = None,
             source: str = 'web',
     ):
-        return self.task_service.submit_web_command(
-            self._normalize_client_id(client_id),
-            self._normalize_command(command),
-            tab_id=(tab_id or '').strip(),
-            metadata=dict(metadata or {}),
+        command = self._normalize_command(command)
+        return self.task_service.submit(WebExecutionTaskRequest(
+            client_id=self._normalize_client_id(client_id), command=command,
+            task_type=TASK_TYPE_COMMAND, events=self.task_runner.iter_command_events,
+            tab_id=(tab_id or '').strip(), metadata=dict(metadata or {}),
             source=str(source or 'web').strip() or 'web',
-        )
+            use_foreground_guard=not SERVER_COMMAND_REGISTRY.is_independent_input(command),
+        ))
 
     def submit_web_control(self, client_id: str, command: str, control, *,
                            tab_id: str = '', metadata: dict | None = None):
-        return self.task_service.submit_web_control(
-            self._normalize_client_id(client_id), self._normalize_command(command), control,
-            tab_id=(tab_id or '').strip(), metadata=dict(metadata or {}),
-        )
+        from core.protocol.control import execution_policy, ExecutionPolicy
+        return self.task_service.submit(WebExecutionTaskRequest(
+            client_id=self._normalize_client_id(client_id), command=self._normalize_command(command),
+            task_type=TASK_TYPE_COMMAND, events=self.task_runner.iter_control_events,
+            tab_id=(tab_id or '').strip(), metadata=dict(metadata or {}), control=control,
+            use_foreground_guard=execution_policy(control.domain, control.action) != ExecutionPolicy.INDEPENDENT,
+        ))
 
     def _control(self, client_id, domain, action, payload, *, task_type, source):
         if self.remote_execution_service is None:
             raise RuntimeError('remote_execution_service is not available')
-        status, result = self.remote_execution_service.run_foreground_control(
+        completion = self.remote_execution_service.run_foreground_control(
             self._normalize_client_id(client_id), domain, action, payload,
             task_type=task_type, source=source,
         )
-        if status != 1:
-            message = result.get('message') if isinstance(result, dict) else result
-            raise RuntimeError(str(message) or 'Remote control failed')
-        return result
+        if not completion.succeeded:
+            raise RuntimeError(completion.event.get('message') or 'Remote control failed')
+        return completion.event
 
     def get_watchdog_status(self, client_id: str):
         result = self._control(client_id, ControlDomain.WATCHDOG, WatchdogAction.STATUS, {},
@@ -124,18 +131,7 @@ class WebCommandExecutionApi:
         return self.task_service.cancel_web_task(self._normalize_task_id(task_id))
 
     def submit_web_upload_batch(self, batch):
-        batch_id = batch['batch_id']
-        display_name = f"{batch['total_files']} file(s) -> {batch['destination_path']}"
-        self.remote_execution_service.open_browser_upload_batch(batch_id)
-        try:
-            return self.task_service.submit_web_upload(
-                batch['client_id'], '', display_name, batch['destination_path'],
-                tab_id=batch['tab_id'], transfer_id=batch['transfer_id'],
-                operation_id=batch_id, batch_id=batch_id,
-                command=UploadExecutionService.format_display_command(display_name))
-        except Exception:
-            self.remote_execution_service.close_browser_upload_batch(batch_id)
-            raise
+        return self.upload_task_service.submit_batch(batch)
 
     def submit_web_upload(
         self,
@@ -150,19 +146,9 @@ class WebCommandExecutionApi:
         batch_id: str = '',
     ):
         upload_payload = self._normalize_upload_payload(local_path, display_name, remote_path)
-        if batch_id:
-            return self.remote_execution_service.enqueue_browser_upload(
-                batch_id, self._normalize_client_id(client_id), upload_payload['local_path'],
-                display_name=upload_payload['display_name'], remote_path=upload_payload['remote_path'],
-                tab_id=tab_id, transfer_id=transfer_id, conflict_policy=conflict_policy)
-        return self.task_service.submit_web_upload(
-            self._normalize_client_id(client_id),
-            upload_payload['local_path'],
-            upload_payload['display_name'],
-            upload_payload['remote_path'],
-            tab_id=(tab_id or '').strip(),
-            transfer_id=(transfer_id or '').strip(),
-            conflict_policy=conflict_policy,
-            operation_id=operation_id,
-            command=UploadExecutionService.format_display_command(upload_payload["display_name"]),
+        return self.upload_task_service.submit_upload(
+            self._normalize_client_id(client_id), upload_payload['local_path'],
+            upload_payload['display_name'], upload_payload['remote_path'],
+            tab_id=(tab_id or '').strip(), transfer_id=(transfer_id or '').strip(),
+            conflict_policy=conflict_policy, operation_id=operation_id, batch_id=batch_id,
         )

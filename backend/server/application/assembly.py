@@ -17,6 +17,7 @@ from server.application.connection.recent_device_store import RecentDeviceStore
 from server.application.connection.device_group_store import DeviceGroupStore
 from server.application.connection.saved_bind_target_store import SavedBindTargetStore
 from server.application.execution.remote_execution_service import RemoteExecutionService
+from server.application.execution.upload_task_service import UploadTaskService
 from server.application.device_events.device_event_service import DeviceEventService
 from server.application.external_tools.external_tool_catalog_service import ExternalToolCatalogService
 from server.application.external_tools.external_tool_runtime_service import ExternalToolRuntimeService
@@ -132,6 +133,7 @@ class ServerApplicationAssembly:
             self.server,
             artifact_service=self.artifact_service,
             transfer_service=self.transfer_service,
+            task_store=self.task_store,
         )
         self.command_executor_factory = CommandExecutorFactory(
             server=self.server,
@@ -180,9 +182,7 @@ class ServerApplicationAssembly:
         self.task_service = WebTaskService(
             server=self.server,
             task_store=self.task_store,
-            file_service=self.file_service,
             task_runner=self.task_runner,
-            transfer_service=self.transfer_service,
         )
 
         self.background_job_store = BackgroundJobStore(self.server.database)
@@ -260,10 +260,14 @@ class ServerApplicationAssembly:
         )
         self.server_cleanup_api = WebServerCleanupApi(self.server_cleanup_service)
 
+        self.upload_task_service = UploadTaskService(self.task_service, self.remote_execution_service.upload_execution_service)
+
         self.command_execution_api = WebCommandExecutionApi(
             task_service=self.task_service,
             command_executor_factory=self.command_executor_factory,
             remote_execution_service=self.remote_execution_service,
+            upload_task_service=self.upload_task_service,
+            task_runner=self.task_runner,
         )
 
         self.quick_action_api = WebQuickActionApi(

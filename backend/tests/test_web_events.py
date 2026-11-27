@@ -124,3 +124,25 @@ def test_other_origins_and_ports_are_rejected():
     assert not websocket_origin_allowed('http://example.test:15173', 'example.test:8086', 8085)
     assert not websocket_origin_allowed('file:///etc/passwd', 'example.test:15173', 8085)
     assert not websocket_origin_allowed('http://example.test:bad', 'example.test:15173', 8085)
+
+
+def test_concurrent_tab_output_and_global_foreground_events_are_independent():
+    async def scenario():
+        bus = WebEventBus()
+        a = bus.subscribe_async(tab_id='a', with_cursor=True)
+        b = bus.subscribe_async(tab_id='b', with_cursor=True)
+        await a.get(); await b.get()
+        bus.publish('command_result', {'task_id': 'stream', 'text': 'probe 1'}, target_tab_id='a')
+        bus.publish('command_result', {'task_id': 'config', 'text': 'config JSON'}, target_tab_id='b')
+        bus.publish('command_complete', {'task_id': 'config'}, target_tab_id='b')
+        bus.publish('foreground_task_changed', {'client_id': 'client', 'task': {'state': 'Running'}})
+        bus.publish('command_result', {'task_id': 'stream', 'text': 'probe 2'}, target_tab_id='a')
+        for event in ('command_result', 'command_result_batch', 'command_complete'):
+            bus.publish(event, {'task_id': 'untargeted'})
+        await asyncio.sleep(0)
+        assert [(x['event'], x['data'].get('task_id')) for x in [a.get_nowait() for _ in range(3)]] == [
+            ('command_result', 'stream'), ('foreground_task_changed', None), ('command_result', 'stream')]
+        assert [(x['event'], x['data'].get('task_id')) for x in [b.get_nowait() for _ in range(3)]] == [
+            ('command_result', 'config'), ('command_complete', 'config'), ('foreground_task_changed', None)]
+        assert a.empty() and b.empty()
+    asyncio.run(scenario())

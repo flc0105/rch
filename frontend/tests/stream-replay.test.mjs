@@ -44,9 +44,12 @@ test('a reconnect resumes the last delivered event and ignores the old socket', 
 
   const stream = openWebEventStream('tab/test')
   const received = []
+  const opened = []
+  stream.addEventListener('open', () => opened.push(received.slice()))
   stream.addEventListener('command_result', event => received.push(JSON.parse(event.data).text))
   const [initial] = sockets
-  initial.onopen()
+  initial.onopen?.()
+  assert.equal(opened.length, 0)
   initial.sendFromServer({ event: 'stream_cursor', cursor: 0, epoch: 'server' })
   initial.sendFromServer({ event: 'command_result', cursor: 1, data: { text: 'first' } })
   initial.onclose()
@@ -60,9 +63,13 @@ test('a reconnect resumes the last delivered event and ignores the old socket', 
   assert.equal(resumed.url.searchParams.get('tab_id'), 'tab/test')
   assert.equal(resumed.url.searchParams.get('after'), '1')
   assert.equal(resumed.url.searchParams.get('epoch'), 'server')
-  resumed.onopen()
+  resumed.onopen?.()
   initial.sendFromServer({ event: 'command_result', cursor: 2, data: { text: 'old socket' } })
   resumed.sendFromServer({ event: 'command_result', cursor: 2, data: { text: 'second' } })
+  resumed.sendFromServer({ event: 'command_result', cursor: 2, data: { text: 'duplicate' } })
+  assert.equal(opened.length, 1)
+  resumed.sendFromServer({ event: 'stream_cursor', cursor: 2, epoch: 'server' })
+  assert.deepEqual(opened, [[], ['first', 'second']])
   assert.deepEqual(received, ['first', 'second'])
   assert.deepEqual(JSON.parse(storage.get('rch_command_stream_cursor:tab/test')), { cursor: 2, epoch: 'server' })
 

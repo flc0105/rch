@@ -1,6 +1,6 @@
 """Canonical execution result facts, independent of Terminal and Web presentation."""
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from core.utils.command_output import ResultEventType, ResultStatus, PRESENTATION_FORMATS
@@ -28,6 +28,93 @@ class ResultEnvelope:
             payload['references'] = self.references
         return payload
 
+
+
+@dataclass(frozen=True)
+class ResultEvent:
+    """One canonical execution event and an optional display-only text projection.
+
+    Only a completed event carries an outcome. A rendered string can never
+    change that outcome or stand in for a missing completion.
+    """
+    event: dict
+    display_text: str | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.event, dict):
+            raise TypeError('Result event must be an object')
+        phase = self.event.get('event_type')
+        if phase not in ResultEventType._value2member_map_:
+            raise ValueError('Invalid Result event_type')
+        if 'eof' in self.event:
+            raise ValueError('Result events do not carry EOF')
+        if phase == ResultEventType.COMPLETED:
+            if self.event.get('status') not in ResultStatus._value2member_map_:
+                raise ValueError('Invalid final Result status')
+        elif 'status' in self.event:
+            raise ValueError('Only completed Result may carry status')
+        if self.display_text is not None and not isinstance(self.display_text, str):
+            raise TypeError('Result display must be text')
+
+    @property
+    def phase(self):
+        return self.event['event_type']
+
+    @property
+    def terminal_status(self):
+        return self.event['status'] if self.phase == ResultEventType.COMPLETED else None
+
+    @property
+    def succeeded(self):
+        return self.terminal_status in (ResultStatus.SUCCESS, ResultStatus.PARTIAL)
+
+    @classmethod
+    def completed(cls, status=ResultStatus.SUCCESS, message='', *, data=None, references=None):
+        return cls(ResultEnvelope(status=status, message=str(message or ''), data=data,
+                                  references=references).as_payload())
+
+    @classmethod
+    def chunk(cls, message):
+        return cls({'event_type': ResultEventType.CHUNK, 'message': str(message or '')})
+
+    @classmethod
+    def progress(cls, message):
+        return cls({'event_type': ResultEventType.PROGRESS, 'message': str(message or '')})
+
+    def with_text(self, text):
+        return replace(self, display_text=text)
+
+    def visible_text(self, *, data_indent=2):
+        from core.utils.output_marker import render_result_message
+        if self.phase == ResultEventType.STARTED:
+            return ''
+        if self.display_text is not None:
+            return self.display_text
+        message = render_result_message(self.event)
+        if not message and 'data' in self.event:
+            return json.dumps(self.event['data'], ensure_ascii=False, indent=data_indent)
+        return message
+
+
+class ResultStreamState:
+    """Check a stream's single terminal fact; never infer it from output text."""
+    def __init__(self):
+        self.completion = None
+
+    def accept(self, item: ResultEvent):
+        if not isinstance(item, ResultEvent):
+            raise TypeError('Execution stream requires ResultEvent')
+        if self.completion is not None:
+            if item.terminal_status is not None:
+                raise RuntimeError('Duplicate completed Result event')
+            raise RuntimeError('Result event received after completion')
+        if item.terminal_status is not None:
+            self.completion = item
+        return item
+
+    @property
+    def terminal_status(self):
+        return self.completion.terminal_status if self.completion is not None else None
 
 
 def validate_result_view(view: dict) -> None:

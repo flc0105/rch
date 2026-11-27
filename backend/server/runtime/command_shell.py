@@ -433,8 +433,10 @@ class ServerCommandShell:
             # Offline Clients cannot be selected as active sessions, but their
             # Remote Control Watchdogs still receive explicit client_id commands.
             from server.application.command.control_builtin_support import ControlBuiltinSupport
-            for status, message in ControlBuiltinSupport(conn=None).httpctl(arg):
-                write(status, message)
+            from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
+            invocation = SERVER_COMMAND_REGISTRY.parse_invocation('httpctl', arg)
+            for item in ControlBuiltinSupport(conn=None).httpctl(invocation):
+                write(1 if item.succeeded else 0, item.visible_text())
             return
 
         if name == 'kill':

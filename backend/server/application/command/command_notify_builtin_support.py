@@ -3,8 +3,8 @@ import time
 from core.utils.logger import logger
 from core.utils.parsing import parse
 from core.protocol.result_envelope import ResultEnvelope
-from core.protocol.message_queue import ResultChunk
-from .wrapped_result import inner_result_event, inner_terminal_status
+from core.protocol.result_envelope import ResultEvent
+from .wrapped_result import iter_inner_results
 
 
 class CommandNotifyBuiltinSupport:
@@ -79,14 +79,12 @@ class CommandNotifyBuiltinSupport:
         if not inner_command:
             message = 'Usage: notify <client-command>'
             envelope = ResultEnvelope(status='error', message=message).as_payload()
-            yield ResultChunk(0, message, True, terminal_authoritative=True, event=envelope)
+            yield ResultEvent(envelope, message)
             return
 
         started_at = time.monotonic()
         final_outcome = 'interrupted'
         terminal = False
-        saw_protocol_events = False
-        fallback_status = None
 
         try:
             executor = self._build_inner_executor(inner_command)
@@ -95,22 +93,14 @@ class CommandNotifyBuiltinSupport:
                 terminal = True
                 message = f'Unable to execute client command: {inner_command}'
                 envelope = ResultEnvelope(status='error', message=message).as_payload()
-                yield ResultChunk(0, message, True, terminal_authoritative=True, event=envelope)
+                yield ResultEvent(envelope, message)
                 return
 
-            for item in executor():
-                event = inner_result_event(item)
-                saw_protocol_events |= event is not None
-                outcome = inner_terminal_status(item)
-                if outcome is not None:
-                    final_outcome = outcome
+            for item in iter_inner_results(executor()):
+                if item.terminal_status is not None:
+                    final_outcome = item.terminal_status
                     terminal = True
-                elif event is None and not hasattr(item, 'eof'):
-                    fallback_status = int(item[0] or 0)
                 yield item
-            if not terminal and not saw_protocol_events and fallback_status is not None:
-                final_outcome = 'success' if fallback_status == 1 else 'error'
-            terminal = True
         except Exception:
             final_outcome = 'error'
             terminal = True

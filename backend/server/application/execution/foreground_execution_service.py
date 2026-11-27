@@ -83,7 +83,7 @@ class ForegroundExecutionService:
         source: str = 'foreground',
         task_id: str = '',
     ) -> str:
-        status, text = self.command_stream_service.collect_result(
+        result = self.command_stream_service.collect_envelope(
             self.stream_foreground_command(
                 target,
                 command,
@@ -98,10 +98,10 @@ class ForegroundExecutionService:
             )
         )
 
-        if status != 1:
-            raise RuntimeError(text or 'Remote command failed')
+        if result.status not in ('success', 'partial'):
+            raise RuntimeError(result.text or 'Remote command failed')
 
-        return text
+        return result.text
 
     def run_foreground_json_command(
         self,

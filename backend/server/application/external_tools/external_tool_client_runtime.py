@@ -92,16 +92,15 @@ class ExternalToolClientLifecycleRuntime(ExternalToolRuntimeComponent):
         del tab_id
         if self.remote_execution_service is None:
             raise RuntimeError('External Tool Control transport is not available')
-        status, result = self.remote_execution_service.run_foreground_control(
+        completion = self.remote_execution_service.run_foreground_control(
             client_id, ControlDomain.EXTERNAL_TOOL, action,
             client_control_request(action, payload),
             task_type='external_tool', source='web_external_tool',
             history_entry_id=history_entry_id,
         )
-        if not isinstance(result, dict) or result.get('event_type') != 'completed':
-            raise RuntimeError(str(result) or 'External Tool Control returned no completion')
+        result = completion.event
         data = result.get('data')
-        if status != 1:
+        if not completion.succeeded:
             if return_failed_data and isinstance(data, dict) and data.get('success') is False:
                 return {'message': str(result.get('message') or ''), **data} if include_message else data
             raise RuntimeError(str(result.get('message') or f'External Tool {action} failed'))

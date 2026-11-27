@@ -1,9 +1,10 @@
 import logging
 
 from server.application.command.command_execution_event import CommandExecutionEvent
-from core.protocol.message_queue import result_terminal_status
+from core.protocol.result_envelope import ResultEvent
 from core.utils.command_output import ResultEventType
 from server.application.execution.execution_context import ExecutionContext
+from server.application.command.wrapped_result import iter_inner_results
 
 
 class CommandExecutionPipeline:
@@ -39,73 +40,31 @@ class CommandExecutionPipeline:
         )
 
     @staticmethod
-    def build_output_event(status: int, result) -> CommandExecutionEvent:
-        """Only event_type controls stream lifecycle; data is never decoded from text."""
-        from core.utils.command_output import ResultEventType
-        import json
-        status = int(status or 0)
-        if isinstance(result, dict) and result.get('event_type') in ResultEventType._value2member_map_:
-            phase = result['event_type']
-            from core.utils.output_marker import render_result_message
-            message = render_result_message(result)
-            if not message and 'data' in result:
-                message = json.dumps(result['data'], ensure_ascii=False, indent=2)
+    def build_result_event(item: ResultEvent) -> CommandExecutionEvent:
+        envelope = item.event
+        phase = item.phase
+        payload = {**envelope, 'result_envelope': envelope}
+        if phase == ResultEventType.STARTED:
+            return CommandExecutionEvent.started('', payload=payload)
+        text = item.visible_text()
+        outcome = item.terminal_status
+        if outcome is None:
+            payload['intermediate_result'] = True
             if phase == ResultEventType.PROGRESS:
-                return CommandExecutionEvent.progress(message, payload=result)
-            if phase == ResultEventType.STARTED:
-                return CommandExecutionEvent.started('', payload=result)
-            if phase == ResultEventType.CHUNK:
-                return CommandExecutionEvent.chunk(status or 1, message, payload=result)
-            # The wire's completed event is terminal. Keep a single final
-            # user-facing output, while the Task pipeline owns its own finish.
-            return CommandExecutionEvent.chunk(status, message, payload=result)
-        if isinstance(result, dict):
-            text = str(result.get('text') or result.get('message') or '')
-            if result.get('event_type') == CommandExecutionEvent.CANCELLED:
-                return CommandExecutionEvent.cancelled(text, payload=result)
-            if result.get('event_type') == CommandExecutionEvent.PROGRESS:
-                return CommandExecutionEvent.progress(text, payload=result)
-            if result.get('event_type') == CommandExecutionEvent.ERROR:
-                return CommandExecutionEvent.error(text, payload=result)
-            return CommandExecutionEvent.chunk(status, text, payload=result)
-        text = '' if result is None else str(result)
-        return CommandExecutionEvent.error(text) if status == 0 else CommandExecutionEvent.chunk(status, text)
+                return CommandExecutionEvent.progress(text, payload=payload)
+            return CommandExecutionEvent.chunk(1, text, payload=payload)
+        payload['result_terminal'] = outcome
+        if outcome == 'cancelled':
+            return CommandExecutionEvent.cancelled(text, payload=payload)
+        if not item.succeeded:
+            return CommandExecutionEvent.error(text, payload={**payload, 'failure_reason': outcome})
+        return CommandExecutionEvent.chunk(1, text, payload=payload)
 
-    @classmethod
-    def build_result_event(cls, item):
-        status, result = item[:2]
-        event = cls.build_output_event(status, result)
-        wire = getattr(item, 'event', None)
-        envelope = wire
-        if envelope is None and isinstance(result, dict) and result.get('event_type') in ResultEventType._value2member_map_:
-            envelope = result
-        if envelope is not None:
-            event.payload = {**event.payload, 'result_envelope': envelope}
-        # A wrapped builtin may render its message for the CLI while keeping
-        # the complete Result event in item.event. Use that event for terminal
-        # status; never infer cancelled/timed_out/partial from the text view.
-        terminal_event = (wire if isinstance(wire, dict) and
-                          wire.get('event_type') == ResultEventType.COMPLETED else
-                          result if isinstance(result, dict) and
-                          result.get('event_type') == ResultEventType.COMPLETED else None)
-        if terminal_event is not None:
-            outcome = terminal_event.get('status', 'error')
-            event.payload = {**event.payload, 'result_terminal': outcome}
-            if outcome == 'cancelled':
-                event = CommandExecutionEvent.cancelled(event.text, payload=event.payload)
-            elif outcome not in ('success', 'partial'):
-                event = CommandExecutionEvent.error(event.text, payload={**event.payload, 'failure_reason': outcome})
-        elif getattr(item, 'terminal_authoritative', False):
-            if getattr(item, 'eof', False):
-                outcome = result_terminal_status(status, result)
-                event.payload = {**event.payload, 'result_terminal': outcome}
-                if outcome == 'cancelled':
-                    event = CommandExecutionEvent.cancelled(event.text, payload=event.payload)
-                elif outcome not in ('success', 'partial'):
-                    event = CommandExecutionEvent.error(event.text, payload={**event.payload, 'failure_reason': outcome})
-            else:
-                event.payload = {**event.payload, 'intermediate_result': True}
-        return event
+    @staticmethod
+    def iter_result_events(items):
+        """Emit intermediate events immediately and exactly one terminal outcome."""
+        for item in iter_inner_results(items):
+            yield CommandExecutionPipeline.build_result_event(item)
 
     def iter_events(
         self,
@@ -116,9 +75,7 @@ class CommandExecutionPipeline:
         finalize_history: bool = True,
         swallow_exception: bool = False,
     ):
-        final_ok = True
-        cancelled = False
-        final_status = ""
+        final_status = 'interrupted'
 
         yield CommandExecutionEvent.started(
             context.command,
@@ -134,48 +91,20 @@ class CommandExecutionPipeline:
                 context.command,
                 history_entry_id=context.history_entry_id,
             )
-            if func:
-                for item in func():
-                    status = item[0]
-                    result = item[1] if len(item) > 1 else ''
-                    event = self.build_result_event(item)
-
-                    if event.payload.get('intermediate_result'):
-                        yield event
-                        continue
-                    if event.payload.get('result_terminal'):
-                        final_status = event.payload['result_terminal']
-                        final_ok = final_status in ('success', 'partial')
-                        cancelled = final_status == 'cancelled'
-                        yield event
-                        continue
-                    if event.event_type == CommandExecutionEvent.ERROR:
-                        final_ok = False
-                        reason = event.payload.get('failure_reason')
-                        if reason in ('timed_out', 'interrupted'):
-                            final_status = reason
-                    elif event.event_type == CommandExecutionEvent.CANCELLED:
-                        cancelled = True
-                        final_status = 'cancelled'
-                        final_ok = False
-
-                    yield event
+            for event in self.iter_result_events(func() if func else ()):
+                if event.payload.get('result_terminal'):
+                    final_status = event.payload['result_terminal']
+                yield event
 
         except Exception as exc:
-            final_ok = False
             final_status = ('timed_out' if isinstance(exc, TimeoutError) else
                             'interrupted' if isinstance(exc, (ConnectionError, EOFError)) else 'error')
             self.error_logger.exception(
                 'CommandExecutionPipeline failed: command=%r source=%s task_id=%s history_entry_id=%s',
-                context.command,
-                context.source,
-                context.task_id,
-                context.history_entry_id,
+                context.command, context.source, context.task_id, context.history_entry_id,
             )
             if swallow_exception:
-                reason = ('timed_out' if isinstance(exc, TimeoutError) else
-                          'interrupted' if isinstance(exc, (ConnectionError, EOFError)) else '')
-                yield CommandExecutionEvent.error(str(exc), payload={'failure_reason': reason})
+                yield self.build_result_event(ResultEvent.completed(final_status, str(exc)))
             else:
                 raise
 
@@ -183,12 +112,12 @@ class CommandExecutionPipeline:
             if finalize_history:
                 self._finalize_history(
                     context,
-                    final_ok and not cancelled,
+                    final_status in ('success', 'partial'),
                     cwd_end_provider=cwd_end_provider,
                     final_status=final_status,
                 )
 
-        if cancelled:
+        if final_status == 'cancelled':
             yield CommandExecutionEvent.cancelled(
                 'cancelled',
                 payload={
@@ -199,7 +128,7 @@ class CommandExecutionPipeline:
             )
         else:
             yield CommandExecutionEvent.completed(
-                final_ok,
+                final_status in ('success', 'partial'),
                 payload={
                     'task_id': context.task_id,
                     'history_entry_id': context.history_entry_id,

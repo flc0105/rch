@@ -116,7 +116,8 @@ class BackgroundJobService:
     def _execute_job_action(self, client_id, action, payload):
         # The Client can emit progress before its final structured result.
         # Decode only the final packet, never a concatenation of progress text.
-        status, wire_text = 0, ''
+        from core.protocol.result_envelope import ResultStreamState
+        state = ResultStreamState()
         independent = execution_policy(ControlDomain.JOB, action) == ExecutionPolicy.INDEPENDENT
         stream = (self.remote_execution_service.stream_command if independent
                   else self.remote_execution_service.stream_foreground_command)
@@ -125,15 +126,18 @@ class BackgroundJobService:
             client_id, '', command_type=COMMAND_TYPE_CONTROL, domain=ControlDomain.JOB, action=action, payload=payload,
             **options,
         ):
-            status, wire_text = item[0], item[1] if len(item) > 1 else ''
+            state.accept(item)
+        if state.completion is None:
+            raise RuntimeError('Job control returned no completed Result')
+        wire = state.completion.event
         try:
-            result = validate_job_control_result(wire_text, action)
+            result = validate_job_control_result(wire, action)
         except (ValueError, TypeError):
             result = None
-        message = result['message'] if result is not None else str(wire_text or '')
-        if status == 1 and result is None:
+        message = result['message'] if result is not None else state.completion.visible_text()
+        if state.completion.succeeded and result is None:
             raise RuntimeError('Invalid Job control response')
-        if status != 1:
+        if not state.completion.succeeded:
             raise RuntimeError(message or 'Job control failed')
         return message
 

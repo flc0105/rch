@@ -21,6 +21,7 @@ class WebTaskStore:
 
     def __init__(self):
         self._tasks = {}
+        self._cancel_handlers = {}
         self._lock = threading.RLock()
 
     @staticmethod
@@ -61,7 +62,32 @@ class WebTaskStore:
             return False
 
         with self._lock:
+            self._cancel_handlers.pop(normalized_task_id, None)
             return self._tasks.pop(normalized_task_id, None) is not None
+
+    def register_cancel_handler(self, task_id, handler):
+        """Install a domain cancellation handler only for an active task.
+
+        An enclosing operation may already own cancellation; nested work must
+        not replace it. Callbacks never appear in public task snapshots.
+        """
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task or task['status'] not in (WebTaskStatus.RUNNING, WebTaskStatus.CANCELLING):
+                return False
+            if task_id in self._cancel_handlers:
+                return False
+            self._cancel_handlers[task_id] = handler
+            return True
+
+    def unregister_cancel_handler(self, task_id, handler):
+        with self._lock:
+            if self._cancel_handlers.get(task_id) is handler:
+                self._cancel_handlers.pop(task_id, None)
+
+    def get_cancel_handler(self, task_id):
+        with self._lock:
+            return self._cancel_handlers.get(task_id)
 
     def request_cancel(self, task_id: str) -> dict | None:
         """请求取消任务。"""

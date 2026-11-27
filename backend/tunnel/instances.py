@@ -144,12 +144,12 @@ class TunnelInstanceService:
 
     @staticmethod
     def _control(remote, conn, action, payload):
-        status, result = remote.run_foreground_control(
+        completion = remote.run_foreground_control(
             conn, ControlDomain.TUNNEL, action, payload,
             task_type='tunnel', source='tunnel',
         )
-        if status != 1:
-            raise RuntimeError(result.get('message', str(result)) if isinstance(result, dict) else str(result))
+        if not completion.succeeded:
+            raise RuntimeError(completion.event.get('message') or 'Tunnel control failed')
 
     def start(self, client_id, name, remote):
         client_id, name = self._client(client_id), validate_name(name)

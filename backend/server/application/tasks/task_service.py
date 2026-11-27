@@ -1,12 +1,11 @@
 import threading
-import shlex
 
 from core.protocol.control import ControlRequest
-from server.application.connection.control_command_store import HTTP_CONTROL_COMMANDS
 from dataclasses import dataclass, field
 
 from server.application.execution.execution_context import TaskExecutionContext
-from server.application.tasks.task_types import TASK_TYPE_COMMAND, TASK_TYPE_UPLOAD
+from typing import Callable, Iterable
+from server.application.command.command_execution_event import CommandExecutionEvent
 
 
 @dataclass
@@ -15,19 +14,20 @@ class WebExecutionTaskRequest:
     统一 Web 执行请求。
 
     说明：
-    - command / upload 都通过同一条任务创建主链进入
-    - runner_name 决定最终交给哪个 task runner 方法
+    - 调用方提供执行事件源及可选的领域取消处理器。
+    - metadata 只包含活动关联和前端展示所需信息。
     """
 
     client_id: str
     command: str
     task_type: str
-    runner_name: str
+    events: Callable[[TaskExecutionContext], Iterable[CommandExecutionEvent]]
     tab_id: str = ''
     source: str = 'web'
     metadata: dict = field(default_factory=dict)
     use_foreground_guard: bool = True
     control: ControlRequest | None = None
+    cancel_handler: Callable | None = None
 
 
 class WebTaskService:
@@ -35,18 +35,16 @@ class WebTaskService:
     Web 任务服务。
 
     职责：
-    - 提交并登记 Web 命令 / 上传任务
+    - 提交并登记 Web 执行任务
     - 占用前台执行槽
     - 启动 runner 真正执行
-    - Web upload 使用独立 TransferManager 时不占 foreground；普通 Web command 保持原规则
+    - 执行槽及取消策略由请求提供，不解析业务命令
     """
 
-    def __init__(self, server, task_store, file_service, task_runner, transfer_service=None):
+    def __init__(self, server, task_store, task_runner):
         self.server = server
         self.task_store = task_store
-        self.file_service = file_service
         self.task_runner = task_runner
-        self.transfer_service = transfer_service
         self.activity_coordinator = self.server.activity_coordinator
 
     def _create_task_with_history(
@@ -171,24 +169,22 @@ class WebTaskService:
             raise ValueError("Current execution does not support cancellation")
         return task, conn
 
-    def _resolve_runner(self, runner_name: str):
-        runner = getattr(self.task_runner, runner_name, None)
-        if not callable(runner):
-            raise ValueError(f'unknown task runner: {runner_name}')
-        return runner
-
-    def _submit_request(self, request: WebExecutionTaskRequest):
+    def submit(self, request: WebExecutionTaskRequest):
         conn = self.server.get_target_connection_by_client_id(request.client_id)
-        runner = self._resolve_runner(request.runner_name)
+        if not callable(request.events):
+            raise ValueError('Task event source is required')
         task = self._create_task_with_history(conn, request)
-        context = self._build_task_context(conn, task, request)
         acquired = False
 
         try:
+            context = self._build_task_context(conn, task, request)
+            if request.cancel_handler is not None:
+                if not self.task_store.register_cancel_handler(context.task_id, request.cancel_handler):
+                    raise RuntimeError("Unable to register task cancellation handler")
             if request.use_foreground_guard:
                 self._acquire_task(context)
                 acquired = True
-            self._start_task_thread(runner, context)
+            self._start_task_thread(self.task_runner.run_task, context, request.events, acquired)
         except Exception:
             if acquired:
                 context.session.release_foreground_task(
@@ -206,89 +202,22 @@ class WebTaskService:
             **({'operation_id': request.metadata['operation_id']} if request.metadata.get('operation_id') else {}),
         }
 
-    def submit_web_command(
-            self,
-            client_id: str,
-            command: str,
-            tab_id: str = '',
-            metadata: dict | None = None,
-            source: str = 'web',
-    ):
-        return self._submit_request(
-            WebExecutionTaskRequest(
-                client_id=client_id,
-                command=command,
-                task_type=TASK_TYPE_COMMAND,
-                runner_name='run_command_task',
-                tab_id=tab_id,
-                source=str(source or 'web').strip() or 'web',
-                metadata=dict(metadata or {}),
-                # HTTP recovery commands are server-side builtins delivered via a
-                # separate HTTP control queue; they never occupy the stuck agent's
-                # foreground execution slot.
-                use_foreground_guard=not (self._is_http_control_command(command)
-                    or self._is_independent_builtin_command(command)),
-            )
-        )
-
-    def submit_web_control(self, client_id: str, command: str, control: ControlRequest, *,
-                           tab_id: str = '', metadata: dict | None = None):
-        return self._submit_request(WebExecutionTaskRequest(
-            client_id=client_id,
-            command=command,
-            task_type=TASK_TYPE_COMMAND,
-            runner_name='run_control_task',
-            tab_id=(tab_id or '').strip(),
-            source='web',
-            metadata=dict(metadata or {}),
-            control=control,
-        ))
-
-    @staticmethod
-    def _is_independent_builtin_command(command: str) -> bool:
-        from server.application.command.server_builtin_registry import SERVER_COMMAND_REGISTRY
-        return SERVER_COMMAND_REGISTRY.is_independent_input(command)
-
-    @staticmethod
-    def _is_http_control_command(command: str) -> bool:
-        try:
-            parts = shlex.split(str(command or '').strip())
-        except ValueError:
-            return False
-        return len(parts) == 2 and parts[0] == 'httpctl' and parts[1].lower() in HTTP_CONTROL_COMMANDS
-
-    @staticmethod
-    def _is_server_owned_xt_log_follow(command: str) -> bool:
-        try:
-            parts = shlex.split(str(command or '').strip())
-        except ValueError:
-            return False
-        return (len(parts) == 6 and parts[:3] == ['xt', 'instance', 'logs']
-                and parts[-1] in ('--follow', '-f'))
-
     def cancel_web_task(self, task_id: str):
         task = self.task_store.get_task(task_id)
-        transfer = (self.transfer_service.find_active_transfer_by_task_id(task_id)
-                    if self.transfer_service is not None else None)
-        if task and transfer:
-            if task.get('status') not in ('running', 'cancelling'):
-                raise ValueError('task is not cancellable')
-            if task.get('client_id') != transfer.get('client_id'):
-                raise ValueError('transfer does not belong to task client')
-            if transfer.get('cancel_supported') is False:
-                raise ValueError('current transfer mode does not support cancellation')
-
-            client_id = task.get('client_id') or transfer.get('client_id') or ''
-            self.task_store.request_cancel(task_id)
-            self.transfer_service.cancel_operation(transfer['transfer_id'], tab_id=task.get('tab_id', ''),
-                connection_lookup=self.server.get_target_connection_by_client_id)
+        if not task:
+            raise ValueError('task not found')
+        if task.get('status') not in ('running', 'cancelling'):
+            raise ValueError('task is not cancellable')
+        handler = self.task_store.get_cancel_handler(task_id)
+        if handler is not None:
+            info = handler(task, lambda: self.task_store.request_cancel(task_id))
             return {
                 'task_id': task_id,
-                'client_id': client_id,
+                'client_id': task['client_id'],
                 'status': 'cancelling',
                 'command_id': None,
                 'history_entry_id': task.get('history_entry_id') or '',
-                'transfer_id': transfer.get('transfer_id') or '',
+                **info,
             }
 
         task, conn = self._resolve_cancellable_task(task_id)
@@ -306,39 +235,3 @@ class WebTaskService:
             'command_id': command_id,
             'history_entry_id': cancel_info.get('history_entry_id') or '',
         }
-
-    def submit_web_upload(
-        self,
-        client_id: str,
-        local_path: str,
-        display_name: str,
-        remote_path: str = '',
-        tab_id: str = '',
-        transfer_id: str = '',
-        conflict_policy=None,
-        operation_id: str = '',
-        command: str = '',
-        batch_id: str = '',
-    ):
-        if not command:
-            raise ValueError('Upload task command is required')
-        return self._submit_request(
-            WebExecutionTaskRequest(
-                client_id=client_id,
-                command=command,
-                task_type=TASK_TYPE_UPLOAD,
-                runner_name='run_upload_task',
-                tab_id=tab_id,
-                source='web',
-                metadata={
-                    'local_path': local_path,
-                    'display_name': display_name,
-                    'remote_path': remote_path,
-                    'transfer_id': (transfer_id or '').strip(),
-                    'conflict_policy': conflict_policy,
-                    'operation_id': operation_id,
-                    **({'batch_id': batch_id} if batch_id else {}),
-                },
-                use_foreground_guard=False,
-            )
-        )

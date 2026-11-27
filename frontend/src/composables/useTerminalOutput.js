@@ -234,9 +234,7 @@ export default {
             const pending = queues?.[clientId];
             if (!pending) return;
             delete queues[clientId];
-            if (pending.frame !== null && typeof cancelAnimationFrame === 'function') {
-                cancelAnimationFrame(pending.frame);
-            }
+            if (pending.timer !== null) clearTimeout(pending.timer);
             if (!pending.lines.length) return;
             const view = this.terminalViewStates[clientId];
             if (!view?.follow) {
@@ -247,6 +245,12 @@ export default {
                 [...this.outputs[clientId], ...pending.lines], 'newer', TERMINAL_HISTORY);
             view.hasOlder = (this.outputs[clientId][0]?.__terminalSeq || 0) > 0;
             if (String(clientId) === String(this.selectedId)) this.scrollToBottom();
+        },
+
+        flushTerminalRenderQueues() {
+            for (const id of Object.keys(this._terminalRenderQueues || {})) {
+                this.flushTerminalVisibleLines(id);
+            }
         },
 
         commitTerminalLines(clientId, lines, deferVisible = false) {
@@ -265,16 +269,18 @@ export default {
             if (!this._terminalRenderQueues) this._terminalRenderQueues = {};
             let queue = this._terminalRenderQueues[clientId];
             if (!queue) {
-                queue = { lines: [], frame: null };
+                queue = { lines: [], timer: null };
                 this._terminalRenderQueues[clientId] = queue;
             }
             // A long burst only needs the latest display window. Historical rows
             // have already been persisted in full above.
             queue.lines = trimTerminalWindow([...queue.lines, ...lines], 'newer', TERMINAL_HISTORY);
-            if (!deferVisible || typeof requestAnimationFrame !== 'function') {
+            // Hidden tabs stop animation frames. Commit their state immediately;
+            // visible tabs coalesce short bursts without depending on a paint.
+            if (!deferVisible || (typeof document !== 'undefined' && document.hidden)) {
                 this.flushTerminalVisibleLines(clientId);
-            } else if (queue.frame === null) {
-                queue.frame = requestAnimationFrame(() => this.flushTerminalVisibleLines(clientId));
+            } else if (queue.timer === null) {
+                queue.timer = setTimeout(() => this.flushTerminalVisibleLines(clientId), 16);
             }
         },
 
@@ -459,11 +465,19 @@ export default {
             const generation = this._terminalViewGeneration = (this._terminalViewGeneration || 0) + 1;
             const view = this.terminalViewStates[id];
             view.loading = true;
+            view.follow = follow;
             try {
                 const recent = await this._terminalHistory.readBefore(id, Infinity,
                     TERMINAL_HISTORY.initialLines, TERMINAL_HISTORY.initialBytes);
                 if (generation !== this._terminalViewGeneration || id !== this.selectedId) return;
-                this.outputs[id] = trimTerminalWindow(recent.filter(line => !isTransientTaskNotice(line)),
+                // A live chunk can arrive during the asynchronous history read.
+                // Merge only newer rows; a queued row already in the snapshot
+                // must not be appended again after restoring the viewport.
+                this.flushTerminalVisibleLines(id);
+                const tail = recent.at(-1)?.__terminalSeq ?? -1;
+                const newer = follow ? (this.outputs[id] || []).filter(line =>
+                    Number.isSafeInteger(line.__terminalSeq) && line.__terminalSeq > tail) : [];
+                this.outputs[id] = trimTerminalWindow([...recent, ...newer].filter(line => !isTransientTaskNotice(line)),
                     'newer', TERMINAL_HISTORY);
                 view.follow = follow;
                 view.hasOlder = (recent[0]?.__terminalSeq || 0) > 0;
@@ -570,7 +584,7 @@ export default {
                 const clientId = this.selectedId;
                 if (this._terminalRenderQueues?.[clientId]) {
                     const queued = this._terminalRenderQueues[clientId];
-                    if (queued.frame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(queued.frame);
+                    if (queued.timer !== null) clearTimeout(queued.timer);
                     delete this._terminalRenderQueues[clientId];
                 }
                 this.outputs[clientId] = [];

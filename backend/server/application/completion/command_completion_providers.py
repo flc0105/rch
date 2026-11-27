@@ -653,12 +653,12 @@ class ConfigCommandCompletionProvider(ServerCompletionSessionMixin, DeclaredServ
             items = cached[1]
         else:
             try:
-                status, result = self.remote_execution_service.run_foreground_control(
+                completion = self.remote_execution_service.run_foreground_control(
                     client_id, ControlDomain.CONFIGURATION, ConfigurationAction.GET, {},
                     task_type='runtime_config', source='completion')
-                if status != 1 or not isinstance(result, dict):
+                if not completion.succeeded:
                     return []
-                data = result.get('data') or {}
+                data = completion.event.get('data') or {}
                 items = data.get('items', []) if isinstance(data, dict) else []
                 if not isinstance(items, list):
                     return []

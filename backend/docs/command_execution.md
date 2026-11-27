@@ -110,7 +110,7 @@ Server Built-in 的 Job、Artifact、设备事件、Pinned Path 和 External Too
 - **ACMD**：按命名参数解析，将参数字典通过协议的 `extra` 提交给 Client 的结构化命令处理器。
 - **Script**：Server 可以为 Script 组装额外执行参数及最小权限的 Client Session Token，再通过对应的远程执行类型下发；Web Dialog 与 Terminal 输出走同一个 Task 生命周期。
 
-在代码层面，执行器先给出 `(status, result)` 迭代输出，流水线再转换为 `CommandExecutionEvent`：`started`、`progress`、`chunk`、`error`、`cancelled`、`completed`。结构化 `result` 可以自带 `event_type`，但普通 `(status, text)` 也可进入统一事件流。`status=0` 通常生成错误事件，其他状态生成普通输出块。
+在 Server 内部，连接和 Built-in 执行器统一产出类型化 `ResultEvent`。过程事件不携带终态，唯一 `completed` 的 `status` 决定成功、部分成功、失败、取消、超时或中断。展示文本可以独立投影，但不参与终态判断；缺少完成事件视为中断，重复完成或完成后的事件视为协议错误。执行流水线将结果映射为应用执行事件，再由 CLI 和 Web 投影为各自的展示结构。
 
 这意味着**一条 Web 命令可能对应多个输出分片、一条完成事件，也可能在完全没有 Client `command_id` 的情况下完成**。不要用“HTTP 请求次数”推断“Socket 命令数”。更详细的命令语义分别参见 [Shell-like Commands](shell_like_commands.md)、[ACMD](acmd.md)、[Scripts](scripts.md) 和 [Aliases / Quick Actions](alias_quick_actions.md)。
 
@@ -139,7 +139,7 @@ Web 首次选中设备、切换设备、WebSocket 重连和设备重新上线时
 - **独立 TransferManager 的 Web Upload**：仍可创建 Web Task 与上传历史上下文，但上传执行路径 `use_foreground_guard=False`，进度和取消还需配合 TransferService 维护；不同传输策略并非一律支持取消。
 - **经验证的 HTTP 控制请求**：`httpctl` 恢复操作可绕过常规前台槽，通过另外的 HTTP Control 队列供 Client/Watchdog 轮询；它不等同于普通远程命令消息，也不是对任意指令关闭忙碌保护。
 
-这种例外来自具体执行链的机制要求，不能将它当作开发新命令时默认可绕过前台槽的依据。
+这种例外来自具体执行链的机制要求，不能将它当作开发新命令时默认可绕过前台槽的依据。Built-in 的独立执行策略由命令注册表声明，结构化 Control 使用自身的执行策略；任务服务只接收已确定的执行策略、事件源和可选的领域取消处理器，不解析命令或传输参数。
 
 ## 5. Client 执行基础设施与 Socket 结果
 
@@ -163,7 +163,7 @@ Server 按 `command_id` 将每个 Result Envelope 分发到已登记的等待流
 {"id":"<event-id>","event":"command_complete","data":{"task_id":"<task-id>","client_id":"<client-id>","command":"pwd","command_id":1,"success":true,"status":"success","metadata":{},"cancel_requested":false,"cancelled":false,"time":"<server-local-iso-time>"}}
 ```
 
-Web 在 `ws://<host>:8086/ws/events?tab_id=<browser-tab-id>` 订阅事件。提交时将同一 `tab_id` 通过 `X-Tab-Id` 传给 Server，Server 才能把该 Task 的输出和完成事件送到相应标签页，而不是传播给所有打开的终端。若提交时没有提供有效 `tab_id`，事件总线不会具有这个定向范围，因此前端应保持两端使用同一标签页标识。
+Web 在 `ws://<host>:8086/ws/events?tab_id=<browser-tab-id>` 订阅事件。提交时将同一 `tab_id` 通过 `X-Tab-Id` 传给 Server，Server 才能把该 Task 的输出和完成事件送到相应标签页，而不是传播给所有打开的终端。浏览器在初始化时取得独占的标签页标识，新开或复制的标签页使用独立标识，刷新时可以重新取得原标识。Terminal 本地历史按管理员及标签页标识隔离。缺少有效 `tab_id` 的命令事件不向浏览器广播，Activity 与通知按各自契约保存。
 
 Socket `result` 帧使用 `event_type=started/progress/chunk/completed`，仅 `completed` 携带执行终态 `status`。Web 的 `command_result`/批量事件在原有 `status/text` 文本投影之外保留各条原始 `result` Envelope 供结构化消费者与调试使用；`command_complete` 仍负责一次 Web Task 的状态收尾。
 
